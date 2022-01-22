@@ -79,7 +79,7 @@ pub const VulkanContext = struct {
         const candidate = try pickPhysicalDevice(self.vki, self.instance, allocator, self.surface);
         self.pdev = candidate.pdev;
         self.props = candidate.props;
-        self.dev = try createLogicalDevice(self.vki, candidate, &REQUIRED_DEVICE_EXTENSIONS);
+        self.dev = try createLogicalDevice(self.vki, candidate);
         self.vkd = try DeviceDispatch.load(self.dev, self.vki.dispatch.vkGetDeviceProcAddr);
         errdefer self.vkd.destroyDevice(self.dev, null);
 
@@ -260,7 +260,7 @@ fn checkSuitable(
 ) !?DeviceCandidate {
     const props = vki.getPhysicalDeviceProperties(pdev);
 
-    if (!try checkExtensionSupport(vki, pdev, allocator, REQUIRED_DEVICE_EXTENSIONS[0..])) {
+    if (!try checkExtensionSupport(vki, pdev, allocator)) {
         return null;
     }
 
@@ -283,7 +283,6 @@ fn checkExtensionSupport(
     vki: InstanceDispatch,
     pdev: vk.PhysicalDevice,
     allocator: Allocator,
-    extensions: []const []const u8,
 ) !bool {
     var count: u32 = undefined;
     _ = try vki.enumerateDeviceExtensionProperties(pdev, null, &count, null);
@@ -293,7 +292,7 @@ fn checkExtensionSupport(
 
     _ = try vki.enumerateDeviceExtensionProperties(pdev, null, &count, all_properties.ptr);
 
-    for (extensions) |ext| {
+    for (REQUIRED_DEVICE_EXTENSIONS) |ext| {
         for (all_properties) |props| {
             if (std.mem.eql(u8, ext, cStrToSlice(&props.extension_name))) {
                 break;
@@ -354,7 +353,7 @@ fn allocateQueues(vki: InstanceDispatch, pdev: vk.PhysicalDevice, allocator: All
     return null;
 }
 
-fn createLogicalDevice(vki: InstanceDispatch, candidate: DeviceCandidate, extensions: []const []const u8) !vk.Device {
+fn createLogicalDevice(vki: InstanceDispatch, candidate: DeviceCandidate) !vk.Device {
     const priority = [_]f32{1};
     const qci = [_]vk.DeviceQueueCreateInfo{
         .{
@@ -382,8 +381,8 @@ fn createLogicalDevice(vki: InstanceDispatch, candidate: DeviceCandidate, extens
         .p_queue_create_infos = &qci,
         .enabled_layer_count = 0,
         .pp_enabled_layer_names = undefined,
-        .enabled_extension_count = @truncate(u32, extensions.len),
-        .pp_enabled_extension_names = @ptrCast([*]const [*:0]const u8, &extensions),
+        .enabled_extension_count = REQUIRED_DEVICE_EXTENSIONS.len,
+        .pp_enabled_extension_names = @ptrCast([*]const [*:0]const u8, &REQUIRED_DEVICE_EXTENSIONS),
         .p_enabled_features = null,
     }, null);
 }
