@@ -33,8 +33,8 @@ pub const VulkanContext = struct {
         const glfwInstanceProcLoader = @ptrCast(FnVulkanLoader, glfw.getInstanceProcAddress);
         self.vkb = try BaseDispatch.load(glfwInstanceProcLoader);
 
-        const glfw_exts = try glfw.getRequiredInstanceExtensions();
         const enabled_exts = x: {
+            const glfw_exts = try glfw.getRequiredInstanceExtensions();
             const total_len = glfw_exts.len + REQUIRED_INSTANCE_EXTENSIONS.len;
             const exts = try allocator.alloc([*:0]const u8, total_len);
             errdefer allocator.free(exts);

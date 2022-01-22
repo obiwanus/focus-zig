@@ -19,7 +19,11 @@ pub fn main() !void {
         .height = 600,
     };
 
-    const window = try glfw.Window.create(extent.width, extent.height, APP_NAME, null, null, .{ .client_api = .no_api });
+    const window = try glfw.Window.create(extent.width, extent.height, APP_NAME, null, null, .{
+        .client_api = .no_api,
+        .focused = true,
+        .maximized = true,
+    });
     defer window.destroy();
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
