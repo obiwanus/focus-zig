@@ -14,17 +14,20 @@ pub fn main() !void {
     try glfw.init(.{});
     defer glfw.terminate();
 
-    var extent = vk.Extent2D{
-        .width = 800,
-        .height = 600,
-    };
-
-    const window = try glfw.Window.create(extent.width, extent.height, APP_NAME, null, null, .{
+    const window = try glfw.Window.create(1000, 1000, APP_NAME, null, null, .{
         .client_api = .no_api,
         .focused = true,
         .maximized = true,
+        .scale_to_monitor = true,
+        .srgb_capable = true,
     });
     defer window.destroy();
+
+    const size = try window.getSize();
+    var extent = vk.Extent2D{
+        .width = size.width,
+        .height = size.height,
+    };
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -97,9 +100,9 @@ pub fn main() !void {
         };
 
         if (state == .suboptimal) {
-            const size = try window.getSize();
-            extent.width = @intCast(u32, size.width);
-            extent.height = @intCast(u32, size.height);
+            const new_size = try window.getSize();
+            extent.width = new_size.width;
+            extent.height = new_size.height;
             try swapchain.recreate(extent);
 
             destroyFramebuffers(&vc, allocator, framebuffers);
