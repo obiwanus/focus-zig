@@ -1,4 +1,5 @@
 # TODO
+- Render a word
 
 # DONE
 - Configure debug logger
