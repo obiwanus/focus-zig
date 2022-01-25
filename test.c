@@ -3,4 +3,9 @@
 
 int vasia() {
     printf("%f", floor(21.4f));
+    return 0;
+}
+
+int main() {
+    return vasia();
 }
