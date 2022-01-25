@@ -18,17 +18,12 @@ pub fn build(b: *std.build.Builder) void {
     glfw.link(b, exe, .{});
 
     // stb_truetype
-    const stbtt = b.addExecutable("stbtt", null);
-    // stbtt.addCSourceFile("libs/stb_truetype/stb_truetype.h", &.{});
-    stbtt.addCSourceFile("test.c", &.{});
+    const stbtt = b.addStaticLibrary("stbtt", null);
+    stbtt.addCSourceFile("libs/stb_truetype/stb_truetype.h", &.{});
     stbtt.linkLibC();
     stbtt.install();
+    exe.linkLibrary(stbtt);
     exe.addPackagePath("stbtt", "libs/stb_truetype/stbtt.zig");
-
-    const run_vasia_cmd = stbtt.run();
-    const run_vasia = b.step("run_vasia", "Run vasia");
-    run_vasia_cmd.step.dependOn(b.getInstallStep());
-    run_vasia.dependOn(&run_vasia_cmd.step);
 
     // NOTE: Removed vk.zig generation because it takes a long time
     // const gen = vkgen.VkGenerateStep.init(b, "libs/vulkan/vk.xml", "vk.zig");

@@ -1,4 +1,4 @@
-pub usingnamespace @import("std").c.builtins;
+// pub usingnamespace @import("std").c.builtins;
 
 pub const Buf = extern struct {
     data: [*c]u8,
@@ -152,7 +152,7 @@ pub const getKerningTableLength = stbtt_GetKerningTableLength;
 extern fn stbtt_GetKerningTable(info: [*c]const FontInfo, table: [*c]KerningEntry, table_length: c_int) c_int;
 pub const getKerningTable = stbtt_GetKerningTable;
 
-const Op = extern enum(c_int) {
+const Op = enum(c_int) {
     vmove = 1,
     vline = 2,
     vcurve = 3,
@@ -233,14 +233,14 @@ pub const compareUTF8toUTF16_bigendian = stbtt_CompareUTF8toUTF16_bigendian;
 extern fn stbtt_GetFontNameString(font: [*c]const FontInfo, length: [*c]c_int, platformID: c_int, encodingID: c_int, languageID: c_int, nameID: c_int) [*c]const u8;
 pub const getFontNameString = stbtt_GetFontNameString;
 
-const PlatformId = extern enum(c_int) {
+const PlatformId = enum(c_int) {
     UNICODE = 0,
     MAC = 1,
     ISO = 2,
     MICROSOFT = 3,
 };
 
-const UnicodeEid = extern enum(c_int) {
+const UnicodeEid = enum(c_int) {
     UNICODE_1_0 = 0,
     UNICODE_1_1 = 1,
     ISO_10646 = 2,
@@ -248,14 +248,14 @@ const UnicodeEid = extern enum(c_int) {
     UNICODE_2_0_FULL = 4,
 };
 
-const MsEid = extern enum(c_int) {
+const MsEid = enum(c_int) {
     SYMBOL = 0,
     UNICODE_BMP = 1,
     SHIFTJIS = 2,
     UNICODE_FULL = 10,
 };
 
-const MacEid = extern enum(c_int) {
+const MacEid = enum(c_int) {
     ROMAN = 0,
     ARABIC = 4,
     JAPANESE = 1,
@@ -266,7 +266,7 @@ const MacEid = extern enum(c_int) {
     RUSSIAN = 7,
 };
 
-const MsLang = extern enum(c_int) {
+const MsLang = enum(c_int) {
     ENGLISH = 1033,
     ITALIAN = 1040,
     CHINESE = 2052,
@@ -281,7 +281,7 @@ const MsLang = extern enum(c_int) {
     SWEDISH = 1053,
 };
 
-const MacLang = extern enum(c_int) {
+const MacLang = enum(c_int) {
     ENGLISH = 0,
     JAPANESE = 11,
     ARABIC = 12,

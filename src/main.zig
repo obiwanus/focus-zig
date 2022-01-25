@@ -3,6 +3,7 @@ const std = @import("std");
 const glfw = @import("glfw");
 const vk = @import("vulkan");
 const resources = @import("resources");
+const stbtt = @import("stbtt");
 
 const Allocator = std.mem.Allocator;
 const VulkanContext = @import("vulkan/context.zig").VulkanContext;
@@ -28,6 +29,8 @@ pub fn main() !void {
         .width = size.width,
         .height = size.height,
     };
+
+    _ = stbtt.initFont(null, null, 0);
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
