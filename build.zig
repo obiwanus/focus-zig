@@ -11,19 +11,13 @@ pub fn build(b: *std.build.Builder) void {
     const exe = b.addExecutable("focus", "src/main.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);
+    exe.addCSourceFile("libs/stb_truetype/stb_truetype.c", &.{});
+    exe.addPackagePath("stbtt", "libs/stb_truetype/stbtt.zig");
     exe.install();
 
     // glfw
     exe.addPackagePath("glfw", "libs/glfw/src/main.zig");
     glfw.link(b, exe, .{});
-
-    // stb_truetype
-    const stbtt = b.addStaticLibrary("stbtt", null);
-    stbtt.addCSourceFile("libs/stb_truetype/stb_truetype.h", &.{});
-    stbtt.linkLibC();
-    stbtt.install();
-    exe.linkLibrary(stbtt);
-    exe.addPackagePath("stbtt", "libs/stb_truetype/stbtt.zig");
 
     // NOTE: Removed vk.zig generation because it takes a long time
     // const gen = vkgen.VkGenerateStep.init(b, "libs/vulkan/vk.xml", "vk.zig");
