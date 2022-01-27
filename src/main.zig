@@ -30,8 +30,6 @@ pub fn main() !void {
         .height = size.height,
     };
 
-    _ = stbtt.initFont(null, null, 0);
-
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     var allocator = arena.allocator();
