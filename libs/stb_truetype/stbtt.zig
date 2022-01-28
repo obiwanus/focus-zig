@@ -1,5 +1,3 @@
-// pub usingnamespace @import("std").c.builtins;
-
 pub const Buf = extern struct {
     data: [*c]u8,
     cursor: c_int,

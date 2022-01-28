@@ -169,7 +169,10 @@
 //   given file is in a general way. I provide an API for this, but I don't
 //   recommend it.
 
-#define STB_TRUETYPE_IMPLEMENTATION 1
+#define STB_RECT_PACK_IMPLEMENTATION
+#include "stb_rect_pack.h"
+
+#define STB_TRUETYPE_IMPLEMENTATION
 
 //////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////
