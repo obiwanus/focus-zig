@@ -3,7 +3,6 @@ const std = @import("std");
 const glfw = @import("glfw");
 const vk = @import("vulkan");
 const resources = @import("resources");
-const stbtt = @import("stbtt");
 
 const Allocator = std.mem.Allocator;
 const VulkanContext = @import("vulkan/context.zig").VulkanContext;
@@ -49,7 +48,7 @@ pub fn main() !void {
     }, null);
     defer vc.vkd.destroyPipelineLayout(vc.dev, pipeline_layout, null);
 
-    const render_pass = try createRenderPass(&vc, swapchain);
+    const render_pass = try createRenderPass(&vc, swapchain.surface_format.format);
     defer vc.vkd.destroyRenderPass(vc.dev, render_pass, null);
 
     var pipeline = try createPipeline(&vc, pipeline_layout, render_pass);
@@ -160,10 +159,10 @@ const vertices = [_]Vertex{
     .{ .pos = .{ -0.5, 0.5 }, .color = .{ 0, 0, 1 } },
 };
 
-fn createRenderPass(vc: *const VulkanContext, swapchain: Swapchain) !vk.RenderPass {
+fn createRenderPass(vc: *const VulkanContext, attachment_format: vk.Format) !vk.RenderPass {
     const color_attachment = vk.AttachmentDescription{
         .flags = .{},
-        .format = swapchain.surface_format.format,
+        .format = attachment_format,
         .samples = .{ .@"1_bit" = true },
         .load_op = .clear,
         .store_op = .store,
