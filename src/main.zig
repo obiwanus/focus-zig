@@ -154,9 +154,12 @@ const Vertex = struct {
 };
 
 const vertices = [_]Vertex{
-    .{ .pos = .{ 0, -0.5 }, .color = .{ 1, 0, 0 } },
-    .{ .pos = .{ 0.5, 0.5 }, .color = .{ 0, 1, 0 } },
-    .{ .pos = .{ -0.5, 0.5 }, .color = .{ 0, 0, 1 } },
+    .{ .pos = .{ -0.5, -0.5 }, .color = .{ 1, 0, 0 } }, // 0
+    .{ .pos = .{ -0.4, -0.5 }, .color = .{ 0, 1, 0 } }, // 1
+    .{ .pos = .{ -0.4, -0.4 }, .color = .{ 0, 0, 1 } }, // 2
+    .{ .pos = .{ -0.5, -0.4 }, .color = .{ 1, 0, 1 } }, // 3
+    .{ .pos = .{ -0.5, -0.5 }, .color = .{ 1, 0, 0 } }, // 0
+    .{ .pos = .{ -0.4, -0.4 }, .color = .{ 0, 0, 1 } }, // 2
 };
 
 fn createRenderPass(vc: *const VulkanContext, attachment_format: vk.Format) !vk.RenderPass {

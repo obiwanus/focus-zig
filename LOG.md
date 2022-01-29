@@ -1,5 +1,7 @@
 # TODO
 - Render a word
+    - Render a letter
+        + Render a solid color quad instead of the triangle
 
 # DONE
 - Configure debug logger
