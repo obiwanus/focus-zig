@@ -3,6 +3,7 @@ const std = @import("std");
 const glfw = @import("glfw");
 const vk = @import("vulkan");
 const resources = @import("resources");
+const stbi = @import("stbi");
 
 const Allocator = std.mem.Allocator;
 const VulkanContext = @import("vulkan/context.zig").VulkanContext;
@@ -38,6 +39,10 @@ pub fn main() !void {
 
     var swapchain = try Swapchain.init(&vc, allocator, extent);
     defer swapchain.deinit();
+
+    // TMP image
+    const texture = try stbi.load("images/texture.jpg", .rgb_alpha);
+    std.debug.print("width: {}, height: {}, channels: {}, len_data: {}\n", .{ texture.width, texture.height, texture.channels, texture.pixels.len });
 
     const pipeline_layout = try vc.vkd.createPipelineLayout(vc.dev, &.{
         .flags = .{},
