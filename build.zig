@@ -11,6 +11,7 @@ pub fn build(b: *std.build.Builder) void {
     const exe = b.addExecutable("focus", "src/main.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);
+    exe.addCSourceFile("libs/stb_image/stb_image.c", &.{});
     exe.addCSourceFile("libs/stb_truetype/stb_truetype.c", &.{});
     exe.addPackagePath("stbtt", "libs/stb_truetype/stbtt.zig");
     exe.install();

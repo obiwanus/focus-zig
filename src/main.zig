@@ -129,7 +129,7 @@ pub fn main() !void {
 
 const Vertex = struct {
     pos: [2]f32,
-    color: [3]f32,
+    tex_coord: [2]f32,
 
     const binding_description = vk.VertexInputBindingDescription{
         .binding = 0,
@@ -147,19 +147,19 @@ const Vertex = struct {
         .{
             .binding = 0,
             .location = 1,
-            .format = .r32g32b32_sfloat,
-            .offset = @offsetOf(Vertex, "color"),
+            .format = .r32g32_sfloat,
+            .offset = @offsetOf(Vertex, "tex_coord"),
         },
     };
 };
 
 const vertices = [_]Vertex{
-    .{ .pos = .{ -0.5, -0.5 }, .color = .{ 1, 0, 0 } }, // 0
-    .{ .pos = .{ -0.4, -0.5 }, .color = .{ 0, 1, 0 } }, // 1
-    .{ .pos = .{ -0.4, -0.4 }, .color = .{ 0, 0, 1 } }, // 2
-    .{ .pos = .{ -0.5, -0.4 }, .color = .{ 1, 0, 1 } }, // 3
-    .{ .pos = .{ -0.5, -0.5 }, .color = .{ 1, 0, 0 } }, // 0
-    .{ .pos = .{ -0.4, -0.4 }, .color = .{ 0, 0, 1 } }, // 2
+    .{ .pos = .{ -0.5, -0.5 }, .tex_coord = .{ 1, 0 } }, // 0
+    .{ .pos = .{ -0.4, -0.5 }, .tex_coord = .{ 0, 0 } }, // 1
+    .{ .pos = .{ -0.4, -0.4 }, .tex_coord = .{ 0, 1 } }, // 2
+    .{ .pos = .{ -0.5, -0.4 }, .tex_coord = .{ 1, 1 } }, // 3
+    .{ .pos = .{ -0.5, -0.5 }, .tex_coord = .{ 1, 0 } }, // 0
+    .{ .pos = .{ -0.4, -0.4 }, .tex_coord = .{ 0, 1 } }, // 2
 };
 
 fn createRenderPass(vc: *const VulkanContext, attachment_format: vk.Format) !vk.RenderPass {
