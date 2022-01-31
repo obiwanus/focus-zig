@@ -69,6 +69,25 @@ pub fn main() !void {
     defer texture_image.deinit(&vc);
     const texture_image_view = try createTextureImageView(&vc, texture_image.image, .r8g8b8a8_srgb);
     defer vc.vkd.destroyImageView(vc.dev, texture_image_view, null);
+    const texture_sampler = try vc.vkd.createSampler(vc.dev, &.{
+        .flags = .{},
+        .mag_filter = .linear,
+        .min_filter = .linear,
+        .mipmap_mode = .linear,
+        .address_mode_u = .repeat,
+        .address_mode_v = .repeat,
+        .address_mode_w = .repeat,
+        .mip_lod_bias = 0,
+        .anisotropy_enable = vk.FALSE,
+        .max_anisotropy = 0,
+        .compare_enable = vk.FALSE,
+        .compare_op = .always,
+        .min_lod = 0,
+        .max_lod = 0,
+        .border_color = .int_opaque_black,
+        .unnormalized_coordinates = vk.FALSE,
+    }, null);
+    defer vc.vkd.destroySampler(vc.dev, texture_sampler, null);
 
     const buffer = try vc.vkd.createBuffer(vc.dev, &.{
         .flags = .{},
