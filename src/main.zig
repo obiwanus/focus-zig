@@ -40,10 +40,6 @@ pub fn main() !void {
     var swapchain = try Swapchain.init(&vc, allocator, extent);
     defer swapchain.deinit();
 
-    // TMP image
-    const texture_image = try createTextureImage(&vc, "images/texture.jpg");
-    defer texture_image.deinit(&vc);
-
     const pipeline_layout = try vc.vkd.createPipelineLayout(vc.dev, &.{
         .flags = .{},
         .set_layout_count = 0,
@@ -67,6 +63,10 @@ pub fn main() !void {
         .queue_family_index = vc.graphics_queue.family,
     }, null);
     defer vc.vkd.destroyCommandPool(vc.dev, pool, null);
+
+    // TMP image
+    const texture_image = try createTextureImage(&vc, "images/texture.jpg", pool);
+    defer texture_image.deinit(&vc);
 
     const buffer = try vc.vkd.createBuffer(vc.dev, &.{
         .flags = .{},
@@ -192,31 +192,32 @@ pub const SingleTimeCommandBuffer = struct {
     }
 };
 
-fn createTextureImage(vc: *const VulkanContext, filename: [:0]const u8) !VulkanImage {
+fn createTextureImage(vc: *const VulkanContext, filename: [:0]const u8, pool: vk.CommandPool) !VulkanImage {
     const texture = try stbi.load(filename, .rgb_alpha);
     defer texture.free();
-    {
-        const staging_buffer = try vc.vkd.createBuffer(vc.dev, &.{
-            .flags = .{},
-            .size = texture.num_bytes(),
-            .usage = .{ .transfer_src_bit = true },
-            .sharing_mode = .exclusive,
-            .queue_family_index_count = 0,
-            .p_queue_family_indices = undefined,
-        }, null);
-        defer vc.vkd.destroyBuffer(vc.dev, staging_buffer, null);
-        const mem_reqs = vc.vkd.getBufferMemoryRequirements(vc.dev, staging_buffer);
-        const staging_memory = try vc.allocate(mem_reqs, .{ .host_visible_bit = true, .host_coherent_bit = true });
-        defer vc.vkd.freeMemory(vc.dev, staging_memory, null);
-        try vc.vkd.bindBufferMemory(vc.dev, staging_buffer, staging_memory, 0);
 
-        const data = try vc.vkd.mapMemory(vc.dev, staging_memory, 0, vk.WHOLE_SIZE, .{});
-        defer vc.vkd.unmapMemory(vc.dev, staging_memory);
+    // Create a staging buffer
+    const staging_buffer = try vc.vkd.createBuffer(vc.dev, &.{
+        .flags = .{},
+        .size = texture.num_bytes(),
+        .usage = .{ .transfer_src_bit = true },
+        .sharing_mode = .exclusive,
+        .queue_family_index_count = 0,
+        .p_queue_family_indices = undefined,
+    }, null);
+    defer vc.vkd.destroyBuffer(vc.dev, staging_buffer, null);
+    const staging_mem_reqs = vc.vkd.getBufferMemoryRequirements(vc.dev, staging_buffer);
+    const staging_memory = try vc.allocate(staging_mem_reqs, .{ .host_visible_bit = true, .host_coherent_bit = true });
+    defer vc.vkd.freeMemory(vc.dev, staging_memory, null);
+    try vc.vkd.bindBufferMemory(vc.dev, staging_buffer, staging_memory, 0);
 
-        const image_data_dst = @ptrCast([*]f32, @alignCast(@alignOf(f32), data))[0..texture.pixels.len];
-        std.mem.copy(f32, image_data_dst, texture.pixels);
-    }
+    const data = try vc.vkd.mapMemory(vc.dev, staging_memory, 0, vk.WHOLE_SIZE, .{});
+    defer vc.vkd.unmapMemory(vc.dev, staging_memory);
 
+    const image_data_dst = @ptrCast([*]f32, @alignCast(@alignOf(f32), data))[0..texture.pixels.len];
+    std.mem.copy(f32, image_data_dst, texture.pixels);
+
+    // Create an image
     const image_extent = vk.Extent3D{ // has to be separate, triggers segmentation fault otherwise
         .width = texture.width,
         .height = texture.height,
@@ -243,6 +244,11 @@ fn createTextureImage(vc: *const VulkanContext, filename: [:0]const u8) !VulkanI
     const memory = try vc.allocate(mem_reqs, .{ .device_local_bit = true });
     errdefer vc.vkd.freeMemory(vc.dev, memory, null);
     try vc.vkd.bindImageMemory(vc.dev, texture_image, memory, 0);
+
+    // Copy buffer data to image
+    try transitionImageLayout(vc, pool, texture_image, .r8g8b8a8_srgb, .@"undefined", .transfer_dst_optimal);
+    try copyBufferToImage(vc, pool, staging_buffer, texture_image, texture.width, texture.height);
+    try transitionImageLayout(vc, pool, texture_image, .r8g8b8a8_srgb, .transfer_dst_optimal, .shader_read_only_optimal);
 
     return VulkanImage{
         .image = texture_image,
@@ -530,6 +536,108 @@ fn copyBuffer(vc: *const VulkanContext, pool: vk.CommandPool, dst: vk.Buffer, sr
         .size = size,
     };
     vc.vkd.cmdCopyBuffer(cmdbuf.buf, src, dst, 1, @ptrCast([*]const vk.BufferCopy, &region));
+
+    try cmdbuf.submit_and_free();
+}
+
+fn transitionImageLayout(vc: *const VulkanContext, pool: vk.CommandPool, image: vk.Image, format: vk.Format, old: vk.ImageLayout, new: vk.ImageLayout) !void {
+    _ = format; // ignoring for now
+    const cmdbuf = try SingleTimeCommandBuffer.create_and_begin(vc, pool);
+
+    const subresource_range = vk.ImageSubresourceRange{
+        .aspect_mask = .{ .color_bit = true },
+        .base_mip_level = 0,
+        .level_count = 1,
+        .base_array_layer = 0,
+        .layer_count = 1,
+    };
+    var src_access_mask: vk.AccessFlags = undefined;
+    var dst_access_mask: vk.AccessFlags = undefined;
+    var src_stage_mask: vk.PipelineStageFlags = undefined;
+    var dst_stage_mask: vk.PipelineStageFlags = undefined;
+    if (old == .@"undefined" and new == .transfer_dst_optimal) {
+        src_access_mask = .{};
+        dst_access_mask = .{ .transfer_write_bit = true };
+        src_stage_mask = .{ .top_of_pipe_bit = true };
+        dst_stage_mask = .{ .transfer_bit = true };
+    } else if (old == .transfer_dst_optimal and new == .shader_read_only_optimal) {
+        src_access_mask = .{ .transfer_write_bit = true };
+        dst_access_mask = .{ .shader_read_bit = true };
+        src_stage_mask = .{ .transfer_bit = true };
+        dst_stage_mask = .{ .fragment_shader_bit = true };
+    } else {
+        unreachable;
+    }
+
+    const image_barrier = vk.ImageMemoryBarrier{
+        .src_access_mask = src_access_mask,
+        .dst_access_mask = dst_access_mask,
+        .old_layout = old,
+        .new_layout = new,
+        .src_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+        .dst_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresource_range = subresource_range,
+    };
+
+    // Hack:
+    var null_mem_barrier: ?*vk.MemoryBarrier = undefined;
+    var null_buf_barrier: ?*vk.BufferMemoryBarrier = undefined;
+
+    vc.vkd.cmdPipelineBarrier(
+        cmdbuf.buf,
+        src_stage_mask,
+        dst_stage_mask,
+        .{},
+        0,
+        @ptrCast([*]const vk.MemoryBarrier, null_mem_barrier),
+        0,
+        @ptrCast([*]const vk.BufferMemoryBarrier, null_buf_barrier),
+        1,
+        @ptrCast([*]const vk.ImageMemoryBarrier, &image_barrier),
+    );
+
+    try cmdbuf.submit_and_free();
+}
+
+fn copyBufferToImage(vc: *const VulkanContext, pool: vk.CommandPool, buffer: vk.Buffer, image: vk.Image, width: u32, height: u32) !void {
+    const cmdbuf = try SingleTimeCommandBuffer.create_and_begin(vc, pool);
+
+    const region = x: {
+        const subresource = vk.ImageSubresourceLayers{
+            .aspect_mask = .{ .color_bit = true },
+            .mip_level = 0,
+            .base_array_layer = 0,
+            .layer_count = 1,
+        };
+        const offset = vk.Offset3D{
+            .x = 0,
+            .y = 0,
+            .z = 0,
+        };
+        const extent = vk.Extent3D{
+            .width = width,
+            .height = height,
+            .depth = 1,
+        };
+        break :x vk.BufferImageCopy{
+            .buffer_offset = 0,
+            .buffer_row_length = 0,
+            .buffer_image_height = 0,
+            .image_subresource = subresource,
+            .image_offset = offset,
+            .image_extent = extent,
+        };
+    };
+
+    vc.vkd.cmdCopyBufferToImage(
+        cmdbuf.buf,
+        buffer,
+        image,
+        .transfer_dst_optimal,
+        1,
+        @ptrCast([*]const vk.BufferImageCopy, &region),
+    );
 
     try cmdbuf.submit_and_free();
 }

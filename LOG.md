@@ -4,7 +4,7 @@
         + Render a solid color quad instead of the triangle
         - Draw a textured quad
             + Load an image
-            - Load pixels into a vulkan image
+            + Load pixels into a vulkan image
 
 # DONE
 - Configure debug logger

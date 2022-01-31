@@ -209,6 +209,8 @@ const DeviceDispatch = vk.DeviceWrapper(.{
     .cmdSetScissor = true,
     .cmdBindVertexBuffers = true,
     .cmdCopyBuffer = true,
+    .cmdPipelineBarrier = true,
+    .cmdCopyBufferToImage = true,
 });
 
 const DeviceCandidate = struct {
