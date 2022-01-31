@@ -90,6 +90,20 @@ pub fn main() !void {
         descriptor_set_layout,
     };
 
+    const descriptor_pool_sizes = [_]vk.DescriptorPoolSize{
+        .{
+            .@"type" = .combined_image_sampler,
+            .descriptor_count = 1,
+        },
+    };
+    const descriptor_pool = try vc.vkd.createDescriptorPool(vc.dev, &.{
+        .flags = .{},
+        .max_sets = 1,
+        .pool_size_count = descriptor_pool_sizes.len,
+        .p_pool_sizes = &descriptor_pool_sizes,
+    }, null);
+    defer vc.vkd.destroyDescriptorPool(vc.dev, descriptor_pool, null);
+
     const pipeline_layout = try vc.vkd.createPipelineLayout(vc.dev, &.{
         .flags = .{},
         .set_layout_count = set_layouts.len,
