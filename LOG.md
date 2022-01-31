@@ -5,6 +5,7 @@
         - Draw a textured quad
             + Load an image
             + Load pixels into a vulkan image
+            - Create the necessary descriptors
 
 # DONE
 - Configure debug logger

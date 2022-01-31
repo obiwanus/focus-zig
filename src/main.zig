@@ -580,19 +580,15 @@ fn transitionImageLayout(vc: *const VulkanContext, pool: vk.CommandPool, image: 
         .subresource_range = subresource_range,
     };
 
-    // Hack:
-    var null_mem_barrier: ?*vk.MemoryBarrier = undefined;
-    var null_buf_barrier: ?*vk.BufferMemoryBarrier = undefined;
-
     vc.vkd.cmdPipelineBarrier(
         cmdbuf.buf,
         src_stage_mask,
         dst_stage_mask,
         .{},
         0,
-        @ptrCast([*]const vk.MemoryBarrier, null_mem_barrier),
+        undefined,
         0,
-        @ptrCast([*]const vk.BufferMemoryBarrier, null_buf_barrier),
+        undefined,
         1,
         @ptrCast([*]const vk.ImageMemoryBarrier, &image_barrier),
     );
