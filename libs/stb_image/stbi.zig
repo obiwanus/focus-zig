@@ -10,13 +10,22 @@ pub const ReqComp = enum(c_int) {
 };
 
 pub const Image = struct {
-    width: i32,
-    height: i32,
-    channels: i32,
+    width: u32,
+    height: u32,
+    channels: u32,
     pixels: []f32,
+
+    pub fn free(self: Image) void {
+        stbi_image_free(self.pixels.ptr);
+    }
+
+    pub fn num_bytes(self: Image) usize {
+        return self.pixels.len * @sizeOf(@TypeOf(self.pixels[0]));
+    }
 };
 
 extern fn stbi_loadf(filename: [*c]const u8, x: [*c]c_int, y: [*c]c_int, comp: [*c]c_int, req_comp: ReqComp) [*c]f32;
+extern fn stbi_image_free(pixels: ?*anyopaque) void;
 
 pub fn load(filename: [:0]const u8, req_comp: ReqComp) !Image {
     var x: c_int = undefined;
@@ -37,9 +46,9 @@ pub fn load(filename: [:0]const u8, req_comp: ReqComp) !Image {
     assert(size > 0);
 
     return Image{
-        .width = x,
-        .height = y,
-        .channels = channels,
+        .width = @intCast(u32, x),
+        .height = @intCast(u32, y),
+        .channels = @intCast(u32, channels),
         .pixels = pixels.?[0..size],
     };
 }
