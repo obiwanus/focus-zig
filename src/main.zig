@@ -67,6 +67,8 @@ pub fn main() !void {
     // TMP image
     const texture_image = try createTextureImage(&vc, "images/texture.jpg", pool);
     defer texture_image.deinit(&vc);
+    const texture_image_view = try createTextureImageView(&vc, texture_image.image, .r8g8b8a8_srgb);
+    defer vc.vkd.destroyImageView(vc.dev, texture_image_view, null);
 
     const buffer = try vc.vkd.createBuffer(vc.dev, &.{
         .flags = .{},
@@ -254,6 +256,32 @@ fn createTextureImage(vc: *const VulkanContext, filename: [:0]const u8, pool: vk
         .image = texture_image,
         .memory = memory,
     };
+}
+
+pub fn createTextureImageView(vc: *const VulkanContext, image: vk.Image, format: vk.Format) !vk.ImageView {
+    const components = vk.ComponentMapping{
+        .r = .identity,
+        .g = .identity,
+        .b = .identity,
+        .a = .identity,
+    };
+    const subresource_range = vk.ImageSubresourceRange{
+        .aspect_mask = .{ .color_bit = true },
+        .base_mip_level = 0,
+        .level_count = 1,
+        .base_array_layer = 0,
+        .layer_count = 1,
+    };
+    const image_view = try vc.vkd.createImageView(vc.dev, &.{
+        .flags = .{},
+        .image = image,
+        .view_type = .@"2d",
+        .format = format,
+        .components = components,
+        .subresource_range = subresource_range,
+    }, null);
+
+    return image_view;
 }
 
 const Vertex = struct {
