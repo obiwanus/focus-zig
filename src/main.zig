@@ -40,24 +40,6 @@ pub fn main() !void {
     var swapchain = try Swapchain.init(&vc, allocator, extent);
     defer swapchain.deinit();
 
-    const pipeline_layout = try vc.vkd.createPipelineLayout(vc.dev, &.{
-        .flags = .{},
-        .set_layout_count = 0,
-        .p_set_layouts = undefined,
-        .push_constant_range_count = 0,
-        .p_push_constant_ranges = undefined,
-    }, null);
-    defer vc.vkd.destroyPipelineLayout(vc.dev, pipeline_layout, null);
-
-    const render_pass = try createRenderPass(&vc, swapchain.surface_format.format);
-    defer vc.vkd.destroyRenderPass(vc.dev, render_pass, null);
-
-    var pipeline = try createPipeline(&vc, pipeline_layout, render_pass);
-    defer vc.vkd.destroyPipeline(vc.dev, pipeline, null);
-
-    var framebuffers = try createFramebuffers(&vc, allocator, render_pass, swapchain);
-    defer destroyFramebuffers(&vc, allocator, framebuffers);
-
     const pool = try vc.vkd.createCommandPool(vc.dev, &.{
         .flags = .{},
         .queue_family_index = vc.graphics_queue.family,
@@ -79,7 +61,7 @@ pub fn main() !void {
         .address_mode_w = .repeat,
         .mip_lod_bias = 0,
         .anisotropy_enable = vk.FALSE,
-        .max_anisotropy = 0,
+        .max_anisotropy = 1,
         .compare_enable = vk.FALSE,
         .compare_op = .always,
         .min_lod = 0,
@@ -88,6 +70,43 @@ pub fn main() !void {
         .unnormalized_coordinates = vk.FALSE,
     }, null);
     defer vc.vkd.destroySampler(vc.dev, texture_sampler, null);
+
+    const descriptor_set_layout_bindings = [_]vk.DescriptorSetLayoutBinding{
+        .{
+            .binding = 0,
+            .descriptor_type = .combined_image_sampler,
+            .descriptor_count = 1,
+            .stage_flags = .{ .fragment_bit = true },
+            .p_immutable_samplers = null,
+        },
+    };
+    const descriptor_set_layout = try vc.vkd.createDescriptorSetLayout(vc.dev, &.{
+        .flags = .{},
+        .binding_count = descriptor_set_layout_bindings.len,
+        .p_bindings = &descriptor_set_layout_bindings,
+    }, null);
+    defer vc.vkd.destroyDescriptorSetLayout(vc.dev, descriptor_set_layout, null);
+    const set_layouts = [_]vk.DescriptorSetLayout{
+        descriptor_set_layout,
+    };
+
+    const pipeline_layout = try vc.vkd.createPipelineLayout(vc.dev, &.{
+        .flags = .{},
+        .set_layout_count = set_layouts.len,
+        .p_set_layouts = &set_layouts,
+        .push_constant_range_count = 0,
+        .p_push_constant_ranges = undefined,
+    }, null);
+    defer vc.vkd.destroyPipelineLayout(vc.dev, pipeline_layout, null);
+
+    const render_pass = try createRenderPass(&vc, swapchain.surface_format.format);
+    defer vc.vkd.destroyRenderPass(vc.dev, render_pass, null);
+
+    var pipeline = try createPipeline(&vc, pipeline_layout, render_pass);
+    defer vc.vkd.destroyPipeline(vc.dev, pipeline, null);
+
+    var framebuffers = try createFramebuffers(&vc, allocator, render_pass, swapchain);
+    defer destroyFramebuffers(&vc, allocator, framebuffers);
 
     const buffer = try vc.vkd.createBuffer(vc.dev, &.{
         .flags = .{},
@@ -589,7 +608,6 @@ fn copyBuffer(vc: *const VulkanContext, pool: vk.CommandPool, dst: vk.Buffer, sr
 
 fn transitionImageLayout(vc: *const VulkanContext, pool: vk.CommandPool, image: vk.Image, format: vk.Format, old: vk.ImageLayout, new: vk.ImageLayout) !void {
     _ = format; // ignoring for now
-    const cmdbuf = try SingleTimeCommandBuffer.create_and_begin(vc, pool);
 
     const subresource_range = vk.ImageSubresourceRange{
         .aspect_mask = .{ .color_bit = true },
@@ -626,6 +644,8 @@ fn transitionImageLayout(vc: *const VulkanContext, pool: vk.CommandPool, image: 
         .image = image,
         .subresource_range = subresource_range,
     };
+
+    const cmdbuf = try SingleTimeCommandBuffer.create_and_begin(vc, pool);
 
     vc.vkd.cmdPipelineBarrier(
         cmdbuf.buf,

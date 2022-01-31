@@ -213,6 +213,8 @@ const DeviceDispatch = vk.DeviceWrapper(.{
     .cmdCopyBufferToImage = true,
     .createSampler = true,
     .destroySampler = true,
+    .createDescriptorSetLayout = true,
+    .destroyDescriptorSetLayout = true,
 });
 
 const DeviceCandidate = struct {
