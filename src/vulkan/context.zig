@@ -217,6 +217,9 @@ const DeviceDispatch = vk.DeviceWrapper(.{
     .destroyDescriptorSetLayout = true,
     .createDescriptorPool = true,
     .destroyDescriptorPool = true,
+    .allocateDescriptorSets = true,
+    .updateDescriptorSets = true,
+    .cmdBindDescriptorSets = true,
 });
 
 const DeviceCandidate = struct {

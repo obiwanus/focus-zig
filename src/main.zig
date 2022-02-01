@@ -49,7 +49,7 @@ pub fn main() !void {
     // TMP image
     const texture_image = try createTextureImage(&vc, "images/texture.jpg", pool);
     defer texture_image.deinit(&vc);
-    const texture_image_view = try createTextureImageView(&vc, texture_image.image, .r8g8b8a8_srgb);
+    const texture_image_view = try createTextureImageView(&vc, texture_image.image, .r32g32b32a32_sfloat);
     defer vc.vkd.destroyImageView(vc.dev, texture_image_view, null);
     const texture_sampler = try vc.vkd.createSampler(vc.dev, &.{
         .flags = .{},
@@ -86,9 +86,6 @@ pub fn main() !void {
         .p_bindings = &descriptor_set_layout_bindings,
     }, null);
     defer vc.vkd.destroyDescriptorSetLayout(vc.dev, descriptor_set_layout, null);
-    const set_layouts = [_]vk.DescriptorSetLayout{
-        descriptor_set_layout,
-    };
 
     const descriptor_pool_sizes = [_]vk.DescriptorPoolSize{
         .{
@@ -96,13 +93,47 @@ pub fn main() !void {
             .descriptor_count = 1,
         },
     };
+    // NOTE: we'll create only one set per layout
+    const set_layouts = [_]vk.DescriptorSetLayout{
+        descriptor_set_layout,
+    };
     const descriptor_pool = try vc.vkd.createDescriptorPool(vc.dev, &.{
         .flags = .{},
-        .max_sets = 1,
+        .max_sets = set_layouts.len,
         .pool_size_count = descriptor_pool_sizes.len,
         .p_pool_sizes = &descriptor_pool_sizes,
     }, null);
     defer vc.vkd.destroyDescriptorPool(vc.dev, descriptor_pool, null);
+
+    var descriptor_sets: [set_layouts.len]vk.DescriptorSet = undefined;
+    try vc.vkd.allocateDescriptorSets(vc.dev, &.{
+        .descriptor_pool = descriptor_pool,
+        .descriptor_set_count = set_layouts.len,
+        .p_set_layouts = &set_layouts,
+    }, &descriptor_sets);
+
+    std.debug.assert(descriptor_sets.len == 1); // only one for now
+    const descriptor_set = descriptor_sets[0];
+    const image_info = [_]vk.DescriptorImageInfo{
+        .{
+            .sampler = texture_sampler,
+            .image_view = texture_image_view,
+            .image_layout = .shader_read_only_optimal,
+        },
+    };
+    const descriptor_writes = [_]vk.WriteDescriptorSet{
+        .{
+            .dst_set = descriptor_set,
+            .dst_binding = 0,
+            .dst_array_element = 0,
+            .descriptor_count = 1,
+            .descriptor_type = .combined_image_sampler,
+            .p_image_info = &image_info,
+            .p_buffer_info = undefined,
+            .p_texel_buffer_view = undefined,
+        },
+    };
+    vc.vkd.updateDescriptorSets(vc.dev, descriptor_writes.len, &descriptor_writes, 0, undefined);
 
     const pipeline_layout = try vc.vkd.createPipelineLayout(vc.dev, &.{
         .flags = .{},
@@ -147,6 +178,8 @@ pub fn main() !void {
         render_pass,
         pipeline,
         framebuffers,
+        descriptor_sets[0..1],
+        pipeline_layout,
     );
     defer destroyCommandBuffers(&vc, pool, allocator, cmdbufs);
 
@@ -177,6 +210,8 @@ pub fn main() !void {
                 render_pass,
                 pipeline,
                 framebuffers,
+                descriptor_sets[0..1],
+                pipeline_layout,
             );
         }
 
@@ -280,7 +315,7 @@ fn createTextureImage(vc: *const VulkanContext, filename: [:0]const u8, pool: vk
     const texture_image = try vc.vkd.createImage(vc.dev, &.{
         .flags = .{},
         .image_type = .@"2d",
-        .format = .r8g8b8a8_srgb,
+        .format = .r32g32b32a32_sfloat,
         .extent = image_extent,
         .mip_levels = 1,
         .array_layers = 1,
@@ -300,9 +335,9 @@ fn createTextureImage(vc: *const VulkanContext, filename: [:0]const u8, pool: vk
     try vc.vkd.bindImageMemory(vc.dev, texture_image, memory, 0);
 
     // Copy buffer data to image
-    try transitionImageLayout(vc, pool, texture_image, .r8g8b8a8_srgb, .@"undefined", .transfer_dst_optimal);
+    try transitionImageLayout(vc, pool, texture_image, .r32g32b32a32_sfloat, .@"undefined", .transfer_dst_optimal);
     try copyBufferToImage(vc, pool, staging_buffer, texture_image, texture.width, texture.height);
-    try transitionImageLayout(vc, pool, texture_image, .r8g8b8a8_srgb, .transfer_dst_optimal, .shader_read_only_optimal);
+    try transitionImageLayout(vc, pool, texture_image, .r32g32b32a32_sfloat, .transfer_dst_optimal, .shader_read_only_optimal);
 
     return VulkanImage{
         .image = texture_image,
@@ -728,6 +763,8 @@ fn createCommandBuffers(
     render_pass: vk.RenderPass,
     pipeline: vk.Pipeline,
     framebuffers: []vk.Framebuffer,
+    descriptor_sets: []vk.DescriptorSet,
+    pipeline_layout: vk.PipelineLayout,
 ) ![]vk.CommandBuffer {
     const cmdbufs = try allocator.alloc(vk.CommandBuffer, framebuffers.len);
     errdefer allocator.free(cmdbufs);
@@ -758,7 +795,6 @@ fn createCommandBuffers(
     };
 
     for (cmdbufs) |cmdbuf, i| {
-        _ = i;
         try vc.vkd.beginCommandBuffer(cmdbuf, &.{
             .flags = .{},
             .p_inheritance_info = null,
@@ -784,6 +820,7 @@ fn createCommandBuffers(
         vc.vkd.cmdBindPipeline(cmdbuf, .graphics, pipeline);
         const offset = [_]vk.DeviceSize{0};
         vc.vkd.cmdBindVertexBuffers(cmdbuf, 0, 1, @ptrCast([*]const vk.Buffer, &buffer), &offset);
+        vc.vkd.cmdBindDescriptorSets(cmdbuf, .graphics, pipeline_layout, 0, @intCast(u32, descriptor_sets.len), descriptor_sets.ptr, 0, undefined);
         vc.vkd.cmdDraw(cmdbuf, vertices.len, 1, 0, 0);
 
         vc.vkd.cmdEndRenderPass(cmdbuf);
