@@ -49,7 +49,7 @@ pub fn main() !void {
     // TMP image
     const texture_image = try createTextureImage(&vc, "images/texture.jpg", pool);
     defer texture_image.deinit(&vc);
-    const texture_image_view = try createTextureImageView(&vc, texture_image.image, .r32g32b32a32_sfloat);
+    const texture_image_view = try createTextureImageView(&vc, texture_image.image, .r8g8b8a8_srgb);
     defer vc.vkd.destroyImageView(vc.dev, texture_image_view, null);
     const texture_sampler = try vc.vkd.createSampler(vc.dev, &.{
         .flags = .{},
@@ -303,8 +303,8 @@ fn createTextureImage(vc: *const VulkanContext, filename: [:0]const u8, pool: vk
     const data = try vc.vkd.mapMemory(vc.dev, staging_memory, 0, vk.WHOLE_SIZE, .{});
     defer vc.vkd.unmapMemory(vc.dev, staging_memory);
 
-    const image_data_dst = @ptrCast([*]f32, @alignCast(@alignOf(f32), data))[0..texture.pixels.len];
-    std.mem.copy(f32, image_data_dst, texture.pixels);
+    const image_data_dst = @ptrCast([*]u8, data)[0..texture.pixels.len];
+    std.mem.copy(u8, image_data_dst, texture.pixels);
 
     // Create an image
     const image_extent = vk.Extent3D{ // has to be separate, triggers segmentation fault otherwise
@@ -315,7 +315,7 @@ fn createTextureImage(vc: *const VulkanContext, filename: [:0]const u8, pool: vk
     const texture_image = try vc.vkd.createImage(vc.dev, &.{
         .flags = .{},
         .image_type = .@"2d",
-        .format = .r32g32b32a32_sfloat,
+        .format = .r8g8b8a8_srgb,
         .extent = image_extent,
         .mip_levels = 1,
         .array_layers = 1,
@@ -335,9 +335,9 @@ fn createTextureImage(vc: *const VulkanContext, filename: [:0]const u8, pool: vk
     try vc.vkd.bindImageMemory(vc.dev, texture_image, memory, 0);
 
     // Copy buffer data to image
-    try transitionImageLayout(vc, pool, texture_image, .r32g32b32a32_sfloat, .@"undefined", .transfer_dst_optimal);
+    try transitionImageLayout(vc, pool, texture_image, .r8g8b8a8_srgb, .@"undefined", .transfer_dst_optimal);
     try copyBufferToImage(vc, pool, staging_buffer, texture_image, texture.width, texture.height);
-    try transitionImageLayout(vc, pool, texture_image, .r32g32b32a32_sfloat, .transfer_dst_optimal, .shader_read_only_optimal);
+    try transitionImageLayout(vc, pool, texture_image, .r8g8b8a8_srgb, .transfer_dst_optimal, .shader_read_only_optimal);
 
     return VulkanImage{
         .image = texture_image,
@@ -398,12 +398,12 @@ const Vertex = struct {
 };
 
 const vertices = [_]Vertex{
-    .{ .pos = .{ -0.5, -0.5 }, .tex_coord = .{ 1, 0 } }, // 0
-    .{ .pos = .{ -0.4, -0.5 }, .tex_coord = .{ 0, 0 } }, // 1
-    .{ .pos = .{ -0.4, -0.4 }, .tex_coord = .{ 0, 1 } }, // 2
-    .{ .pos = .{ -0.5, -0.4 }, .tex_coord = .{ 1, 1 } }, // 3
-    .{ .pos = .{ -0.5, -0.5 }, .tex_coord = .{ 1, 0 } }, // 0
-    .{ .pos = .{ -0.4, -0.4 }, .tex_coord = .{ 0, 1 } }, // 2
+    .{ .pos = .{ -0.5, -0.5 }, .tex_coord = .{ 0, 0 } }, // 0
+    .{ .pos = .{ -0.4, -0.5 }, .tex_coord = .{ 1, 0 } }, // 1
+    .{ .pos = .{ -0.4, -0.4 }, .tex_coord = .{ 1, 1 } }, // 2
+    .{ .pos = .{ -0.5, -0.4 }, .tex_coord = .{ 0, 1 } }, // 3
+    .{ .pos = .{ -0.5, -0.5 }, .tex_coord = .{ 0, 0 } }, // 0
+    .{ .pos = .{ -0.4, -0.4 }, .tex_coord = .{ 1, 1 } }, // 2
 };
 
 fn createRenderPass(vc: *const VulkanContext, attachment_format: vk.Format) !vk.RenderPass {

@@ -13,7 +13,7 @@ pub const Image = struct {
     width: u32,
     height: u32,
     channels: u32,
-    pixels: []f32,
+    pixels: []u8,
 
     pub fn free(self: Image) void {
         stbi_image_free(self.pixels.ptr);
@@ -24,7 +24,7 @@ pub const Image = struct {
     }
 };
 
-extern fn stbi_loadf(filename: [*c]const u8, x: [*c]c_int, y: [*c]c_int, comp: [*c]c_int, req_comp: ReqComp) [*c]f32;
+extern fn stbi_load(filename: [*c]const u8, x: [*c]c_int, y: [*c]c_int, comp: [*c]c_int, req_comp: ReqComp) [*c]u8;
 extern fn stbi_image_free(pixels: ?*anyopaque) void;
 
 pub fn load(filename: [:0]const u8, req_comp: ReqComp) !Image {
@@ -32,7 +32,7 @@ pub fn load(filename: [:0]const u8, req_comp: ReqComp) !Image {
     var y: c_int = undefined;
     var comp: c_int = undefined;
 
-    const pixels: ?[*]f32 = stbi_loadf(filename, &x, &y, &comp, req_comp);
+    const pixels: ?[*]u8 = stbi_load(filename, &x, &y, &comp, req_comp);
     if (pixels == null) {
         return error.ImageLoadError;
     }
