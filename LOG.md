@@ -1,6 +1,7 @@
 # TODO
 - Render a word
     - Render a letter
+        - Rasterise some font into an atlas
 
 # DONE
 + Draw a textured quad

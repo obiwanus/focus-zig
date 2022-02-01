@@ -80,7 +80,24 @@ pub const FontInfo = extern struct {
 };
 pub const Rect = opaque {};
 extern fn stbtt_PackBegin(spc: [*c]PackContext, pixels: [*c]u8, width: c_int, height: c_int, stride_in_bytes: c_int, padding: c_int, alloc_context: ?*anyopaque) c_int;
-pub const packBegin = stbtt_PackBegin;
+
+pub fn packBegin(pixels: []u8, width: usize, height: usize, stride_in_bytes: usize, padding: usize, alloc_context: ?*anyopaque) !PackContext {
+    var pack_context: PackContext = undefined;
+    const result = stbtt_PackBegin(
+        &pack_context,
+        pixels.ptr,
+        @intCast(c_int, width),
+        @intCast(c_int, height),
+        @intCast(c_int, stride_in_bytes),
+        @intCast(c_int, padding),
+        alloc_context,
+    );
+    if (result == 0) {
+        return error.PackBeginError;
+    }
+    return pack_context;
+}
+
 extern fn stbtt_PackEnd(spc: [*c]PackContext) void;
 pub const packEnd = stbtt_PackEnd;
 extern fn stbtt_PackFontRange(spc: [*c]PackContext, fontdata: [*c]const u8, font_index: c_int, font_size: f32, first_unicode_char_in_range: c_int, num_chars_in_range: c_int, chardata_for_range: [*c]PackedChar) c_int;

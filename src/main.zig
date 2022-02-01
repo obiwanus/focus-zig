@@ -5,6 +5,8 @@ const vk = @import("vulkan");
 const resources = @import("resources");
 const stbi = @import("stbi");
 
+const font = @import("font.zig");
+
 const Allocator = std.mem.Allocator;
 const VulkanContext = @import("vulkan/context.zig").VulkanContext;
 const Swapchain = @import("vulkan/swapchain.zig").Swapchain;
@@ -45,6 +47,15 @@ pub fn main() !void {
         .queue_family_index = vc.graphics_queue.family,
     }, null);
     defer vc.vkd.destroyCommandPool(vc.dev, pool, null);
+
+    // TMP pack fonts into a texture
+    font.pack_fonts_into_texture(allocator, "fonts/consfola.ttf", 2048, 2048) catch |err| {
+        switch (err) {
+            error.FileNotFound => std.debug.print("Font file not found", .{}),
+            error.StreamTooLong => std.debug.print("Font file is too large (> 10Mb)", .{}),
+            else => unreachable,
+        }
+    };
 
     // TMP image
     const texture_image = try createTextureImage(&vc, "images/texture.jpg", pool);
@@ -398,12 +409,12 @@ const Vertex = struct {
 };
 
 const vertices = [_]Vertex{
-    .{ .pos = .{ -0.5, -0.5 }, .tex_coord = .{ 0, 0 } }, // 0
-    .{ .pos = .{ -0.4, -0.5 }, .tex_coord = .{ 1, 0 } }, // 1
-    .{ .pos = .{ -0.4, -0.4 }, .tex_coord = .{ 1, 1 } }, // 2
-    .{ .pos = .{ -0.5, -0.4 }, .tex_coord = .{ 0, 1 } }, // 3
-    .{ .pos = .{ -0.5, -0.5 }, .tex_coord = .{ 0, 0 } }, // 0
-    .{ .pos = .{ -0.4, -0.4 }, .tex_coord = .{ 1, 1 } }, // 2
+    .{ .pos = .{ -0.8, -0.8 }, .tex_coord = .{ 0, 0 } }, // 0
+    .{ .pos = .{ 0.8, -0.8 }, .tex_coord = .{ 1, 0 } }, // 1
+    .{ .pos = .{ 0.8, 0.8 }, .tex_coord = .{ 1, 1 } }, // 2
+    .{ .pos = .{ -0.8, 0.8 }, .tex_coord = .{ 0, 1 } }, // 3
+    .{ .pos = .{ -0.8, -0.8 }, .tex_coord = .{ 0, 0 } }, // 0
+    .{ .pos = .{ 0.8, 0.8 }, .tex_coord = .{ 1, 1 } }, // 2
 };
 
 fn createRenderPass(vc: *const VulkanContext, attachment_format: vk.Format) !vk.RenderPass {
