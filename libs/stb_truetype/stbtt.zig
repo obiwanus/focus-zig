@@ -1,3 +1,7 @@
+const std = @import("std");
+
+const Allocator = std.mem.Allocator;
+
 pub const Buf = extern struct {
     data: [*c]u8,
     cursor: c_int,
@@ -101,7 +105,23 @@ pub fn packBegin(pixels: []u8, width: usize, height: usize, stride_in_bytes: usi
 extern fn stbtt_PackEnd(spc: [*c]PackContext) void;
 pub const packEnd = stbtt_PackEnd;
 extern fn stbtt_PackFontRange(spc: [*c]PackContext, fontdata: [*c]const u8, font_index: c_int, font_size: f32, first_unicode_char_in_range: c_int, num_chars_in_range: c_int, chardata_for_range: [*c]PackedChar) c_int;
-pub const packFontRange = stbtt_PackFontRange;
+
+pub fn packFontRange(spc: [*c]PackContext, font_data: []const u8, font_size: f32, first_char: usize, num_chars: usize, allocator: Allocator) ![]PackedChar {
+    var packed_chars = try allocator.alloc(PackedChar, num_chars);
+    const result = stbtt_PackFontRange(
+        spc,
+        font_data.ptr,
+        0,
+        font_size,
+        @intCast(c_int, first_char),
+        @intCast(c_int, num_chars),
+        packed_chars.ptr,
+    );
+    if (result == 0) {
+        return error.PackFontRangeError;
+    }
+    return packed_chars;
+}
 
 pub const PackRange = extern struct {
     font_size: f32,

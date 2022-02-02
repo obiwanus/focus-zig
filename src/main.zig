@@ -49,17 +49,14 @@ pub fn main() !void {
     defer vc.vkd.destroyCommandPool(vc.dev, pool, null);
 
     // TMP pack fonts into a texture
-    font.pack_fonts_into_texture(allocator, "fonts/consfola.ttf", 2048, 2048) catch |err| {
-        switch (err) {
-            error.FileNotFound => std.debug.print("Font file not found", .{}),
-            error.StreamTooLong => std.debug.print("Font file is too large (> 10Mb)", .{}),
-            else => unreachable,
-        }
-    };
+    const ATLAS_WIDTH = 2048;
+    const ATLAS_HEIGHT = 2048;
+    const font_atlas = try font.pack_fonts_into_texture(allocator, "fonts/consola.ttf", ATLAS_WIDTH, ATLAS_HEIGHT);
+    const texture_image = try createFontTextureImage(&vc, font_atlas, ATLAS_WIDTH, ATLAS_HEIGHT, pool);
 
-    // TMP image
-    const texture_image = try createTextureImage(&vc, "images/texture.jpg", pool);
+    // const texture_image = try createTextureImage(&vc, "images/texture.jpg", pool);
     defer texture_image.deinit(&vc);
+
     const texture_image_view = try createTextureImageView(&vc, texture_image.image, .r8g8b8a8_srgb);
     defer vc.vkd.destroyImageView(vc.dev, texture_image_view, null);
     const texture_sampler = try vc.vkd.createSampler(vc.dev, &.{
@@ -230,6 +227,7 @@ pub fn main() !void {
     }
 
     try swapchain.waitForAllFences();
+    try vc.vkd.queueWaitIdle(vc.graphics_queue.handle);
 }
 
 const VulkanImage = struct {
@@ -291,6 +289,67 @@ pub const SingleTimeCommandBuffer = struct {
         try self.free();
     }
 };
+
+fn createFontTextureImage(vc: *const VulkanContext, pixels: []u8, width: u32, height: u32, pool: vk.CommandPool) !VulkanImage {
+    // Create a staging buffer
+    const staging_buffer = try vc.vkd.createBuffer(vc.dev, &.{
+        .flags = .{},
+        .size = pixels.len,
+        .usage = .{ .transfer_src_bit = true },
+        .sharing_mode = .exclusive,
+        .queue_family_index_count = 0,
+        .p_queue_family_indices = undefined,
+    }, null);
+    defer vc.vkd.destroyBuffer(vc.dev, staging_buffer, null);
+    const staging_mem_reqs = vc.vkd.getBufferMemoryRequirements(vc.dev, staging_buffer);
+    const staging_memory = try vc.allocate(staging_mem_reqs, .{ .host_visible_bit = true, .host_coherent_bit = true });
+    defer vc.vkd.freeMemory(vc.dev, staging_memory, null);
+    try vc.vkd.bindBufferMemory(vc.dev, staging_buffer, staging_memory, 0);
+
+    const data = try vc.vkd.mapMemory(vc.dev, staging_memory, 0, vk.WHOLE_SIZE, .{});
+    defer vc.vkd.unmapMemory(vc.dev, staging_memory);
+
+    const image_data_dst = @ptrCast([*]u8, data)[0..pixels.len];
+    std.mem.copy(u8, image_data_dst, pixels);
+
+    // Create an image
+    const image_extent = vk.Extent3D{ // has to be separate, triggers segmentation fault otherwise
+        .width = @intCast(u32, width),
+        .height = @intCast(u32, height),
+        .depth = 1,
+    };
+    const texture_image = try vc.vkd.createImage(vc.dev, &.{
+        .flags = .{},
+        .image_type = .@"2d",
+        .format = .r8g8b8a8_srgb,
+        .extent = image_extent,
+        .mip_levels = 1,
+        .array_layers = 1,
+        .samples = .{ .@"1_bit" = true },
+        .tiling = .optimal,
+        .usage = .{ .transfer_dst_bit = true, .sampled_bit = true },
+        .sharing_mode = .exclusive,
+        .queue_family_index_count = 0,
+        .p_queue_family_indices = undefined,
+        .initial_layout = .@"undefined",
+    }, null);
+    errdefer vc.vkd.destroyImage(vc.dev, texture_image, null);
+
+    const mem_reqs = vc.vkd.getImageMemoryRequirements(vc.dev, texture_image);
+    const memory = try vc.allocate(mem_reqs, .{ .device_local_bit = true });
+    errdefer vc.vkd.freeMemory(vc.dev, memory, null);
+    try vc.vkd.bindImageMemory(vc.dev, texture_image, memory, 0);
+
+    // Copy buffer data to image
+    try transitionImageLayout(vc, pool, texture_image, .r8g8b8a8_srgb, .@"undefined", .transfer_dst_optimal);
+    try copyBufferToImage(vc, pool, staging_buffer, texture_image, width, height);
+    try transitionImageLayout(vc, pool, texture_image, .r8g8b8a8_srgb, .transfer_dst_optimal, .shader_read_only_optimal);
+
+    return VulkanImage{
+        .image = texture_image,
+        .memory = memory,
+    };
+}
 
 fn createTextureImage(vc: *const VulkanContext, filename: [:0]const u8, pool: vk.CommandPool) !VulkanImage {
     const texture = try stbi.load(filename, .rgb_alpha);

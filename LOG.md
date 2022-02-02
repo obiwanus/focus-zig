@@ -1,9 +1,9 @@
 # TODO
 - Render a word
-    - Render a letter
-        - Rasterise some font into an atlas
 
 # DONE
++ Render a letter
+    + Rasterise some font into an atlas
 + Draw a textured quad
     + Load an image
     + Load pixels into a vulkan image
