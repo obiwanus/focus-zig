@@ -49,9 +49,9 @@ pub fn main() !void {
     defer vc.vkd.destroyCommandPool(vc.dev, pool, null);
 
     // TMP pack fonts into a texture
-    const ATLAS_WIDTH = 2048;
+    const ATLAS_WIDTH = 2048; // NOTE: depending on oversampling may need to be adjusted
     const ATLAS_HEIGHT = 2048;
-    const font_atlas = try font.pack_fonts_into_texture(allocator, "fonts/consola.ttf", ATLAS_WIDTH, ATLAS_HEIGHT);
+    const font_atlas = try font.packFontsIntoTexture(allocator, "fonts/consola.ttf", ATLAS_WIDTH, ATLAS_HEIGHT);
     const texture_image = try createFontTextureImage(&vc, font_atlas, ATLAS_WIDTH, ATLAS_HEIGHT, pool);
 
     // const texture_image = try createTextureImage(&vc, "images/texture.jpg", pool);

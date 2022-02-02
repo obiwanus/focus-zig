@@ -1,5 +1,6 @@
 # TODO
 - Render a word
+    - Figure out how to position the vertices and where to get the texture coordinates
 
 # DONE
 + Render a letter
