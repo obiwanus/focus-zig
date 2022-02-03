@@ -51,29 +51,61 @@ pub fn main() !void {
     // TMP pack fonts into a texture
     const ATLAS_WIDTH = 2048; // NOTE: depending on oversampling may need to be adjusted
     const ATLAS_HEIGHT = 2048;
-    const font_atlas = try font.packFontsIntoTexture(allocator, "fonts/consola.ttf", ATLAS_WIDTH, ATLAS_HEIGHT);
-    const texture_image = try createFontTextureImage(&vc, font_atlas, ATLAS_WIDTH, ATLAS_HEIGHT, pool);
+    const packed_font = try font.getPackedFont(allocator, "fonts/consola.ttf", ATLAS_WIDTH, ATLAS_HEIGHT);
+    const texture_image = try createFontTextureImage(&vc, packed_font.pixels, ATLAS_WIDTH, ATLAS_HEIGHT, pool);
+    defer texture_image.deinit(&vc);
 
-    const vertices1 = x: {
-        const word = "Hello, world!";
-        for (word) |char| {
-            std.debug.print("{c}", .{char});
+    const vertices = x: {
+        const word = "h";
+        var quads: [word.len]Quad = undefined;
+        var start = Vec2{ .x = 100, .y = 300 };
+        const iw = 1.0 / @intToFloat(f32, ATLAS_WIDTH);
+        const ih = 1.0 / @intToFloat(f32, ATLAS_HEIGHT);
+        for (word) |char, i| {
+            const char_index = char - ' '; // NOTE: this is where we started packing
+            const ch = packed_font.chars[char_index];
+            const quad = Quad{
+                .p0 = Vec2{ .x = start.x + ch.xoff, .y = start.y + ch.yoff },
+                .p1 = Vec2{ .x = start.x + ch.xoff2, .y = start.y + ch.yoff2 },
+                .st0 = Vec2{ .x = @intToFloat(f32, ch.x0) * iw, .y = @intToFloat(f32, ch.y0) * ih },
+                .st1 = Vec2{ .x = @intToFloat(f32, ch.x1) * iw, .y = @intToFloat(f32, ch.y1) * ih },
+            };
+            quads[i] = quad;
+            start.x += ch.xadvance;
         }
-        break :x null;
+        var vertices = try allocator.alloc(Vertex, word.len * 6);
+        for (quads) |quad, i| {
+            const v0 = Vertex{ .pos = .{ quad.p0.x, quad.p0.y }, .tex_coord = .{ quad.st0.x, quad.st0.y } };
+            const v1 = Vertex{ .pos = .{ quad.p1.x, quad.p0.y }, .tex_coord = .{ quad.st1.x, quad.st0.y } };
+            const v2 = Vertex{ .pos = .{ quad.p1.x, quad.p1.y }, .tex_coord = .{ quad.st1.x, quad.st1.y } };
+            const v3 = Vertex{ .pos = .{ quad.p0.x, quad.p1.y }, .tex_coord = .{ quad.st0.x, quad.st1.y } };
+            vertices[i + 0] = v0;
+            vertices[i + 1] = v1;
+            vertices[i + 2] = v2;
+            vertices[i + 3] = v3;
+            vertices[i + 4] = v0;
+            vertices[i + 5] = v2;
+        }
+        // Normalise vertices
+        for (vertices) |*vert| {
+            vert.pos[0] = vert.pos[0] / @intToFloat(f32, extent.width);
+            vert.pos[1] = vert.pos[1] / @intToFloat(f32, extent.height);
+        }
+
+        break :x vertices;
     };
-    _ = vertices1;
-    const vertex_array = [_]Vertex{
-        .{ .pos = .{ -0.8, -0.8 }, .tex_coord = .{ 0, 0 } }, // 0
-        .{ .pos = .{ 0.8, -0.8 }, .tex_coord = .{ 1, 0 } }, // 1
-        .{ .pos = .{ 0.8, 0.8 }, .tex_coord = .{ 1, 1 } }, // 2
-        .{ .pos = .{ -0.8, 0.8 }, .tex_coord = .{ 0, 1 } }, // 3
-        .{ .pos = .{ -0.8, -0.8 }, .tex_coord = .{ 0, 0 } }, // 0
-        .{ .pos = .{ 0.8, 0.8 }, .tex_coord = .{ 1, 1 } }, // 2
-    };
-    const vertices = vertex_array[0..];
+    // const vertex_array = [_]Vertex{
+    //     .{ .pos = .{ -0.8, -0.8 }, .tex_coord = .{ 0, 0 } }, // 0
+    //     .{ .pos = .{ 0.8, -0.8 }, .tex_coord = .{ 1, 0 } }, // 1
+    //     .{ .pos = .{ 0.8, 0.8 }, .tex_coord = .{ 1, 1 } }, // 2
+    //     .{ .pos = .{ -0.8, 0.8 }, .tex_coord = .{ 0, 1 } }, // 3
+    //     .{ .pos = .{ -0.8, -0.8 }, .tex_coord = .{ 0, 0 } }, // 0
+    //     .{ .pos = .{ 0.8, 0.8 }, .tex_coord = .{ 1, 1 } }, // 2
+    // };
+    // const vertices = vertex_array[0..];
 
     // const texture_image = try createTextureImage(&vc, "images/texture.jpg", pool);
-    defer texture_image.deinit(&vc);
+    // defer texture_image.deinit(&vc);
 
     const texture_image_view = try createTextureImageView(&vc, texture_image.image, .r8g8b8a8_srgb);
     defer vc.vkd.destroyImageView(vc.dev, texture_image_view, null);
@@ -487,14 +519,17 @@ const Vertex = struct {
     };
 };
 
-// const vertices = [_]Vertex{
-//     .{ .pos = .{ -0.8, -0.8 }, .tex_coord = .{ 0, 0 } }, // 0
-//     .{ .pos = .{ 0.8, -0.8 }, .tex_coord = .{ 1, 0 } }, // 1
-//     .{ .pos = .{ 0.8, 0.8 }, .tex_coord = .{ 1, 1 } }, // 2
-//     .{ .pos = .{ -0.8, 0.8 }, .tex_coord = .{ 0, 1 } }, // 3
-//     .{ .pos = .{ -0.8, -0.8 }, .tex_coord = .{ 0, 0 } }, // 0
-//     .{ .pos = .{ 0.8, 0.8 }, .tex_coord = .{ 1, 1 } }, // 2
-// };
+const Vec2 = struct {
+    x: f32 = 0,
+    y: f32 = 0,
+};
+
+const Quad = struct {
+    p0: Vec2,
+    p1: Vec2,
+    st0: Vec2,
+    st1: Vec2,
+};
 
 fn createRenderPass(vc: *const VulkanContext, attachment_format: vk.Format) !vk.RenderPass {
     const color_attachment = vk.AttachmentDescription{

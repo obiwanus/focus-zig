@@ -3,7 +3,12 @@ const stbtt = @import("stbtt");
 
 const Allocator = std.mem.Allocator;
 
-pub fn packFontsIntoTexture(allocator: Allocator, filename: []const u8, width: usize, height: usize) ![]u8 {
+pub const Font = struct {
+    pixels: []u8,
+    chars: []stbtt.PackedChar,
+};
+
+pub fn getPackedFont(allocator: Allocator, filename: []const u8, width: usize, height: usize) !Font {
     var pixels_tmp = try allocator.alloc(u8, width * height);
     var pixels = try allocator.alloc(u8, width * height * 4); // 4 channels
 
@@ -14,8 +19,7 @@ pub fn packFontsIntoTexture(allocator: Allocator, filename: []const u8, width: u
     defer stbtt.packEnd(&pack_context);
     stbtt.packSetOversampling(&pack_context, 4, 4);
 
-    const packed_chars = try stbtt.packFontRange(&pack_context, font_data, 50, 32, 32 * 3, allocator);
-    _ = packed_chars;
+    const chars = try stbtt.packFontRange(&pack_context, font_data, 70, 32, 32 * 3, allocator);
 
     for (pixels_tmp) |pixel, i| {
         pixels[i * 4] = pixel;
@@ -24,7 +28,10 @@ pub fn packFontsIntoTexture(allocator: Allocator, filename: []const u8, width: u
         pixels[i * 4 + 3] = 255;
     }
 
-    return pixels;
+    return Font{
+        .pixels = pixels,
+        .chars = chars,
+    };
 }
 
 fn readEntireFile(filename: []const u8, allocator: Allocator) ![]u8 {
