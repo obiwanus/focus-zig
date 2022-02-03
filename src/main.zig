@@ -54,6 +54,24 @@ pub fn main() !void {
     const font_atlas = try font.packFontsIntoTexture(allocator, "fonts/consola.ttf", ATLAS_WIDTH, ATLAS_HEIGHT);
     const texture_image = try createFontTextureImage(&vc, font_atlas, ATLAS_WIDTH, ATLAS_HEIGHT, pool);
 
+    const vertices1 = x: {
+        const word = "Hello, world!";
+        for (word) |char| {
+            std.debug.print("{c}", .{char});
+        }
+        break :x null;
+    };
+    _ = vertices1;
+    const vertex_array = [_]Vertex{
+        .{ .pos = .{ -0.8, -0.8 }, .tex_coord = .{ 0, 0 } }, // 0
+        .{ .pos = .{ 0.8, -0.8 }, .tex_coord = .{ 1, 0 } }, // 1
+        .{ .pos = .{ 0.8, 0.8 }, .tex_coord = .{ 1, 1 } }, // 2
+        .{ .pos = .{ -0.8, 0.8 }, .tex_coord = .{ 0, 1 } }, // 3
+        .{ .pos = .{ -0.8, -0.8 }, .tex_coord = .{ 0, 0 } }, // 0
+        .{ .pos = .{ 0.8, 0.8 }, .tex_coord = .{ 1, 1 } }, // 2
+    };
+    const vertices = vertex_array[0..];
+
     // const texture_image = try createTextureImage(&vc, "images/texture.jpg", pool);
     defer texture_image.deinit(&vc);
 
@@ -163,7 +181,7 @@ pub fn main() !void {
 
     const buffer = try vc.vkd.createBuffer(vc.dev, &.{
         .flags = .{},
-        .size = @sizeOf(@TypeOf(vertices)),
+        .size = @sizeOf(Vertex) * vertices.len,
         .usage = .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
         .sharing_mode = .exclusive,
         .queue_family_index_count = 0,
@@ -175,7 +193,7 @@ pub fn main() !void {
     defer vc.vkd.freeMemory(vc.dev, memory, null);
     try vc.vkd.bindBufferMemory(vc.dev, buffer, memory, 0);
 
-    try uploadVertices(&vc, pool, buffer);
+    try uploadVertices(&vc, vertices, pool, buffer);
 
     var cmdbufs = try createCommandBuffers(
         &vc,
@@ -188,6 +206,7 @@ pub fn main() !void {
         framebuffers,
         descriptor_sets[0..1],
         pipeline_layout,
+        vertices.len,
     );
     defer destroyCommandBuffers(&vc, pool, allocator, cmdbufs);
 
@@ -220,6 +239,7 @@ pub fn main() !void {
                 framebuffers,
                 descriptor_sets[0..1],
                 pipeline_layout,
+                vertices.len,
             );
         }
 
@@ -467,14 +487,14 @@ const Vertex = struct {
     };
 };
 
-const vertices = [_]Vertex{
-    .{ .pos = .{ -0.8, -0.8 }, .tex_coord = .{ 0, 0 } }, // 0
-    .{ .pos = .{ 0.8, -0.8 }, .tex_coord = .{ 1, 0 } }, // 1
-    .{ .pos = .{ 0.8, 0.8 }, .tex_coord = .{ 1, 1 } }, // 2
-    .{ .pos = .{ -0.8, 0.8 }, .tex_coord = .{ 0, 1 } }, // 3
-    .{ .pos = .{ -0.8, -0.8 }, .tex_coord = .{ 0, 0 } }, // 0
-    .{ .pos = .{ 0.8, 0.8 }, .tex_coord = .{ 1, 1 } }, // 2
-};
+// const vertices = [_]Vertex{
+//     .{ .pos = .{ -0.8, -0.8 }, .tex_coord = .{ 0, 0 } }, // 0
+//     .{ .pos = .{ 0.8, -0.8 }, .tex_coord = .{ 1, 0 } }, // 1
+//     .{ .pos = .{ 0.8, 0.8 }, .tex_coord = .{ 1, 1 } }, // 2
+//     .{ .pos = .{ -0.8, 0.8 }, .tex_coord = .{ 0, 1 } }, // 3
+//     .{ .pos = .{ -0.8, -0.8 }, .tex_coord = .{ 0, 0 } }, // 0
+//     .{ .pos = .{ 0.8, 0.8 }, .tex_coord = .{ 1, 1 } }, // 2
+// };
 
 fn createRenderPass(vc: *const VulkanContext, attachment_format: vk.Format) !vk.RenderPass {
     const color_attachment = vk.AttachmentDescription{
@@ -684,10 +704,10 @@ fn destroyFramebuffers(vc: *const VulkanContext, allocator: Allocator, framebuff
     allocator.free(framebuffers);
 }
 
-fn uploadVertices(vc: *const VulkanContext, pool: vk.CommandPool, buffer: vk.Buffer) !void {
+fn uploadVertices(vc: *const VulkanContext, vertices: []const Vertex, pool: vk.CommandPool, buffer: vk.Buffer) !void {
     const staging_buffer = try vc.vkd.createBuffer(vc.dev, &.{
         .flags = .{},
-        .size = @sizeOf(@TypeOf(vertices)),
+        .size = @sizeOf(Vertex) * vertices.len,
         .usage = .{ .transfer_src_bit = true },
         .sharing_mode = .exclusive,
         .queue_family_index_count = 0,
@@ -709,7 +729,7 @@ fn uploadVertices(vc: *const VulkanContext, pool: vk.CommandPool, buffer: vk.Buf
         }
     }
 
-    try copyBuffer(vc, pool, buffer, staging_buffer, @sizeOf(@TypeOf(vertices)));
+    try copyBuffer(vc, pool, buffer, staging_buffer, @sizeOf(Vertex) * vertices.len);
 }
 
 fn copyBuffer(vc: *const VulkanContext, pool: vk.CommandPool, dst: vk.Buffer, src: vk.Buffer, size: vk.DeviceSize) !void {
@@ -835,6 +855,7 @@ fn createCommandBuffers(
     framebuffers: []vk.Framebuffer,
     descriptor_sets: []vk.DescriptorSet,
     pipeline_layout: vk.PipelineLayout,
+    vertex_count: usize,
 ) ![]vk.CommandBuffer {
     const cmdbufs = try allocator.alloc(vk.CommandBuffer, framebuffers.len);
     errdefer allocator.free(cmdbufs);
@@ -891,7 +912,7 @@ fn createCommandBuffers(
         const offset = [_]vk.DeviceSize{0};
         vc.vkd.cmdBindVertexBuffers(cmdbuf, 0, 1, @ptrCast([*]const vk.Buffer, &buffer), &offset);
         vc.vkd.cmdBindDescriptorSets(cmdbuf, .graphics, pipeline_layout, 0, @intCast(u32, descriptor_sets.len), descriptor_sets.ptr, 0, undefined);
-        vc.vkd.cmdDraw(cmdbuf, vertices.len, 1, 0, 0);
+        vc.vkd.cmdDraw(cmdbuf, @intCast(u32, vertex_count), 1, 0, 0);
 
         vc.vkd.cmdEndRenderPass(cmdbuf);
         try vc.vkd.endCommandBuffer(cmdbuf);
