@@ -49,25 +49,21 @@ pub fn main() !void {
     defer vc.vkd.destroyCommandPool(vc.dev, pool, null);
 
     // TMP pack fonts into a texture
-    const font = try fonts.getPackedFont(allocator, "fonts/consola.ttf", 20);
+    const font = try fonts.getPackedFont(allocator, "fonts/consola.ttf", 30);
     const texture_image = try createFontTextureImage(&vc, font.pixels, font.atlas_width, font.atlas_height, pool);
     defer texture_image.deinit(&vc);
 
-    // const vertices = x: {
-    //     break :x vertices;
-    // };
-    const vertex_array = [_]Vertex{
-        .{ .pos = .{ -0.8, -0.8 }, .tex_coord = .{ 0, 0 } }, // 0
-        .{ .pos = .{ 0.8, -0.8 }, .tex_coord = .{ 1, 0 } }, // 1
-        .{ .pos = .{ 0.8, 0.8 }, .tex_coord = .{ 1, 1 } }, // 2
-        .{ .pos = .{ -0.8, 0.8 }, .tex_coord = .{ 0, 1 } }, // 3
-        .{ .pos = .{ -0.8, -0.8 }, .tex_coord = .{ 0, 0 } }, // 0
-        .{ .pos = .{ 0.8, 0.8 }, .tex_coord = .{ 1, 1 } }, // 2
-    };
-    const vertices = vertex_array[0..];
+    std.debug.print("{any}", .{extent});
 
-    // const texture_image = try createTextureImage(&vc, "images/texture.jpg", pool);
-    // defer texture_image.deinit(&vc);
+    const start = Vec2{ .x = 100, .y = 200 };
+    const atlas_quad = Quad{
+        .p0 = start,
+        .p1 = .{ .x = start.x + @intToFloat(f32, font.atlas_width) / 8.0, .y = start.y + @intToFloat(f32, font.atlas_height) / 8.0 },
+        .st0 = .{ .x = 0, .y = 0 },
+        .st1 = .{ .x = 1, .y = 1 },
+    };
+    const vertex_array = atlas_quad.getVertices();
+    const vertices = vertex_array[0..];
 
     const texture_image_view = try createTextureImageView(&vc, texture_image.image, .r8g8b8a8_srgb);
     defer vc.vkd.destroyImageView(vc.dev, texture_image_view, null);
@@ -491,6 +487,14 @@ const Quad = struct {
     p1: Vec2,
     st0: Vec2,
     st1: Vec2,
+
+    pub fn getVertices(self: Quad) [6]Vertex {
+        const v0 = Vertex{ .pos = .{ self.p0.x, self.p0.y }, .tex_coord = .{ self.st0.x, self.st0.y } };
+        const v1 = Vertex{ .pos = .{ self.p1.x, self.p0.y }, .tex_coord = .{ self.st1.x, self.st0.y } };
+        const v2 = Vertex{ .pos = .{ self.p1.x, self.p1.y }, .tex_coord = .{ self.st1.x, self.st1.y } };
+        const v3 = Vertex{ .pos = .{ self.p0.x, self.p1.y }, .tex_coord = .{ self.st0.x, self.st1.y } };
+        return .{ v0, v1, v2, v0, v2, v3 };
+    }
 };
 
 fn createRenderPass(vc: *const VulkanContext, attachment_format: vk.Format) !vk.RenderPass {

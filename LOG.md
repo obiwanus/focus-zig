@@ -1,7 +1,6 @@
 # TODO
 - Render a word
-    - Display the baked texture exactly where we want on the screen at native size
-        - Generate atlas based on font size
+    + Display the baked texture exactly where we want on the screen at native size
     - Figure out how to position the vertices and where to get the texture coordinates
 
 # DONE
