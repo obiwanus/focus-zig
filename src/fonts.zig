@@ -3,24 +3,32 @@ const stbtt = @import("stbtt");
 
 const Allocator = std.mem.Allocator;
 
+// TODO: calculate dynamically based on oversampling and font size
+const ATLAS_WIDTH = 2048;
+const ATLAS_HEIGHT = 2048;
+const OVERSAMPLING = 4;
+
 pub const Font = struct {
     pixels: []u8,
     chars: []stbtt.PackedChar,
+    atlas_width: u32,
+    atlas_height: u32,
 };
 
-pub fn getPackedFont(allocator: Allocator, filename: []const u8, width: usize, height: usize) !Font {
-    var pixels_tmp = try allocator.alloc(u8, width * height);
-    var pixels = try allocator.alloc(u8, width * height * 4); // 4 channels
+pub fn getPackedFont(allocator: Allocator, filename: []const u8, size: f32) !Font {
+    var pixels_tmp = try allocator.alloc(u8, ATLAS_WIDTH * ATLAS_HEIGHT);
+    var pixels = try allocator.alloc(u8, ATLAS_WIDTH * ATLAS_HEIGHT * 4); // 4 channels
 
     const font_data = try readEntireFile(filename, allocator);
     defer allocator.free(font_data);
 
-    var pack_context = try stbtt.packBegin(pixels_tmp, width, height, 0, 1, null);
+    var pack_context = try stbtt.packBegin(pixels_tmp, ATLAS_WIDTH, ATLAS_HEIGHT, 0, 1, null);
     defer stbtt.packEnd(&pack_context);
-    stbtt.packSetOversampling(&pack_context, 4, 4);
+    stbtt.packSetOversampling(&pack_context, OVERSAMPLING, OVERSAMPLING);
 
-    const chars = try stbtt.packFontRange(&pack_context, font_data, 70, 32, 32 * 3, allocator);
+    const chars = try stbtt.packFontRange(&pack_context, font_data, size, 32, 32 * 3, allocator);
 
+    // TODO: stop doing this
     for (pixels_tmp) |pixel, i| {
         pixels[i * 4] = pixel;
         pixels[i * 4 + 1] = pixel;
@@ -31,6 +39,8 @@ pub fn getPackedFont(allocator: Allocator, filename: []const u8, width: usize, h
     return Font{
         .pixels = pixels,
         .chars = chars,
+        .atlas_width = ATLAS_WIDTH,
+        .atlas_height = ATLAS_HEIGHT,
     };
 }
 

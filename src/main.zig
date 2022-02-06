@@ -5,7 +5,7 @@ const vk = @import("vulkan");
 const resources = @import("resources");
 const stbi = @import("stbi");
 
-const font = @import("font.zig");
+const fonts = @import("fonts.zig");
 
 const Allocator = std.mem.Allocator;
 const VulkanContext = @import("vulkan/context.zig").VulkanContext;
@@ -49,10 +49,8 @@ pub fn main() !void {
     defer vc.vkd.destroyCommandPool(vc.dev, pool, null);
 
     // TMP pack fonts into a texture
-    const ATLAS_WIDTH = 2048; // NOTE: depending on oversampling may need to be adjusted
-    const ATLAS_HEIGHT = 2048;
-    const packed_font = try font.getPackedFont(allocator, "fonts/consola.ttf", ATLAS_WIDTH, ATLAS_HEIGHT);
-    const texture_image = try createFontTextureImage(&vc, packed_font.pixels, ATLAS_WIDTH, ATLAS_HEIGHT, pool);
+    const font = try fonts.getPackedFont(allocator, "fonts/consola.ttf", 20);
+    const texture_image = try createFontTextureImage(&vc, font.pixels, font.atlas_width, font.atlas_height, pool);
     defer texture_image.deinit(&vc);
 
     // const vertices = x: {

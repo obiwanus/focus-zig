@@ -151,7 +151,17 @@ pub const getNumberOfFonts = stbtt_GetNumberOfFonts;
 extern fn stbtt_GetFontOffsetForIndex(data: [*c]const u8, index: c_int) c_int;
 pub const getFontOffsetForIndex = stbtt_GetFontOffsetForIndex;
 extern fn stbtt_InitFont(info: [*c]FontInfo, data: [*c]const u8, offset: c_int) c_int;
-pub const initFont = stbtt_InitFont;
+
+pub fn initFont(data: []const u8) !FontInfo {
+    // NOTE: always using offset 0 because we don't use TTF collections
+    var font_info: FontInfo = undefined;
+    const result = stbtt_InitFont(&font_info, data, 0);
+    if (result == 0) {
+        return error.InitFontError;
+    }
+    return font_info;
+}
+
 extern fn stbtt_FindGlyphIndex(info: [*c]const FontInfo, unicode_codepoint: c_int) c_int;
 pub const findGlyphIndex = stbtt_FindGlyphIndex;
 extern fn stbtt_ScaleForPixelHeight(info: [*c]const FontInfo, pixels: f32) f32;
