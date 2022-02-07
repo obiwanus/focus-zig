@@ -139,7 +139,15 @@ pub const packSetOversampling = stbtt_PackSetOversampling;
 extern fn stbtt_PackSetSkipMissingCodepoints(spc: [*c]PackContext, skip: c_int) void;
 pub const packSetSkipMissingCodepoints = stbtt_PackSetSkipMissingCodepoints;
 extern fn stbtt_GetPackedQuad(chardata: [*c]const PackedChar, pw: c_int, ph: c_int, char_index: c_int, xpos: [*c]f32, ypos: [*c]f32, q: [*c]AlignedQuad, align_to_integer: c_int) void;
-pub const getPackedQuad = stbtt_GetPackedQuad;
+
+pub fn getPackedQuad(chardata: [*c]const PackedChar, pw: c_int, ph: c_int, char_index: c_int, x: f32, y: f32, align_to_integer: bool) AlignedQuad {
+    var quad: AlignedQuad = undefined;
+    var xpos: f32 = x; // to avoid complaints about constness
+    var ypos: f32 = y;
+    stbtt_GetPackedQuad(chardata, pw, ph, char_index, &xpos, &ypos, &quad, if (align_to_integer) 1 else 0);
+    return quad;
+}
+
 extern fn stbtt_PackFontRangesGatherRects(spc: [*c]PackContext, info: [*c]const FontInfo, ranges: [*c]PackRange, num_ranges: c_int, rects: ?*Rect) c_int;
 pub const packFontRangesGatherRects = stbtt_PackFontRangesGatherRects;
 extern fn stbtt_PackFontRangesPackRects(spc: [*c]PackContext, rects: ?*Rect, num_rects: c_int) void;

@@ -3,16 +3,36 @@ const stbtt = @import("stbtt");
 
 const Allocator = std.mem.Allocator;
 
+const assert = std.debug.assert;
+
 // TODO: calculate dynamically based on oversampling and font size
 const ATLAS_WIDTH = 2048;
 const ATLAS_HEIGHT = 2048;
 const OVERSAMPLING = 8;
+
+const FIRST_CHAR = 32;
 
 pub const Font = struct {
     pixels: []u8,
     chars: []stbtt.PackedChar,
     atlas_width: u32,
     atlas_height: u32,
+
+    // TODO: support unicode
+    pub fn getQuad(self: Font, char: u8, x: f32, y: f32) stbtt.AlignedQuad {
+        const char_index = @intCast(c_int, char - FIRST_CHAR);
+        assert(char_index >= 0);
+        const quad = stbtt.getPackedQuad(
+            self.chars.ptr,
+            @intCast(c_int, self.atlas_width),
+            @intCast(c_int, self.atlas_height),
+            char_index,
+            x,
+            y,
+            false, // align to integer
+        );
+        return quad;
+    }
 };
 
 pub fn getPackedFont(allocator: Allocator, filename: []const u8, size: f32) !Font {
@@ -26,7 +46,7 @@ pub fn getPackedFont(allocator: Allocator, filename: []const u8, size: f32) !Fon
     defer stbtt.packEnd(&pack_context);
     stbtt.packSetOversampling(&pack_context, OVERSAMPLING, OVERSAMPLING);
 
-    const chars = try stbtt.packFontRange(&pack_context, font_data, size, 32, 32 * 3, allocator);
+    const chars = try stbtt.packFontRange(&pack_context, font_data, size, FIRST_CHAR, 32 * 3, allocator);
 
     // TODO: stop doing this
     for (pixels_tmp) |pixel, i| {

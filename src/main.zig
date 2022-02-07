@@ -55,15 +55,40 @@ pub fn main() !void {
 
     std.debug.print("{any}", .{extent});
 
-    const start = Vec2{ .x = 100, .y = 200 };
-    const atlas_quad = Quad{
-        .p0 = start,
-        .p1 = .{ .x = start.x + @intToFloat(f32, font.atlas_width) / 8.0, .y = start.y + @intToFloat(f32, font.atlas_height) / 8.0 },
-        .st0 = .{ .x = 0, .y = 0 },
-        .st1 = .{ .x = 1, .y = 1 },
+    // const start = Vec2{ .x = 100, .y = 200 };
+    // const atlas_quad = Quad{
+    //     .p0 = start,
+    //     .p1 = .{ .x = start.x + @intToFloat(f32, font.atlas_width) / 8.0, .y = start.y + @intToFloat(f32, font.atlas_height) / 8.0 },
+    //     .st0 = .{ .x = 0, .y = 0 },
+    //     .st1 = .{ .x = 1, .y = 1 },
+    // };
+    // const vertex_array = atlas_quad.getVertices();
+    // const vertices = vertex_array[0..];
+
+    const text = "It's time to focus";
+    const vertices = x: {
+        var quads = std.ArrayList(Quad).init(allocator);
+        defer quads.deinit();
+        var pos = Vec2{ .x = 200, .y = 200 };
+        for (text) |char| {
+            const q = font.getQuad(char, pos.x, pos.y);
+            try quads.append(Quad{
+                .p0 = .{ .x = q.x0, .y = q.y0 },
+                .p1 = .{ .x = q.x1, .y = q.y1 },
+                .st0 = .{ .x = q.s0, .y = q.t0 },
+                .st1 = .{ .x = q.s1, .y = q.t1 },
+            });
+            pos.x += 20;
+        }
+        var vertices = std.ArrayList(Vertex).init(allocator);
+        for (quads.items) |quad| {
+            for (quad.getVertices()) |vertex| {
+                try vertices.append(vertex);
+            }
+        }
+
+        break :x vertices.toOwnedSlice();
     };
-    const vertex_array = atlas_quad.getVertices();
-    const vertices = vertex_array[0..];
 
     const texture_image_view = try createTextureImageView(&vc, texture_image.image, .r8g8b8a8_srgb);
     defer vc.vkd.destroyImageView(vc.dev, texture_image_view, null);

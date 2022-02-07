@@ -1,9 +1,10 @@
 # TODO
-- Render a word
-    + Display the baked texture exactly where we want on the screen at native size
-    - Figure out how to position the vertices and where to get the texture coordinates
+
 
 # DONE
++ Render a word
+    + Display the baked texture exactly where we want on the screen at native size
+    + Figure out how to position the vertices and where to get the texture coordinates
 + Render a letter
     + Rasterise some font into an atlas
 + Draw a textured quad
