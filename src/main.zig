@@ -49,7 +49,7 @@ pub fn main() !void {
     defer vc.vkd.destroyCommandPool(vc.dev, pool, null);
 
     // TMP pack fonts into a texture
-    const font = try fonts.getPackedFont(allocator, "fonts/consola.ttf", 30);
+    const font = try fonts.getPackedFont(allocator, "fonts/consola.ttf", 20);
     const texture_image = try createFontTextureImage(&vc, font.pixels, font.atlas_width, font.atlas_height, pool);
     defer texture_image.deinit(&vc);
 
@@ -65,7 +65,7 @@ pub fn main() !void {
     // const vertex_array = atlas_quad.getVertices();
     // const vertices = vertex_array[0..];
 
-    const text = "It's time to focus";
+    const text = "The quick brown fox jumps over the lazy dog, hello world!?";
     const vertices = x: {
         var quads = std.ArrayList(Quad).init(allocator);
         defer quads.deinit();
@@ -78,7 +78,8 @@ pub fn main() !void {
                 .st0 = .{ .x = q.s0, .y = q.t0 },
                 .st1 = .{ .x = q.s1, .y = q.t1 },
             });
-            pos.x += 20;
+            const pc = font.chars[@intCast(usize, char - 32)];
+            pos.x += pc.xadvance; // TODO: make this constant for fixed-width fonts
         }
         var vertices = std.ArrayList(Vertex).init(allocator);
         for (quads.items) |quad| {
