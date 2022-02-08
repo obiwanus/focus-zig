@@ -1,6 +1,7 @@
 # TODO
 
 # DONE
++ Use at least 2 different allocators for static and temporary storage
 + Scroll the file vertically
 + Load a text file and display it
 + Check the advance of different letters

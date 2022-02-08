@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const glfw = @import("glfw");
 const vk = @import("vulkan");
@@ -11,11 +12,22 @@ const Allocator = std.mem.Allocator;
 const VulkanContext = @import("vulkan/context.zig").VulkanContext;
 const Swapchain = @import("vulkan/swapchain.zig").Swapchain;
 
+var GPA = std.heap.GeneralPurposeAllocator(.{ .never_unmap = false }){};
+
 const APP_NAME = "Focus";
 
 var text_start: Vec2 = .{ .x = 50, .y = 50 };
 
 pub fn main() !void {
+    // Static arena lives until the end of the program
+    var static_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer static_arena.deinit();
+    var static_allocator = static_arena.allocator();
+
+    // General-purpose allocator for things that live for more than 1 frame
+    // but need to be freed before the end of the program
+    const gpa = if (builtin.mode == .Debug) GPA.allocator() else std.heap.c_allocator;
+
     try glfw.init(.{});
     defer glfw.terminate();
 
@@ -36,14 +48,10 @@ pub fn main() !void {
         .height = size.height,
     };
 
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    var allocator = arena.allocator();
-
-    const vc = try VulkanContext.init(allocator, APP_NAME, window);
+    const vc = try VulkanContext.init(static_allocator, APP_NAME, window);
     defer vc.deinit();
 
-    var swapchain = try Swapchain.init(&vc, allocator, extent);
+    var swapchain = try Swapchain.init(&vc, static_allocator, extent);
     defer swapchain.deinit();
 
     const pool = try vc.vkd.createCommandPool(vc.dev, &.{
@@ -53,15 +61,14 @@ pub fn main() !void {
     defer vc.vkd.destroyCommandPool(vc.dev, pool, null);
 
     // TMP pack fonts into a texture
-    const font = try fonts.getPackedFont(allocator, "fonts/consola.ttf", 16);
+    const font = try fonts.getPackedFont(gpa, "fonts/consola.ttf", 16);
     const texture_image = try createFontTextureImage(&vc, font.pixels, font.atlas_width, font.atlas_height, pool);
     defer texture_image.deinit(&vc);
 
     std.debug.print("{any}", .{extent});
 
     var current_text_start = Vec2{ .x = 50, .y = 50 };
-    var vertices = try get_vertices_tmp(font, current_text_start, allocator);
-    defer allocator.free(vertices);
+    var vertices = try get_vertices_tmp(font, current_text_start, gpa);
 
     const texture_image_view = try createTextureImageView(&vc, texture_image.image, .r8g8b8a8_srgb);
     defer vc.vkd.destroyImageView(vc.dev, texture_image_view, null);
@@ -164,8 +171,8 @@ pub fn main() !void {
     var pipeline = try createPipeline(&vc, pipeline_layout, render_pass);
     defer vc.vkd.destroyPipeline(vc.dev, pipeline, null);
 
-    var framebuffers = try createFramebuffers(&vc, allocator, render_pass, swapchain);
-    defer destroyFramebuffers(&vc, allocator, framebuffers);
+    var framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
+    defer destroyFramebuffers(&vc, gpa, framebuffers);
 
     const buffer = try vc.vkd.createBuffer(vc.dev, &.{
         .flags = .{},
@@ -186,7 +193,7 @@ pub fn main() !void {
     var cmdbufs = try createCommandBuffers(
         &vc,
         pool,
-        allocator,
+        gpa,
         buffer,
         swapchain.extent,
         render_pass,
@@ -196,14 +203,15 @@ pub fn main() !void {
         pipeline_layout,
         vertices.len,
     );
-    defer destroyCommandBuffers(&vc, pool, allocator, cmdbufs);
+    defer destroyCommandBuffers(&vc, pool, gpa, cmdbufs);
 
     while (!window.shouldClose()) {
         const cmdbuf = cmdbufs[swapchain.image_index];
 
         if (text_start.y != current_text_start.y) {
             current_text_start = text_start;
-            vertices = try get_vertices_tmp(font, current_text_start, allocator);
+            gpa.free(vertices);
+            vertices = try get_vertices_tmp(font, current_text_start, gpa);
             try uploadVertices(&vc, vertices, pool, buffer);
         }
 
@@ -218,14 +226,14 @@ pub fn main() !void {
             extent.height = new_size.height;
             try swapchain.recreate(extent);
 
-            destroyFramebuffers(&vc, allocator, framebuffers);
-            framebuffers = try createFramebuffers(&vc, allocator, render_pass, swapchain);
+            destroyFramebuffers(&vc, gpa, framebuffers);
+            framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
 
-            destroyCommandBuffers(&vc, pool, allocator, cmdbufs);
+            destroyCommandBuffers(&vc, pool, gpa, cmdbufs);
             cmdbufs = try createCommandBuffers(
                 &vc,
                 pool,
-                allocator,
+                gpa,
                 buffer,
                 swapchain.extent,
                 render_pass,

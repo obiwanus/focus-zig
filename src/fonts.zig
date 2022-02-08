@@ -49,6 +49,7 @@ pub const Font = struct {
 
 pub fn getPackedFont(allocator: Allocator, filename: []const u8, size: f32) !Font {
     var pixels_tmp = try allocator.alloc(u8, ATLAS_WIDTH * ATLAS_HEIGHT);
+    defer allocator.free(pixels_tmp);
     var pixels = try allocator.alloc(u8, ATLAS_WIDTH * ATLAS_HEIGHT * 4); // 4 channels
 
     const font_data = try readEntireFile(filename, allocator);
