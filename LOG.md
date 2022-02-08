@@ -1,6 +1,7 @@
 # TODO
 
 # DONE
++ Load a text file and display it
 + Check the advance of different letters
 + Render a word
     + Display the baked texture exactly where we want on the screen at native size

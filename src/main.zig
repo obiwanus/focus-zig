@@ -49,7 +49,7 @@ pub fn main() !void {
     defer vc.vkd.destroyCommandPool(vc.dev, pool, null);
 
     // TMP pack fonts into a texture
-    const font = try fonts.getPackedFont(allocator, "fonts/consola.ttf", 20);
+    const font = try fonts.getPackedFont(allocator, "fonts/consola.ttf", 16);
     const texture_image = try createFontTextureImage(&vc, font.pixels, font.atlas_width, font.atlas_height, pool);
     defer texture_image.deinit(&vc);
 
@@ -65,11 +65,12 @@ pub fn main() !void {
     // const vertex_array = atlas_quad.getVertices();
     // const vertices = vertex_array[0..];
 
-    const text = "The quick brown fox jumps over the lazy dog, hello world!?";
+    const text = @embedFile("main.zig");
     const vertices = x: {
         var quads = std.ArrayList(Quad).init(allocator);
         defer quads.deinit();
-        var pos = Vec2{ .x = 200, .y = 200 };
+        const start_x = 100;
+        var pos = Vec2{ .x = start_x, .y = 100 };
         for (text) |char| {
             const q = font.getQuad(char, pos.x, pos.y);
             try quads.append(Quad{
@@ -78,8 +79,11 @@ pub fn main() !void {
                 .st0 = .{ .x = q.s0, .y = q.t0 },
                 .st1 = .{ .x = q.s1, .y = q.t1 },
             });
-            const pc = font.chars[@intCast(usize, char - 32)];
-            pos.x += pc.xadvance; // TODO: make this constant for fixed-width fonts
+            pos.x += font.getXAdvance(char); // TODO: make this constant for fixed-width fonts
+            if (char == '\n') {
+                pos.x = start_x;
+                pos.y += 23;
+            }
         }
         var vertices = std.ArrayList(Vertex).init(allocator);
         for (quads.items) |quad| {

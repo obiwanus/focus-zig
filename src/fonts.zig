@@ -20,8 +20,7 @@ pub const Font = struct {
 
     // TODO: support unicode
     pub fn getQuad(self: Font, char: u8, x: f32, y: f32) stbtt.AlignedQuad {
-        const char_index = @intCast(c_int, char - FIRST_CHAR);
-        assert(char_index >= 0);
+        const char_index = self.getCharIndex(char);
         const quad = stbtt.getPackedQuad(
             self.chars.ptr,
             @intCast(c_int, self.atlas_width),
@@ -32,6 +31,19 @@ pub const Font = struct {
             false, // align to integer
         );
         return quad;
+    }
+
+    fn getCharIndex(self: Font, char: u8) c_int {
+        var char_index = @intCast(c_int, char) - FIRST_CHAR;
+        if (char_index < 0 or char_index >= self.chars.len) {
+            char_index = 0;
+        }
+        return char_index;
+    }
+
+    pub fn getXAdvance(self: Font, char: u8) f32 {
+        const char_index = self.getCharIndex(char);
+        return self.chars[@intCast(usize, char_index)].xadvance;
     }
 };
 
