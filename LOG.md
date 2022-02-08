@@ -1,6 +1,7 @@
 # TODO
 
 # DONE
++ Scroll the file vertically
 + Load a text file and display it
 + Check the advance of different letters
 + Render a word

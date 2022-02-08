@@ -13,6 +13,8 @@ const Swapchain = @import("vulkan/swapchain.zig").Swapchain;
 
 const APP_NAME = "Focus";
 
+var text_start: Vec2 = .{ .x = 50, .y = 50 };
+
 pub fn main() !void {
     try glfw.init(.{});
     defer glfw.terminate();
@@ -25,6 +27,8 @@ pub fn main() !void {
         .srgb_capable = true,
     });
     defer window.destroy();
+
+    window.setKeyCallback(processKeyEvent);
 
     const size = try window.getSize();
     var extent = vk.Extent2D{
@@ -55,45 +59,9 @@ pub fn main() !void {
 
     std.debug.print("{any}", .{extent});
 
-    // const start = Vec2{ .x = 100, .y = 200 };
-    // const atlas_quad = Quad{
-    //     .p0 = start,
-    //     .p1 = .{ .x = start.x + @intToFloat(f32, font.atlas_width) / 8.0, .y = start.y + @intToFloat(f32, font.atlas_height) / 8.0 },
-    //     .st0 = .{ .x = 0, .y = 0 },
-    //     .st1 = .{ .x = 1, .y = 1 },
-    // };
-    // const vertex_array = atlas_quad.getVertices();
-    // const vertices = vertex_array[0..];
-
-    const text = @embedFile("main.zig");
-    const vertices = x: {
-        var quads = std.ArrayList(Quad).init(allocator);
-        defer quads.deinit();
-        const start_x = 100;
-        var pos = Vec2{ .x = start_x, .y = 100 };
-        for (text) |char| {
-            const q = font.getQuad(char, pos.x, pos.y);
-            try quads.append(Quad{
-                .p0 = .{ .x = q.x0, .y = q.y0 },
-                .p1 = .{ .x = q.x1, .y = q.y1 },
-                .st0 = .{ .x = q.s0, .y = q.t0 },
-                .st1 = .{ .x = q.s1, .y = q.t1 },
-            });
-            pos.x += font.getXAdvance(char); // TODO: make this constant for fixed-width fonts
-            if (char == '\n') {
-                pos.x = start_x;
-                pos.y += 23;
-            }
-        }
-        var vertices = std.ArrayList(Vertex).init(allocator);
-        for (quads.items) |quad| {
-            for (quad.getVertices()) |vertex| {
-                try vertices.append(vertex);
-            }
-        }
-
-        break :x vertices.toOwnedSlice();
-    };
+    var current_text_start = Vec2{ .x = 50, .y = 50 };
+    var vertices = try get_vertices_tmp(font, current_text_start, allocator);
+    defer allocator.free(vertices);
 
     const texture_image_view = try createTextureImageView(&vc, texture_image.image, .r8g8b8a8_srgb);
     defer vc.vkd.destroyImageView(vc.dev, texture_image_view, null);
@@ -233,6 +201,12 @@ pub fn main() !void {
     while (!window.shouldClose()) {
         const cmdbuf = cmdbufs[swapchain.image_index];
 
+        if (text_start.y != current_text_start.y) {
+            current_text_start = text_start;
+            vertices = try get_vertices_tmp(font, current_text_start, allocator);
+            try uploadVertices(&vc, vertices, pool, buffer);
+        }
+
         const state = swapchain.present(cmdbuf) catch |err| switch (err) {
             error.OutOfDateKHR => Swapchain.PresentState.suboptimal,
             else => |narrow| return narrow,
@@ -263,7 +237,7 @@ pub fn main() !void {
             );
         }
 
-        try glfw.pollEvents();
+        try glfw.waitEvents();
     }
 
     try swapchain.waitForAllFences();
@@ -955,4 +929,47 @@ fn createCommandBuffers(
 fn destroyCommandBuffers(vc: *const VulkanContext, pool: vk.CommandPool, allocator: Allocator, cmdbufs: []vk.CommandBuffer) void {
     vc.vkd.freeCommandBuffers(vc.dev, pool, @truncate(u32, cmdbufs.len), cmdbufs.ptr);
     allocator.free(cmdbufs);
+}
+
+fn get_vertices_tmp(font: fonts.Font, start: Vec2, allocator: Allocator) ![]Vertex {
+    const text = @embedFile("main.zig");
+    var quads = std.ArrayList(Quad).init(allocator);
+    defer quads.deinit();
+    var pos = Vec2{ .x = start.x, .y = start.y };
+    for (text) |char| {
+        const q = font.getQuad(char, pos.x, pos.y);
+        try quads.append(Quad{
+            .p0 = .{ .x = q.x0, .y = q.y0 },
+            .p1 = .{ .x = q.x1, .y = q.y1 },
+            .st0 = .{ .x = q.s0, .y = q.t0 },
+            .st1 = .{ .x = q.s1, .y = q.t1 },
+        });
+        pos.x += font.getXAdvance(char); // TODO: make this constant for fixed-width fonts
+        if (char == '\n') {
+            pos.x = start.x;
+            pos.y += 23;
+        }
+    }
+    var vertices = std.ArrayList(Vertex).init(allocator);
+    for (quads.items) |quad| {
+        for (quad.getVertices()) |vertex| {
+            try vertices.append(vertex);
+        }
+    }
+
+    return vertices.toOwnedSlice();
+}
+
+fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: glfw.Action, mods: glfw.Mods) void {
+    _ = window;
+
+    if (action == .press or action == .repeat) {
+        if (key == .up) {
+            text_start.y -= 10;
+        } else if (key == .down) {
+            text_start.y += 10;
+        }
+    }
+
+    std.debug.print("Key: {any}, scancode: {any}, action: {any}, mods: {any}\n", .{ key, scancode, action, mods });
 }
