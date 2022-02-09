@@ -17,6 +17,9 @@ var GPA = std.heap.GeneralPurposeAllocator(.{ .never_unmap = false }){};
 const APP_NAME = "Focus";
 
 var text_start: Vec2 = .{ .x = 50, .y = 50 };
+var g_cursor_pos: usize = 0;
+var g_text_buffer: std.ArrayList(u8) = undefined;
+var g_char_typed: bool = false;
 
 pub fn main() !void {
     // Static arena lives until the end of the program
@@ -67,8 +70,16 @@ pub fn main() !void {
 
     std.debug.print("{any}", .{extent});
 
-    var current_text_start = Vec2{ .x = 50, .y = 50 };
-    var vertices = try get_vertices_tmp(font, current_text_start, gpa);
+    var current_text_start = text_start;
+    // Create a buffer for editing
+    g_text_buffer = x: {
+        const initial = @embedFile("../libs/stb_truetype/stb_truetype.c");
+        var buffer = std.ArrayList(u8).init(gpa);
+        try buffer.appendSlice(initial);
+        break :x buffer;
+    };
+
+    var vertices = try getVerticesTmp(g_text_buffer.items, font, current_text_start, gpa);
 
     const texture_image_view = try createTextureImageView(&vc, texture_image.image, .r8g8b8a8_srgb);
     defer vc.vkd.destroyImageView(vc.dev, texture_image_view, null);
@@ -176,7 +187,7 @@ pub fn main() !void {
 
     const buffer = try vc.vkd.createBuffer(vc.dev, &.{
         .flags = .{},
-        .size = @sizeOf(Vertex) * vertices.len,
+        .size = @sizeOf(Vertex) * vertices.len * 20, // TODO: stop allocating it like this
         .usage = .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
         .sharing_mode = .exclusive,
         .queue_family_index_count = 0,
@@ -208,10 +219,11 @@ pub fn main() !void {
     while (!window.shouldClose()) {
         const cmdbuf = cmdbufs[swapchain.image_index];
 
-        if (text_start.y != current_text_start.y) {
+        if (text_start.y != current_text_start.y or g_char_typed) {
             current_text_start = text_start;
+            g_char_typed = false;
             gpa.free(vertices);
-            vertices = try get_vertices_tmp(font, current_text_start, gpa);
+            vertices = try getVerticesTmp(g_text_buffer.items, font, current_text_start, gpa);
             try uploadVertices(&vc, vertices, pool, buffer);
         }
 
@@ -939,8 +951,7 @@ fn destroyCommandBuffers(vc: *const VulkanContext, pool: vk.CommandPool, allocat
     allocator.free(cmdbufs);
 }
 
-fn get_vertices_tmp(font: fonts.Font, start: Vec2, allocator: Allocator) ![]Vertex {
-    const text = @embedFile("main.zig");
+fn getVerticesTmp(text: []const u8, font: fonts.Font, start: Vec2, allocator: Allocator) ![]Vertex {
     var quads = std.ArrayList(Quad).init(allocator);
     defer quads.deinit();
     var pos = Vec2{ .x = start.x, .y = start.y };
@@ -970,14 +981,32 @@ fn get_vertices_tmp(font: fonts.Font, start: Vec2, allocator: Allocator) ![]Vert
 
 fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: glfw.Action, mods: glfw.Mods) void {
     _ = window;
+    _ = scancode;
+    _ = mods;
 
     if (action == .press or action == .repeat) {
-        if (key == .up) {
-            text_start.y -= 10;
-        } else if (key == .down) {
-            text_start.y += 10;
+        switch (key) {
+            .up => text_start.y += 20,
+            .down => text_start.y -= 20,
+            .left => if (g_cursor_pos > 0) {
+                g_cursor_pos -= 1;
+            },
+            .right => if (g_cursor_pos < g_text_buffer.items.len - 1) {
+                g_cursor_pos += 1;
+            },
+            .page_up => text_start.y += 1000,
+            .page_down => text_start.y -= 1000,
+            else => {},
+        }
+        const value = @enumToInt(key);
+        if (value >= @enumToInt(glfw.Key.space) and value <= @enumToInt(glfw.Key.grave_accent)) {
+            // Printable character
+            const code = @intCast(u8, value);
+            g_text_buffer.insert(g_cursor_pos, code) catch unreachable;
+            g_cursor_pos += 1;
+            g_char_typed = true;
         }
     }
 
-    std.debug.print("Key: {any}, scancode: {any}, action: {any}, mods: {any}\n", .{ key, scancode, action, mods });
+    // std.debug.print("Key: {any}, scancode: {any}, action: {any}, mods: {any}\n", .{ key, scancode, action, mods });
 }
