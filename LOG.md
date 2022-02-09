@@ -1,11 +1,13 @@
 # TODO
-- Edit text in the most simple way
-    - Create a buffer for editing
-    - Type characters at the cursor
-    - Draw the updates on the screen
-    - Don't worry about drawing the cursor just yet
+- Turn the mess into less messy code
+    - Process key actions in a less coupled way
 
 # DONE
++ Edit text in the most simple way
+    + Create a buffer for editing
+    + Type characters at the cursor
+    + Draw the updates on the screen
+    + Don't worry about drawing the cursor just yet
 + Use at least 2 different allocators for static and temporary storage
 + Scroll the file vertically
 + Load a text file and display it

@@ -44,6 +44,7 @@ pub fn main() !void {
     defer window.destroy();
 
     window.setKeyCallback(processKeyEvent);
+    window.setCharCallback(processCharEvent);
 
     const size = try window.getSize();
     var extent = vk.Extent2D{
@@ -998,15 +999,16 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
             .page_down => text_start.y -= 1000,
             else => {},
         }
-        const value = @enumToInt(key);
-        if (value >= @enumToInt(glfw.Key.space) and value <= @enumToInt(glfw.Key.grave_accent)) {
-            // Printable character
-            const code = @intCast(u8, value);
-            g_text_buffer.insert(g_cursor_pos, code) catch unreachable;
-            g_cursor_pos += 1;
-            g_char_typed = true;
-        }
     }
 
     // std.debug.print("Key: {any}, scancode: {any}, action: {any}, mods: {any}\n", .{ key, scancode, action, mods });
+}
+
+fn processCharEvent(window: glfw.Window, codepoint: u21) void {
+    _ = window;
+    // Printable character
+    const code = @truncate(u8, codepoint);
+    g_text_buffer.insert(g_cursor_pos, code) catch unreachable;
+    g_cursor_pos += 1;
+    g_char_typed = true;
 }
