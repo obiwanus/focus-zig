@@ -16,10 +16,11 @@ var GPA = std.heap.GeneralPurposeAllocator(.{ .never_unmap = false }){};
 
 const APP_NAME = "Focus";
 
-var text_start: Vec2 = .{ .x = 50, .y = 50 };
-var g_cursor_pos: usize = 0;
-var g_text_buffer: std.ArrayList(u8) = undefined;
 var g_char_typed: bool = false;
+var g_text_buffer: std.ArrayList(u8) = undefined;
+var g_lines: std.ArrayList(usize) = undefined;
+var g_top_line_number: usize = 0;
+var g_cursor_pos: usize = 0;
 
 pub fn main() !void {
     // Static arena lives until the end of the program
@@ -71,7 +72,7 @@ pub fn main() !void {
 
     std.debug.print("{any}", .{extent});
 
-    var current_text_start = text_start;
+    var current_top_line = g_top_line_number;
     // Create a buffer for editing
     g_text_buffer = x: {
         const initial = @embedFile("../libs/stb_truetype/stb_truetype.c");
@@ -79,8 +80,26 @@ pub fn main() !void {
         try buffer.appendSlice(initial);
         break :x buffer;
     };
+    defer g_text_buffer.deinit();
+    g_lines = x: {
+        var buffer = std.ArrayList(usize).init(gpa);
+        try buffer.append(0);
+        for (g_text_buffer.items) |char, i| {
+            if (char == '\n' and i < g_text_buffer.items.len) {
+                try buffer.append(i + 1);
+            }
+        }
+        break :x buffer;
+    };
+    const lines_per_screen = @floatToInt(usize, @intToFloat(f32, extent.height) / font.line_height + 1);
+    var text_on_screen = x: {
+        const start_pos = g_lines.items[g_top_line_number];
+        const last_line_index = std.math.clamp(g_top_line_number + lines_per_screen, g_top_line_number, g_lines.items.len - 1);
+        const end_pos = g_lines.items[last_line_index];
+        break :x g_text_buffer.items[start_pos..end_pos];
+    };
 
-    var vertices = try getVerticesTmp(g_text_buffer.items, font, current_text_start, gpa);
+    var vertices = try getVerticesTmp(text_on_screen, font, gpa);
 
     const texture_image_view = try createTextureImageView(&vc, texture_image.image, .r8g8b8a8_srgb);
     defer vc.vkd.destroyImageView(vc.dev, texture_image_view, null);
@@ -220,11 +239,17 @@ pub fn main() !void {
     while (!window.shouldClose()) {
         const cmdbuf = cmdbufs[swapchain.image_index];
 
-        if (text_start.y != current_text_start.y or g_char_typed) {
-            current_text_start = text_start;
+        if (current_top_line != g_top_line_number or g_char_typed) {
+            current_top_line = g_top_line_number;
             g_char_typed = false;
             gpa.free(vertices);
-            vertices = try getVerticesTmp(g_text_buffer.items, font, current_text_start, gpa);
+            text_on_screen = x: {
+                const start_pos = g_lines.items[g_top_line_number];
+                const last_line_index = std.math.clamp(g_top_line_number + lines_per_screen, g_top_line_number, g_lines.items.len - 1);
+                const end_pos = g_lines.items[last_line_index];
+                break :x g_text_buffer.items[start_pos..end_pos];
+            };
+            vertices = try getVerticesTmp(text_on_screen, font, gpa);
             try uploadVertices(&vc, vertices, pool, buffer);
         }
 
@@ -894,7 +919,7 @@ fn createCommandBuffers(
     errdefer vc.vkd.freeCommandBuffers(vc.dev, pool, @truncate(u32, cmdbufs.len), cmdbufs.ptr);
 
     const clear = vk.ClearValue{
-        .color = .{ .float_32 = .{ 0, 0, 0, 1 } },
+        .color = .{ .float_32 = .{ 2.0 / 255.0, 4.0 / 255.0, 6.0 / 255.0, 1 } },
     };
 
     const viewport = vk.Viewport{
@@ -952,22 +977,25 @@ fn destroyCommandBuffers(vc: *const VulkanContext, pool: vk.CommandPool, allocat
     allocator.free(cmdbufs);
 }
 
-fn getVerticesTmp(text: []const u8, font: fonts.Font, start: Vec2, allocator: Allocator) ![]Vertex {
+fn getVerticesTmp(text: []const u8, font: fonts.Font, allocator: Allocator) ![]Vertex {
+    const start = Vec2{ .x = 50, .y = 50 };
     var quads = std.ArrayList(Quad).init(allocator);
     defer quads.deinit();
     var pos = Vec2{ .x = start.x, .y = start.y };
     for (text) |char| {
-        const q = font.getQuad(char, pos.x, pos.y);
-        try quads.append(Quad{
-            .p0 = .{ .x = q.x0, .y = q.y0 },
-            .p1 = .{ .x = q.x1, .y = q.y1 },
-            .st0 = .{ .x = q.s0, .y = q.t0 },
-            .st1 = .{ .x = q.s1, .y = q.t1 },
-        });
+        if (char != ' ') {
+            const q = font.getQuad(char, pos.x, pos.y);
+            try quads.append(Quad{
+                .p0 = .{ .x = q.x0, .y = q.y0 },
+                .p1 = .{ .x = q.x1, .y = q.y1 },
+                .st0 = .{ .x = q.s0, .y = q.t0 },
+                .st1 = .{ .x = q.s1, .y = q.t1 },
+            });
+        }
         pos.x += font.getXAdvance(char); // TODO: make this constant for fixed-width fonts
         if (char == '\n') {
             pos.x = start.x;
-            pos.y += 23;
+            pos.y += font.line_height;
         }
     }
     var vertices = std.ArrayList(Vertex).init(allocator);
@@ -987,18 +1015,19 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
 
     if (action == .press or action == .repeat) {
         switch (key) {
-            .up => text_start.y += 20,
-            .down => text_start.y -= 20,
+            .up => g_top_line_number -= 1,
+            .down => g_top_line_number += 1,
             .left => if (g_cursor_pos > 0) {
                 g_cursor_pos -= 1;
             },
             .right => if (g_cursor_pos < g_text_buffer.items.len - 1) {
                 g_cursor_pos += 1;
             },
-            .page_up => text_start.y += 1000,
-            .page_down => text_start.y -= 1000,
+            .page_up => g_top_line_number -= 30,
+            .page_down => g_top_line_number += 30,
             else => {},
         }
+        g_top_line_number = std.math.clamp(g_top_line_number, 0, g_lines.items.len - 1);
     }
 
     // std.debug.print("Key: {any}, scancode: {any}, action: {any}, mods: {any}\n", .{ key, scancode, action, mods });

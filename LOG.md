@@ -1,6 +1,12 @@
 # TODO
-- Turn the mess into less messy code
-    - Process key actions in a less coupled way
+- Don't draw the whole file every time
+    + Calculate how many lines fit onto one screen
+    + When loading file, create a line array
+    + Keep a top-level line number
+    - Fix text drawing after scrolling
+    - Fix text insertion
+- Support enter and backspace
+- Draw cursor
 
 # DONE
 + Edit text in the most simple way

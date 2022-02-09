@@ -17,6 +17,7 @@ pub const Font = struct {
     chars: []stbtt.PackedChar,
     atlas_width: u32,
     atlas_height: u32,
+    line_height: f32 = 23, // TODO: set based on vertical metrics
 
     // TODO: support unicode
     pub fn getQuad(self: Font, char: u8, x: f32, y: f32) stbtt.AlignedQuad {
