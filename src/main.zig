@@ -1039,7 +1039,9 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
 
     if (action == .press or action == .repeat) {
         switch (key) {
-            .up => g_top_line_number -= 1,
+            .up => if (g_top_line_number > 0) {
+                g_top_line_number -= 1;
+            },
             .down => g_top_line_number += 1,
             .left => if (g_cursor_pos > 0) {
                 g_cursor_pos -= 1;
@@ -1047,8 +1049,18 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
             .right => if (g_cursor_pos < g_text_buffer.items.len - 1) {
                 g_cursor_pos += 1;
             },
-            .page_up => g_top_line_number -= 30,
+            .page_up => if (g_top_line_number >= 30) {
+                g_top_line_number -= 30;
+            } else {
+                g_top_line_number = 0;
+            },
             .page_down => g_top_line_number += 30,
+            .enter => {
+                g_text_buffer.insert(g_cursor_pos, '\n') catch unreachable;
+                g_cursor_pos += 1;
+                g_char_typed = true;
+            },
+            .backspace => {},
             else => {},
         }
         g_top_line_number = std.math.clamp(g_top_line_number, 0, g_lines.items.len - 1);
