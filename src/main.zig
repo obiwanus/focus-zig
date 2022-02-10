@@ -75,8 +75,8 @@ pub fn main() !void {
     var current_top_line = g_top_line_number;
     // Create a buffer for editing
     g_text_buffer = x: {
-        // const initial = @embedFile("test.txt");
-        const initial = @embedFile("../libs/stb_truetype/stb_truetype.c");
+        const initial = @embedFile("../LOG.md");
+        // const initial = @embedFile("../libs/stb_truetype/stb_truetype.c");
         var buffer = std.ArrayList(u8).init(gpa);
         try buffer.appendSlice(initial);
         break :x buffer;
@@ -92,7 +92,6 @@ pub fn main() !void {
         }
         break :x buffer;
     };
-    std.debug.print("lines: {any}\n", .{g_lines.items});
     const lines_per_screen = @floatToInt(usize, @intToFloat(f32, extent.height) / font.line_height + 1);
     var text_on_screen = x: {
         const start_pos = g_lines.items[g_top_line_number];
@@ -1060,10 +1059,18 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
                 g_cursor_pos += 1;
                 g_char_typed = true;
             },
-            .backspace => {},
+            .backspace => if (g_cursor_pos > 0) {
+                g_cursor_pos -= 1;
+                _ = g_text_buffer.orderedRemove(g_cursor_pos);
+                g_char_typed = true;
+            },
+            .delete => if (g_cursor_pos < g_text_buffer.items.len - 2) {
+                _ = g_text_buffer.orderedRemove(g_cursor_pos);
+                g_char_typed = true;
+            },
             else => {},
         }
-        g_top_line_number = std.math.clamp(g_top_line_number, 0, g_lines.items.len - 1);
+        g_top_line_number = std.math.clamp(g_top_line_number, 0, g_lines.items.len - 2);
     }
 
     // std.debug.print("Key: {any}, scancode: {any}, action: {any}, mods: {any}\n", .{ key, scancode, action, mods });

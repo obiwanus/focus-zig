@@ -1,10 +1,10 @@
 # TODO
-- Support backspace
 - Record command buffers every frame (should be easier in the long run)
     - Read how it's done in vkguide.dev
 - Draw cursor
 
 # DONE
++ Support backspace
 + Support enter
 + Don't draw the whole file every time
     + Calculate how many lines fit onto one screen
