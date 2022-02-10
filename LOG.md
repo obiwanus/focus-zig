@@ -3,8 +3,10 @@
     + Calculate how many lines fit onto one screen
     + When loading file, create a line array
     + Keep a top-level line number
-    - Fix text drawing after scrolling
+    + Fix text drawing after scrolling
     - Fix text insertion
+- Record command buffers every frame (should be easier in the long run)
+    - Read how it's done in vkguide.dev
 - Support enter and backspace
 - Draw cursor
 

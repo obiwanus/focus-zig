@@ -70,11 +70,12 @@ pub fn main() !void {
     const texture_image = try createFontTextureImage(&vc, font.pixels, font.atlas_width, font.atlas_height, pool);
     defer texture_image.deinit(&vc);
 
-    std.debug.print("{any}", .{extent});
+    std.debug.print("{any}\n", .{extent});
 
     var current_top_line = g_top_line_number;
     // Create a buffer for editing
     g_text_buffer = x: {
+        // const initial = @embedFile("test.txt");
         const initial = @embedFile("../libs/stb_truetype/stb_truetype.c");
         var buffer = std.ArrayList(u8).init(gpa);
         try buffer.appendSlice(initial);
@@ -91,6 +92,7 @@ pub fn main() !void {
         }
         break :x buffer;
     };
+    std.debug.print("lines: {any}\n", .{g_lines.items});
     const lines_per_screen = @floatToInt(usize, @intToFloat(f32, extent.height) / font.line_height + 1);
     var text_on_screen = x: {
         const start_pos = g_lines.items[g_top_line_number];
@@ -237,8 +239,6 @@ pub fn main() !void {
     defer destroyCommandBuffers(&vc, pool, gpa, cmdbufs);
 
     while (!window.shouldClose()) {
-        const cmdbuf = cmdbufs[swapchain.image_index];
-
         if (current_top_line != g_top_line_number or g_char_typed) {
             current_top_line = g_top_line_number;
             g_char_typed = false;
@@ -251,8 +251,23 @@ pub fn main() !void {
             };
             vertices = try getVerticesTmp(text_on_screen, font, gpa);
             try uploadVertices(&vc, vertices, pool, buffer);
+            // The length of vertices could have changed
+            cmdbufs = try createCommandBuffers(
+                &vc,
+                pool,
+                gpa,
+                buffer,
+                swapchain.extent,
+                render_pass,
+                pipeline,
+                framebuffers,
+                descriptor_sets[0..1],
+                pipeline_layout,
+                vertices.len,
+            );
         }
 
+        const cmdbuf = cmdbufs[swapchain.image_index];
         const state = swapchain.present(cmdbuf) catch |err| switch (err) {
             error.OutOfDateKHR => Swapchain.PresentState.suboptimal,
             else => |narrow| return narrow,
