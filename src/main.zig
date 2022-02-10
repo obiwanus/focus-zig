@@ -241,7 +241,16 @@ pub fn main() !void {
     while (!window.shouldClose()) {
         if (current_top_line != g_top_line_number or g_char_typed) {
             current_top_line = g_top_line_number;
-            g_char_typed = false;
+            if (g_char_typed) {
+                const start_pos = g_lines.items[g_top_line_number];
+                g_lines.shrinkRetainingCapacity(g_top_line_number + 1);
+                for (g_text_buffer.items[start_pos..]) |char, i| {
+                    if (char == '\n') {
+                        try g_lines.append(i + 1);
+                    }
+                }
+                g_char_typed = false;
+            }
             gpa.free(vertices);
             text_on_screen = x: {
                 const start_pos = g_lines.items[g_top_line_number];
