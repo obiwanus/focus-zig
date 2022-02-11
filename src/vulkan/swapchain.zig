@@ -75,7 +75,7 @@ pub const Swapchain = struct {
         // Signaled when the GPU is done rendering last frame
         const render_finished_semaphore = try vc.vkd.createSemaphore(vc.dev, &.{ .flags = .{} }, null);
         errdefer vc.vkd.destroySemaphore(vc.dev, render_finished_semaphore, null);
-        const render_finished_fence = try vc.vkd.createFence(vc.dev, &.{ .flags = .{ .signaled_bit = true } }, null);
+        const render_finished_fence = try vc.vkd.createFence(vc.dev, &.{ .flags = .{ .signaled_bit = false } }, null);
         errdefer vc.vkd.destroyFence(vc.dev, render_finished_fence, null);
 
         const swap_images = try initSwapchainImages(vc, handle, surface_format.format, allocator);

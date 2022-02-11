@@ -1,10 +1,10 @@
 # TODO
-- Fix swapchain recreation
 - Draw cursor
 - Fix one-line file crash (and zero-line file crash too)
 - Fix the crash when typing with cursor not on screen
 
 # DONE
++ Fix swapchain recreation
 + Record command buffers every frame (should be easier in the long run)
     + Read how it's done in vkguide.dev
 + Support backspace

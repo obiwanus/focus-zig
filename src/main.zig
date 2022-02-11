@@ -236,13 +236,9 @@ pub fn main() !void {
     defer vc.vkd.freeCommandBuffers(vc.dev, main_cmd_pool, 1, @ptrCast([*]const vk.CommandBuffer, &main_cmd_buf));
 
     while (!window.shouldClose()) {
-        // Make sure the rendering is finished
-        try swapchain.wait_until_last_frame_is_rendered();
-
         // Ask the swapchain for the next image
         const is_optimal = swapchain.acquire_next_image();
         if (!is_optimal) {
-            std.debug.print("Recreating swapchain\n", .{});
             // Recreate swapchain if necessary
             const new_size = try window.getSize();
             extent.width = new_size.width;
@@ -251,7 +247,6 @@ pub fn main() !void {
             if (!swapchain.acquire_next_image()) {
                 return error.SwapchainRecreationFailure;
             }
-            std.debug.print("Finished recreating\n", .{});
 
             destroyFramebuffers(&vc, gpa, framebuffers);
             framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
@@ -358,6 +353,9 @@ pub fn main() !void {
             .p_image_indices = @ptrCast([*]const u32, &swapchain.image_index),
             .p_results = null,
         });
+
+        // Make sure the rendering is finished
+        try swapchain.wait_until_last_frame_is_rendered();
     }
 
     // Wait for GPU to finish all work before cleaning up
