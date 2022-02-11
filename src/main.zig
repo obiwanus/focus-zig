@@ -47,27 +47,27 @@ pub fn main() !void {
     window.setKeyCallback(processKeyEvent);
     window.setCharCallback(processCharEvent);
 
+    const vc = try VulkanContext.init(static_allocator, APP_NAME, window);
+    defer vc.deinit();
+
     const size = try window.getSize();
     var extent = vk.Extent2D{
         .width = size.width,
         .height = size.height,
     };
 
-    const vc = try VulkanContext.init(static_allocator, APP_NAME, window);
-    defer vc.deinit();
-
     var swapchain = try Swapchain.init(&vc, static_allocator, extent);
     defer swapchain.deinit();
 
-    const pool = try vc.vkd.createCommandPool(vc.dev, &.{
-        .flags = .{},
+    const main_cmd_pool = try vc.vkd.createCommandPool(vc.dev, &.{
+        .flags = .{ .reset_command_buffer_bit = true },
         .queue_family_index = vc.graphics_queue.family,
     }, null);
-    defer vc.vkd.destroyCommandPool(vc.dev, pool, null);
+    defer vc.vkd.destroyCommandPool(vc.dev, main_cmd_pool, null);
 
     // TMP pack fonts into a texture
     const font = try fonts.getPackedFont(gpa, "fonts/consola.ttf", 16);
-    const texture_image = try createFontTextureImage(&vc, font.pixels, font.atlas_width, font.atlas_height, pool);
+    const texture_image = try createFontTextureImage(&vc, font.pixels, font.atlas_width, font.atlas_height, main_cmd_pool);
     defer texture_image.deinit(&vc);
 
     std.debug.print("{any}\n", .{extent});
@@ -220,24 +220,47 @@ pub fn main() !void {
     defer vc.vkd.freeMemory(vc.dev, memory, null);
     try vc.vkd.bindBufferMemory(vc.dev, buffer, memory, 0);
 
-    try uploadVertices(&vc, vertices, pool, buffer);
+    try uploadVertices(&vc, vertices, main_cmd_pool, buffer);
 
-    var cmdbufs = try createCommandBuffers(
-        &vc,
-        pool,
-        gpa,
-        buffer,
-        swapchain.extent,
-        render_pass,
-        pipeline,
-        framebuffers,
-        descriptor_sets[0..1],
-        pipeline_layout,
-        vertices.len,
-    );
-    defer destroyCommandBuffers(&vc, pool, gpa, cmdbufs);
+    // This is the only command buffer we'll use for drawing.
+    // It will be reset and re-recorded every frame
+    const main_cmd_buf = x: {
+        var cmdbuf: vk.CommandBuffer = undefined;
+        try vc.vkd.allocateCommandBuffers(vc.dev, &.{
+            .command_pool = main_cmd_pool,
+            .level = .primary,
+            .command_buffer_count = 1,
+        }, @ptrCast([*]vk.CommandBuffer, &cmdbuf));
+        break :x cmdbuf;
+    };
+    defer vc.vkd.freeCommandBuffers(vc.dev, main_cmd_pool, 1, @ptrCast([*]const vk.CommandBuffer, &main_cmd_buf));
 
     while (!window.shouldClose()) {
+        // Make sure the rendering is finished
+        try swapchain.wait_until_last_frame_is_rendered();
+
+        // Ask the swapchain for the next image
+        const is_optimal = swapchain.acquire_next_image();
+        if (!is_optimal) {
+            std.debug.print("Recreating swapchain\n", .{});
+            // Recreate swapchain if necessary
+            const new_size = try window.getSize();
+            extent.width = new_size.width;
+            extent.height = new_size.height;
+            try swapchain.recreate(extent);
+            if (!swapchain.acquire_next_image()) {
+                return error.SwapchainRecreationFailure;
+            }
+            std.debug.print("Finished recreating\n", .{});
+
+            destroyFramebuffers(&vc, gpa, framebuffers);
+            framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
+        }
+
+        // Wait for input
+        try glfw.waitEvents();
+
+        // Handle input
         if (current_top_line != g_top_line_number or g_char_typed) {
             current_top_line = g_top_line_number;
             if (g_char_typed) {
@@ -258,58 +281,86 @@ pub fn main() !void {
                 break :x g_text_buffer.items[start_pos..end_pos];
             };
             vertices = try getVerticesTmp(text_on_screen, font, gpa);
-            try uploadVertices(&vc, vertices, pool, buffer);
-            // The length of vertices could have changed
-            cmdbufs = try createCommandBuffers(
-                &vc,
-                pool,
-                gpa,
-                buffer,
-                swapchain.extent,
-                render_pass,
-                pipeline,
-                framebuffers,
-                descriptor_sets[0..1],
-                pipeline_layout,
-                vertices.len,
-            );
+            try uploadVertices(&vc, vertices, main_cmd_pool, buffer);
         }
 
-        const cmdbuf = cmdbufs[swapchain.image_index];
-        const state = swapchain.present(cmdbuf) catch |err| switch (err) {
-            error.OutOfDateKHR => Swapchain.PresentState.suboptimal,
-            else => |narrow| return narrow,
-        };
+        // Record the main command buffer
+        {
+            // Framebuffers were created to match swapchain images,
+            // and we record a command buffer for the correct framebuffer each frame
+            const framebuffer = framebuffers[swapchain.image_index];
 
-        if (state == .suboptimal) {
-            const new_size = try window.getSize();
-            extent.width = new_size.width;
-            extent.height = new_size.height;
-            try swapchain.recreate(extent);
+            try vc.vkd.resetCommandBuffer(main_cmd_buf, .{});
+            try vc.vkd.beginCommandBuffer(main_cmd_buf, &.{
+                .flags = .{ .one_time_submit_bit = true },
+                .p_inheritance_info = null,
+            });
 
-            destroyFramebuffers(&vc, gpa, framebuffers);
-            framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
+            const viewport = vk.Viewport{
+                .x = 0,
+                .y = 0,
+                .width = @intToFloat(f32, extent.width),
+                .height = @intToFloat(f32, extent.height),
+                .min_depth = 0,
+                .max_depth = 1,
+            };
+            vc.vkd.cmdSetViewport(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Viewport, &viewport));
 
-            destroyCommandBuffers(&vc, pool, gpa, cmdbufs);
-            cmdbufs = try createCommandBuffers(
-                &vc,
-                pool,
-                gpa,
-                buffer,
-                swapchain.extent,
-                render_pass,
-                pipeline,
-                framebuffers,
-                descriptor_sets[0..1],
-                pipeline_layout,
-                vertices.len,
-            );
+            const scissor = vk.Rect2D{
+                .offset = .{ .x = 0, .y = 0 },
+                .extent = extent,
+            };
+            vc.vkd.cmdSetScissor(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Rect2D, &scissor));
+
+            const clear = vk.ClearValue{
+                .color = .{ .float_32 = .{ 2.0 / 255.0, 4.0 / 255.0, 6.0 / 255.0, 1 } },
+            };
+            const render_area = vk.Rect2D{
+                .offset = .{ .x = 0, .y = 0 },
+                .extent = extent,
+            };
+            vc.vkd.cmdBeginRenderPass(main_cmd_buf, &.{
+                .render_pass = render_pass,
+                .framebuffer = framebuffer,
+                .render_area = render_area,
+                .clear_value_count = 1,
+                .p_clear_values = @ptrCast([*]const vk.ClearValue, &clear),
+            }, .@"inline");
+
+            vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, pipeline);
+            const offset = [_]vk.DeviceSize{0};
+            vc.vkd.cmdBindVertexBuffers(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Buffer, &buffer), &offset);
+            vc.vkd.cmdBindDescriptorSets(main_cmd_buf, .graphics, pipeline_layout, 0, @intCast(u32, descriptor_sets.len), &descriptor_sets, 0, undefined);
+            vc.vkd.cmdDraw(main_cmd_buf, @intCast(u32, vertices.len), 1, 0, 0);
+
+            vc.vkd.cmdEndRenderPass(main_cmd_buf);
+            try vc.vkd.endCommandBuffer(main_cmd_buf);
         }
 
-        try glfw.waitEvents();
+        // Submit the command buffer to start rendering
+        const wait_stage = [_]vk.PipelineStageFlags{.{ .top_of_pipe_bit = true }};
+        try vc.vkd.queueSubmit(vc.graphics_queue.handle, 1, &[_]vk.SubmitInfo{.{
+            .wait_semaphore_count = 1,
+            .p_wait_semaphores = @ptrCast([*]const vk.Semaphore, &swapchain.image_acquired_semaphore),
+            .p_wait_dst_stage_mask = &wait_stage,
+            .command_buffer_count = 1,
+            .p_command_buffers = @ptrCast([*]const vk.CommandBuffer, &main_cmd_buf),
+            .signal_semaphore_count = 1,
+            .p_signal_semaphores = @ptrCast([*]const vk.Semaphore, &swapchain.render_finished_semaphore),
+        }}, swapchain.render_finished_fence);
+
+        // Present the rendered frame when ready
+        _ = try vc.vkd.queuePresentKHR(vc.present_queue.handle, &.{
+            .wait_semaphore_count = 1,
+            .p_wait_semaphores = @ptrCast([*]const vk.Semaphore, &swapchain.render_finished_semaphore),
+            .swapchain_count = 1,
+            .p_swapchains = @ptrCast([*]const vk.SwapchainKHR, &swapchain.handle),
+            .p_image_indices = @ptrCast([*]const u32, &swapchain.image_index),
+            .p_results = null,
+        });
     }
 
-    try swapchain.waitForAllFences();
+    // Wait for GPU to finish all work before cleaning up
     try vc.vkd.queueWaitIdle(vc.graphics_queue.handle);
 }
 
@@ -356,6 +407,7 @@ pub const SingleTimeCommandBuffer = struct {
     }
 
     pub fn submit_and_free(self: SingleTimeCommandBuffer) !void {
+        // TODO: should we accept the queue as a parameter?
         const queue = self.vc.graphics_queue.handle;
         try self.vc.vkd.endCommandBuffer(self.buf);
         const si = vk.SubmitInfo{
@@ -661,9 +713,9 @@ fn createPipeline(vc: *const VulkanContext, layout: vk.PipelineLayout, render_pa
     const pvsci = vk.PipelineViewportStateCreateInfo{
         .flags = .{},
         .viewport_count = 1,
-        .p_viewports = undefined, // set in createCommandBuffers with cmdSetViewport
+        .p_viewports = undefined, // set when recording command buffer with cmdSetViewport
         .scissor_count = 1,
-        .p_scissors = undefined, // set in createCommandBuffers with cmdSetScissor
+        .p_scissors = undefined, // set when recording command buffer with cmdSetScissor
     };
 
     const prsci = vk.PipelineRasterizationStateCreateInfo{
@@ -916,88 +968,6 @@ fn copyBufferToImage(vc: *const VulkanContext, pool: vk.CommandPool, buffer: vk.
     );
 
     try cmdbuf.submit_and_free();
-}
-
-fn createCommandBuffers(
-    vc: *const VulkanContext,
-    pool: vk.CommandPool,
-    allocator: Allocator,
-    buffer: vk.Buffer,
-    extent: vk.Extent2D,
-    render_pass: vk.RenderPass,
-    pipeline: vk.Pipeline,
-    framebuffers: []vk.Framebuffer,
-    descriptor_sets: []vk.DescriptorSet,
-    pipeline_layout: vk.PipelineLayout,
-    vertex_count: usize,
-) ![]vk.CommandBuffer {
-    const cmdbufs = try allocator.alloc(vk.CommandBuffer, framebuffers.len);
-    errdefer allocator.free(cmdbufs);
-
-    try vc.vkd.allocateCommandBuffers(vc.dev, &.{
-        .command_pool = pool,
-        .level = .primary,
-        .command_buffer_count = @truncate(u32, cmdbufs.len),
-    }, cmdbufs.ptr);
-    errdefer vc.vkd.freeCommandBuffers(vc.dev, pool, @truncate(u32, cmdbufs.len), cmdbufs.ptr);
-
-    const clear = vk.ClearValue{
-        .color = .{ .float_32 = .{ 2.0 / 255.0, 4.0 / 255.0, 6.0 / 255.0, 1 } },
-    };
-
-    const viewport = vk.Viewport{
-        .x = 0,
-        .y = 0,
-        .width = @intToFloat(f32, extent.width),
-        .height = @intToFloat(f32, extent.height),
-        .min_depth = 0,
-        .max_depth = 1,
-    };
-
-    const scissor = vk.Rect2D{
-        .offset = .{ .x = 0, .y = 0 },
-        .extent = extent,
-    };
-
-    for (cmdbufs) |cmdbuf, i| {
-        try vc.vkd.beginCommandBuffer(cmdbuf, &.{
-            .flags = .{},
-            .p_inheritance_info = null,
-        });
-
-        vc.vkd.cmdSetViewport(cmdbuf, 0, 1, @ptrCast([*]const vk.Viewport, &viewport));
-        vc.vkd.cmdSetScissor(cmdbuf, 0, 1, @ptrCast([*]const vk.Rect2D, &scissor));
-
-        // This needs to be a separate definition - see https://github.com/ziglang/zig/issues/7627.
-        const render_area = vk.Rect2D{
-            .offset = .{ .x = 0, .y = 0 },
-            .extent = extent,
-        };
-
-        vc.vkd.cmdBeginRenderPass(cmdbuf, &.{
-            .render_pass = render_pass,
-            .framebuffer = framebuffers[i],
-            .render_area = render_area,
-            .clear_value_count = 1,
-            .p_clear_values = @ptrCast([*]const vk.ClearValue, &clear),
-        }, .@"inline");
-
-        vc.vkd.cmdBindPipeline(cmdbuf, .graphics, pipeline);
-        const offset = [_]vk.DeviceSize{0};
-        vc.vkd.cmdBindVertexBuffers(cmdbuf, 0, 1, @ptrCast([*]const vk.Buffer, &buffer), &offset);
-        vc.vkd.cmdBindDescriptorSets(cmdbuf, .graphics, pipeline_layout, 0, @intCast(u32, descriptor_sets.len), descriptor_sets.ptr, 0, undefined);
-        vc.vkd.cmdDraw(cmdbuf, @intCast(u32, vertex_count), 1, 0, 0);
-
-        vc.vkd.cmdEndRenderPass(cmdbuf);
-        try vc.vkd.endCommandBuffer(cmdbuf);
-    }
-
-    return cmdbufs;
-}
-
-fn destroyCommandBuffers(vc: *const VulkanContext, pool: vk.CommandPool, allocator: Allocator, cmdbufs: []vk.CommandBuffer) void {
-    vc.vkd.freeCommandBuffers(vc.dev, pool, @truncate(u32, cmdbufs.len), cmdbufs.ptr);
-    allocator.free(cmdbufs);
 }
 
 fn getVerticesTmp(text: []const u8, font: fonts.Font, allocator: Allocator) ![]Vertex {

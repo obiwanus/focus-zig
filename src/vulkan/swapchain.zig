@@ -5,11 +5,6 @@ const VulkanContext = @import("context.zig").VulkanContext;
 const Allocator = std.mem.Allocator;
 
 pub const Swapchain = struct {
-    pub const PresentState = enum {
-        optimal,
-        suboptimal,
-    };
-
     vc: *const VulkanContext,
     allocator: Allocator,
 
@@ -20,7 +15,10 @@ pub const Swapchain = struct {
 
     swap_images: []SwapImage,
     image_index: u32,
-    next_image_acquired: vk.Semaphore,
+
+    image_acquired_semaphore: vk.Semaphore,
+    render_finished_semaphore: vk.Semaphore,
+    render_finished_fence: vk.Fence,
 
     pub fn init(vc: *const VulkanContext, allocator: Allocator, extent: vk.Extent2D) !Swapchain {
         return initRecycle(vc, allocator, extent, .null_handle);
@@ -71,18 +69,17 @@ pub const Swapchain = struct {
             vc.vkd.destroySwapchainKHR(vc.dev, old_handle, null);
         }
 
+        // Signaled when swapchain has acquired a new image
+        const image_acquired_semaphore = try vc.vkd.createSemaphore(vc.dev, &.{ .flags = .{} }, null);
+        errdefer vc.vkd.destroySemaphore(vc.dev, image_acquired_semaphore, null);
+        // Signaled when the GPU is done rendering last frame
+        const render_finished_semaphore = try vc.vkd.createSemaphore(vc.dev, &.{ .flags = .{} }, null);
+        errdefer vc.vkd.destroySemaphore(vc.dev, render_finished_semaphore, null);
+        const render_finished_fence = try vc.vkd.createFence(vc.dev, &.{ .flags = .{ .signaled_bit = true } }, null);
+        errdefer vc.vkd.destroyFence(vc.dev, render_finished_fence, null);
+
         const swap_images = try initSwapchainImages(vc, handle, surface_format.format, allocator);
         errdefer for (swap_images) |si| si.deinit(vc);
-
-        var next_image_acquired = try vc.vkd.createSemaphore(vc.dev, &.{ .flags = .{} }, null);
-        errdefer vc.vkd.destroySemaphore(vc.dev, next_image_acquired, null);
-
-        const result = try vc.vkd.acquireNextImageKHR(vc.dev, handle, std.math.maxInt(u64), next_image_acquired, .null_handle);
-        if (result.result != .success) {
-            return error.ImageAcquireFailed;
-        }
-
-        std.mem.swap(vk.Semaphore, &swap_images[result.image_index].image_acquired, &next_image_acquired);
 
         return Swapchain{
             .vc = vc,
@@ -92,114 +89,67 @@ pub const Swapchain = struct {
             .extent = actual_extent,
             .handle = handle,
             .swap_images = swap_images,
-            .image_index = result.image_index,
-            .next_image_acquired = next_image_acquired,
+            .image_index = undefined, // NOTE: image must be acquired for it to be defined
+            .image_acquired_semaphore = image_acquired_semaphore,
+            .render_finished_semaphore = render_finished_semaphore,
+            .render_finished_fence = render_finished_fence,
         };
     }
 
     pub fn deinit(self: Swapchain) void {
-        self.deinitExceptSwapchain();
+        self.deinitExceptSwapchain() catch unreachable;
         self.vc.vkd.destroySwapchainKHR(self.vc.dev, self.handle, null);
     }
 
-    fn deinitExceptSwapchain(self: Swapchain) void {
+    fn deinitExceptSwapchain(self: Swapchain) !void {
+        // TODO:
+        // // Wait until we're not rendering
+        // _ = try self.vc.vkd.waitForFences(self.vc.dev, 1, @ptrCast([*]const vk.Fence, &self.render_finished_fence), vk.TRUE, std.math.maxInt(u64));
+
         for (self.swap_images) |si| si.deinit(self.vc);
-        self.vc.vkd.destroySemaphore(self.vc.dev, self.next_image_acquired, null);
+        self.vc.vkd.destroySemaphore(self.vc.dev, self.image_acquired_semaphore, null);
+        self.vc.vkd.destroySemaphore(self.vc.dev, self.render_finished_semaphore, null);
+        self.vc.vkd.destroyFence(self.vc.dev, self.render_finished_fence, null);
     }
 
     pub fn recreate(self: *Swapchain, new_extent: vk.Extent2D) !void {
         const vc = self.vc;
         const allocator = self.allocator;
         const old_handle = self.handle;
-        self.deinitExceptSwapchain();
+        try self.deinitExceptSwapchain();
         self.* = try initRecycle(vc, allocator, new_extent, old_handle);
     }
 
-    pub fn currentImage(self: Swapchain) vk.Image {
-        return self.swap_images[self.image_index].image;
+    pub fn wait_until_last_frame_is_rendered(self: Swapchain) !void {
+        _ = try self.vc.vkd.waitForFences(self.vc.dev, 1, @ptrCast([*]const vk.Fence, &self.render_finished_fence), vk.TRUE, std.math.maxInt(u64));
+        try self.vc.vkd.resetFences(self.vc.dev, 1, @ptrCast([*]const vk.Fence, &self.render_finished_fence));
     }
 
-    pub fn currentSwapImage(self: Swapchain) *const SwapImage {
-        return &self.swap_images[self.image_index];
-    }
-
-    pub fn waitForAllFences(self: Swapchain) !void {
-        for (self.swap_images) |si| si.waitForFence(self.vc) catch {};
-    }
-
-    pub fn present(self: *Swapchain, cmdbuf: vk.CommandBuffer) !PresentState {
-        // Simple method:
-        // 1) Acquire next image
-        // 2) Wait for and reset fence of the acquired image
-        // 3) Submit command buffer with fence of acquired image,
-        //    dependendent on the semaphore signalled by the first step.
-        // 4) Present current frame, dependent on semaphore signalled by previous step
-        //
-        // Problem: This way we can't reference the current image while rendering.
-        // Better method: Shuffle the steps around such that acquire next image is the last step,
-        //
-        // leaving the swapchain in a state with the current image.
-        // 1) Wait for and reset fence of current image
-        // 2) Submit command buffer, signalling fence of current image and dependent on
-        //    the semaphore signalled by step 4.
-        // 3) Present current frame, dependent on semaphore signalled by the submit
-        // 4) Acquire next image, signalling its semaphore
-        // One problem that arises is that we can't know beforehand which semaphore to signal,
-        // so we keep an extra auxiliary semaphore that is swapped around
-
-        // Step 1: Make sure the current frame has finished rendering
-        const current = self.currentSwapImage();
-        try current.waitForFence(self.vc);
-        try self.vc.vkd.resetFences(self.vc.dev, 1, @ptrCast([*]const vk.Fence, &current.frame_fence));
-
-        // Step 2: Submit the command buffer
-        const wait_stage = [_]vk.PipelineStageFlags{.{ .top_of_pipe_bit = true }};
-        try self.vc.vkd.queueSubmit(self.vc.graphics_queue.handle, 1, &[_]vk.SubmitInfo{.{
-            .wait_semaphore_count = 1,
-            .p_wait_semaphores = @ptrCast([*]const vk.Semaphore, &current.image_acquired),
-            .p_wait_dst_stage_mask = &wait_stage,
-            .command_buffer_count = 1,
-            .p_command_buffers = @ptrCast([*]const vk.CommandBuffer, &cmdbuf),
-            .signal_semaphore_count = 1,
-            .p_signal_semaphores = @ptrCast([*]const vk.Semaphore, &current.render_finished),
-        }}, current.frame_fence);
-
-        // Step 3: Present the current frame
-        _ = try self.vc.vkd.queuePresentKHR(self.vc.present_queue.handle, &.{
-            .wait_semaphore_count = 1,
-            .p_wait_semaphores = @ptrCast([*]const vk.Semaphore, &current.render_finished),
-            .swapchain_count = 1,
-            .p_swapchains = @ptrCast([*]const vk.SwapchainKHR, &self.handle),
-            .p_image_indices = @ptrCast([*]const u32, &self.image_index),
-            .p_results = null,
-        });
-
-        // Step 4: Acquire next frame
-        const result = try self.vc.vkd.acquireNextImageKHR(
+    pub fn acquire_next_image(self: *Swapchain) bool {
+        const result = self.vc.vkd.acquireNextImageKHR(
             self.vc.dev,
             self.handle,
             std.math.maxInt(u64),
-            self.next_image_acquired,
+            self.image_acquired_semaphore,
             .null_handle,
-        );
-
-        std.mem.swap(vk.Semaphore, &self.swap_images[result.image_index].image_acquired, &self.next_image_acquired);
-        self.image_index = result.image_index;
-
-        return switch (result.result) {
-            .success => .optimal,
-            .suboptimal_khr => .suboptimal,
-            else => unreachable,
+        ) catch |err| switch (err) {
+            error.OutOfDateKHR => return false,
+            else => unreachable, // TODO: what other errors are possible?
         };
+        switch (result.result) {
+            .success => {
+                self.image_index = result.image_index;
+                return true;
+            },
+            .suboptimal_khr => return false,
+            else => unreachable, // TODO: what other results are possible?
+        }
     }
 };
 
 const SwapImage = struct {
     image: vk.Image,
     view: vk.ImageView,
-    image_acquired: vk.Semaphore,
-    render_finished: vk.Semaphore,
-    frame_fence: vk.Fence,
 
     fn init(vc: *const VulkanContext, image: vk.Image, format: vk.Format) !SwapImage {
         const view = try vc.vkd.createImageView(vc.dev, &.{
@@ -218,37 +168,14 @@ const SwapImage = struct {
         }, null);
         errdefer vc.vkd.destroyImageView(vc.dev, view, null);
 
-        const image_acquired = try vc.vkd.createSemaphore(vc.dev, &.{ .flags = .{} }, null);
-        errdefer vc.vkd.destroySemaphore(vc.dev, image_acquired, null);
-
-        const render_finished = try vc.vkd.createSemaphore(vc.dev, &.{ .flags = .{} }, null);
-        errdefer vc.vkd.destroySemaphore(vc.dev, render_finished, null);
-
-        const frame_fence = try vc.vkd.createFence(vc.dev, &.{ .flags = .{ .signaled_bit = true } }, null);
-        errdefer vc.vkd.destroyFence(vc.dev, frame_fence, null);
-
         return SwapImage{
             .image = image,
             .view = view,
-            .image_acquired = image_acquired,
-            .render_finished = render_finished,
-            .frame_fence = frame_fence,
         };
     }
 
     fn deinit(self: SwapImage, vc: *const VulkanContext) void {
-        self.waitForFence(vc) catch return;
         vc.vkd.destroyImageView(vc.dev, self.view, null);
-        vc.vkd.destroySemaphore(vc.dev, self.image_acquired, null);
-        vc.vkd.destroySemaphore(vc.dev, self.render_finished, null);
-        vc.vkd.destroyFence(vc.dev, self.frame_fence, null);
-    }
-
-    fn waitForFence(self: SwapImage, vc: *const VulkanContext) !void {
-        _ = try vc.vkd.waitForFences(vc.dev, 1, @ptrCast(
-            [*]const vk.Fence,
-            &self.frame_fence,
-        ), vk.TRUE, std.math.maxInt(u64));
     }
 };
 

@@ -176,6 +176,7 @@ const DeviceDispatch = vk.DeviceWrapper(.{
     .destroyCommandPool = true,
     .allocateCommandBuffers = true,
     .freeCommandBuffers = true,
+    .resetCommandBuffer = true,
     .queueWaitIdle = true,
     .createShaderModule = true,
     .destroyShaderModule = true,
@@ -433,7 +434,11 @@ fn vulkanDebugCallback(
     else
         "unknown message";
 
-    std.debug.print("{s}({s}): {s}\n", .{ severity_msg, type_msg, message });
+    // Ignore because too verbose
+    _ = severity_msg;
+    _ = type_msg;
+
+    std.debug.print("----------------------------------------------------------\n{s}\n", .{message});
 
     _ = p_user_data;
 
