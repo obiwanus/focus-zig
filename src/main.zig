@@ -15,7 +15,7 @@ const Swapchain = @import("vulkan/swapchain.zig").Swapchain;
 var GPA = std.heap.GeneralPurposeAllocator(.{ .never_unmap = false }){};
 
 const APP_NAME = "Focus";
-const MAX_VERTEX_COUNT = 10000;
+const MAX_VERTEX_COUNT = 50000;
 
 var g_view_changed: bool = false;
 var g_text_changed: bool = false;
@@ -207,8 +207,8 @@ pub fn main() !void {
 
     // Create a buffer for editing
     g_text_buffer = x: {
-        const initial = @embedFile("../README.md");
-        // const initial = @embedFile("../libs/stb_truetype/stb_truetype.c");
+        // const initial = @embedFile("../README.md");
+        const initial = @embedFile("../libs/stb_truetype/stb_truetype.c");
         var buffer = std.ArrayList(u8).init(gpa);
         try buffer.appendSlice(initial);
         break :x buffer;

@@ -1,8 +1,8 @@
 # TODO
 - Draw cursor
-- Fix the crash when typing with cursor not on screen
 
 # DONE
++ Fix the crash when typing with cursor not on screen
 + Fix one-line file crash (and zero-line file crash too)
 + Fix swapchain recreation
 + Record command buffers every frame (should be easier in the long run)
