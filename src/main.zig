@@ -15,8 +15,10 @@ const Swapchain = @import("vulkan/swapchain.zig").Swapchain;
 var GPA = std.heap.GeneralPurposeAllocator(.{ .never_unmap = false }){};
 
 const APP_NAME = "Focus";
+const MAX_VERTEX_COUNT = 10000;
 
-var g_char_typed: bool = false;
+var g_view_changed: bool = false;
+var g_text_changed: bool = false;
 var g_text_buffer: std.ArrayList(u8) = undefined;
 var g_lines: std.ArrayList(usize) = undefined;
 var g_top_line_number: usize = 0;
@@ -71,36 +73,6 @@ pub fn main() !void {
     defer texture_image.deinit(&vc);
 
     std.debug.print("{any}\n", .{extent});
-
-    var current_top_line = g_top_line_number;
-    // Create a buffer for editing
-    g_text_buffer = x: {
-        const initial = @embedFile("../LOG.md");
-        // const initial = @embedFile("../libs/stb_truetype/stb_truetype.c");
-        var buffer = std.ArrayList(u8).init(gpa);
-        try buffer.appendSlice(initial);
-        break :x buffer;
-    };
-    defer g_text_buffer.deinit();
-    g_lines = x: {
-        var buffer = std.ArrayList(usize).init(gpa);
-        try buffer.append(0);
-        for (g_text_buffer.items) |char, i| {
-            if (char == '\n' and i < g_text_buffer.items.len) {
-                try buffer.append(i + 1);
-            }
-        }
-        break :x buffer;
-    };
-    const lines_per_screen = @floatToInt(usize, @intToFloat(f32, extent.height) / font.line_height + 1);
-    var text_on_screen = x: {
-        const start_pos = g_lines.items[g_top_line_number];
-        const last_line_index = std.math.clamp(g_top_line_number + lines_per_screen, g_top_line_number, g_lines.items.len - 1);
-        const end_pos = g_lines.items[last_line_index];
-        break :x g_text_buffer.items[start_pos..end_pos];
-    };
-
-    var vertices = try getVerticesTmp(text_on_screen, font, gpa);
 
     const texture_image_view = try createTextureImageView(&vc, texture_image.image, .r8g8b8a8_srgb);
     defer vc.vkd.destroyImageView(vc.dev, texture_image_view, null);
@@ -206,21 +178,19 @@ pub fn main() !void {
     var framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
     defer destroyFramebuffers(&vc, gpa, framebuffers);
 
-    const buffer = try vc.vkd.createBuffer(vc.dev, &.{
+    const vertex_buffer = try vc.vkd.createBuffer(vc.dev, &.{
         .flags = .{},
-        .size = @sizeOf(Vertex) * vertices.len * 20, // TODO: stop allocating it like this
+        .size = @sizeOf(Vertex) * MAX_VERTEX_COUNT,
         .usage = .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
         .sharing_mode = .exclusive,
         .queue_family_index_count = 0,
         .p_queue_family_indices = undefined,
     }, null);
-    defer vc.vkd.destroyBuffer(vc.dev, buffer, null);
-    const mem_reqs = vc.vkd.getBufferMemoryRequirements(vc.dev, buffer);
+    defer vc.vkd.destroyBuffer(vc.dev, vertex_buffer, null);
+    const mem_reqs = vc.vkd.getBufferMemoryRequirements(vc.dev, vertex_buffer);
     const memory = try vc.allocate(mem_reqs, .{ .device_local_bit = true });
     defer vc.vkd.freeMemory(vc.dev, memory, null);
-    try vc.vkd.bindBufferMemory(vc.dev, buffer, memory, 0);
-
-    try uploadVertices(&vc, vertices, main_cmd_pool, buffer);
+    try vc.vkd.bindBufferMemory(vc.dev, vertex_buffer, memory, 0);
 
     // This is the only command buffer we'll use for drawing.
     // It will be reset and re-recorded every frame
@@ -234,6 +204,24 @@ pub fn main() !void {
         break :x cmdbuf;
     };
     defer vc.vkd.freeCommandBuffers(vc.dev, main_cmd_pool, 1, @ptrCast([*]const vk.CommandBuffer, &main_cmd_buf));
+
+    // Create a buffer for editing
+    g_text_buffer = x: {
+        const initial = @embedFile("../README.md");
+        // const initial = @embedFile("../libs/stb_truetype/stb_truetype.c");
+        var buffer = std.ArrayList(u8).init(gpa);
+        try buffer.appendSlice(initial);
+        break :x buffer;
+    };
+    defer g_text_buffer.deinit();
+
+    // An array of line starts
+    g_lines = std.ArrayList(usize).init(gpa);
+    try g_lines.append(0); // first line is always at the buffer start
+    defer g_lines.deinit();
+
+    var vertices = try gpa.alloc(Vertex, 0);
+    g_text_changed = true; // trigger initial text processing
 
     while (!window.shouldClose()) {
         // Ask the swapchain for the next image
@@ -256,27 +244,30 @@ pub fn main() !void {
         try glfw.waitEvents();
 
         // Handle input
-        if (current_top_line != g_top_line_number or g_char_typed) {
-            current_top_line = g_top_line_number;
-            if (g_char_typed) {
-                const start_pos = g_lines.items[g_top_line_number];
-                g_lines.shrinkRetainingCapacity(g_top_line_number + 1);
-                for (g_text_buffer.items[start_pos..]) |char, i| {
+        if (g_view_changed or g_text_changed) {
+            g_view_changed = false;
+            if (g_text_changed) {
+                // TODO: do it from cursor
+                g_lines.shrinkRetainingCapacity(1);
+                for (g_text_buffer.items) |char, i| {
                     if (char == '\n') {
                         try g_lines.append(i + 1);
                     }
                 }
-                g_char_typed = false;
+                try g_lines.append(g_text_buffer.items.len);
+                g_text_changed = false;
             }
             gpa.free(vertices);
-            text_on_screen = x: {
+            const lines_per_screen = @floatToInt(usize, @intToFloat(f32, extent.height) / font.line_height + 1);
+            const text_on_screen = x: {
                 const start_pos = g_lines.items[g_top_line_number];
                 const last_line_index = std.math.clamp(g_top_line_number + lines_per_screen, g_top_line_number, g_lines.items.len - 1);
                 const end_pos = g_lines.items[last_line_index];
                 break :x g_text_buffer.items[start_pos..end_pos];
             };
+            // std.debug.print("{s}\n", .{text_on_screen});
             vertices = try getVerticesTmp(text_on_screen, font, gpa);
-            try uploadVertices(&vc, vertices, main_cmd_pool, buffer);
+            try uploadVertices(&vc, vertices, main_cmd_pool, vertex_buffer);
         }
 
         // Record the main command buffer
@@ -324,7 +315,7 @@ pub fn main() !void {
 
             vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, pipeline);
             const offset = [_]vk.DeviceSize{0};
-            vc.vkd.cmdBindVertexBuffers(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Buffer, &buffer), &offset);
+            vc.vkd.cmdBindVertexBuffers(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Buffer, &vertex_buffer), &offset);
             vc.vkd.cmdBindDescriptorSets(main_cmd_buf, .graphics, pipeline_layout, 0, @intCast(u32, descriptor_sets.len), &descriptor_sets, 0, undefined);
             vc.vkd.cmdDraw(main_cmd_buf, @intCast(u32, vertices.len), 1, 0, 0);
 
@@ -829,6 +820,9 @@ fn destroyFramebuffers(vc: *const VulkanContext, allocator: Allocator, framebuff
 }
 
 fn uploadVertices(vc: *const VulkanContext, vertices: []const Vertex, pool: vk.CommandPool, buffer: vk.Buffer) !void {
+    if (vertices.len == 0) {
+        return;
+    }
     const staging_buffer = try vc.vkd.createBuffer(vc.dev, &.{
         .flags = .{},
         .size = @sizeOf(Vertex) * vertices.len,
@@ -996,6 +990,8 @@ fn getVerticesTmp(text: []const u8, font: fonts.Font, allocator: Allocator) ![]V
         }
     }
 
+    std.debug.assert(vertices.items.len < MAX_VERTEX_COUNT);
+
     return vertices.toOwnedSlice();
 }
 
@@ -1006,39 +1002,38 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
 
     if (action == .press or action == .repeat) {
         switch (key) {
-            .up => if (g_top_line_number > 0) {
-                g_top_line_number -= 1;
-            },
-            .down => g_top_line_number += 1,
             .left => if (g_cursor_pos > 0) {
                 g_cursor_pos -= 1;
             },
             .right => if (g_cursor_pos < g_text_buffer.items.len - 1) {
                 g_cursor_pos += 1;
             },
-            .page_up => if (g_top_line_number >= 30) {
-                g_top_line_number -= 30;
-            } else {
-                g_top_line_number = 0;
+            .page_up => {
+                g_top_line_number -|= 30;
+                g_view_changed = true;
             },
-            .page_down => g_top_line_number += 30,
+            .page_down => {
+                g_top_line_number += 30;
+                g_view_changed = true;
+            },
             .enter => {
                 g_text_buffer.insert(g_cursor_pos, '\n') catch unreachable;
                 g_cursor_pos += 1;
-                g_char_typed = true;
+                g_text_changed = true;
             },
             .backspace => if (g_cursor_pos > 0) {
                 g_cursor_pos -= 1;
                 _ = g_text_buffer.orderedRemove(g_cursor_pos);
-                g_char_typed = true;
+                g_text_changed = true;
             },
-            .delete => if (g_cursor_pos < g_text_buffer.items.len - 2) {
+            .delete => if (g_text_buffer.items.len > 1 and g_cursor_pos < g_text_buffer.items.len - 1) {
                 _ = g_text_buffer.orderedRemove(g_cursor_pos);
-                g_char_typed = true;
+                g_text_changed = true;
             },
             else => {},
         }
-        g_top_line_number = std.math.clamp(g_top_line_number, 0, g_lines.items.len - 2);
+        g_top_line_number = std.math.clamp(g_top_line_number, 0, g_lines.items.len -| 2);
+        // std.debug.print("g_top_line_number: {}\n", .{g_top_line_number});
     }
 
     // std.debug.print("Key: {any}, scancode: {any}, action: {any}, mods: {any}\n", .{ key, scancode, action, mods });
@@ -1048,7 +1043,8 @@ fn processCharEvent(window: glfw.Window, codepoint: u21) void {
     _ = window;
     // Printable character
     const code = @truncate(u8, codepoint);
+    // std.debug.print("g_cursor: {}\n", .{g_cursor_pos});
     g_text_buffer.insert(g_cursor_pos, code) catch unreachable;
     g_cursor_pos += 1;
-    g_char_typed = true;
+    g_text_changed = true;
 }
