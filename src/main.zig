@@ -3,7 +3,6 @@ const builtin = @import("builtin");
 
 const glfw = @import("glfw");
 const vk = @import("vulkan");
-const resources = @import("resources");
 const stbi = @import("stbi");
 
 const fonts = @import("fonts.zig");
@@ -11,6 +10,9 @@ const fonts = @import("fonts.zig");
 const Allocator = std.mem.Allocator;
 const VulkanContext = @import("vulkan/context.zig").VulkanContext;
 const Swapchain = @import("vulkan/swapchain.zig").Swapchain;
+const TexturedQuadsPipeline = @import("vulkan/pipeline.zig").TexturedQuadsPipeline;
+const TexturedQuad = @import("vulkan/pipeline.zig").TexturedQuad;
+const Vec2 = @import("math.zig").Vec2;
 
 var GPA = std.heap.GeneralPurposeAllocator(.{ .never_unmap = false }){};
 
@@ -21,8 +23,12 @@ var g_view_changed: bool = false;
 var g_text_changed: bool = false;
 var g_text_buffer: std.ArrayList(u8) = undefined;
 var g_lines: std.ArrayList(usize) = undefined;
+
 var g_top_line_number: usize = 0;
-var g_cursor_pos: usize = 0;
+var g_cursor_buf_pos: usize = 0;
+var g_cursor_line: usize = 0;
+var g_cursor_col_wanted: usize = 0;
+var g_cursor_col_actual: usize = 0;
 
 pub fn main() !void {
     // Static arena lives until the end of the program
@@ -57,6 +63,7 @@ pub fn main() !void {
         .width = size.width,
         .height = size.height,
     };
+    std.debug.print("{any}\n", .{extent});
 
     var swapchain = try Swapchain.init(&vc, static_allocator, extent);
     defer swapchain.deinit();
@@ -67,120 +74,27 @@ pub fn main() !void {
     }, null);
     defer vc.vkd.destroyCommandPool(vc.dev, main_cmd_pool, null);
 
-    // TMP pack fonts into a texture
+    // Pack font into a texture
     const font = try fonts.getPackedFont(gpa, "fonts/consola.ttf", 16);
     const texture_image = try createFontTextureImage(&vc, font.pixels, font.atlas_width, font.atlas_height, main_cmd_pool);
     defer texture_image.deinit(&vc);
-
-    std.debug.print("{any}\n", .{extent});
-
     const texture_image_view = try createTextureImageView(&vc, texture_image.image, .r8g8b8a8_srgb);
     defer vc.vkd.destroyImageView(vc.dev, texture_image_view, null);
-    const texture_sampler = try vc.vkd.createSampler(vc.dev, &.{
-        .flags = .{},
-        .mag_filter = .linear,
-        .min_filter = .linear,
-        .mipmap_mode = .linear,
-        .address_mode_u = .repeat,
-        .address_mode_v = .repeat,
-        .address_mode_w = .repeat,
-        .mip_lod_bias = 0,
-        .anisotropy_enable = vk.FALSE,
-        .max_anisotropy = 1,
-        .compare_enable = vk.FALSE,
-        .compare_op = .always,
-        .min_lod = 0,
-        .max_lod = 0,
-        .border_color = .int_opaque_black,
-        .unnormalized_coordinates = vk.FALSE,
-    }, null);
-    defer vc.vkd.destroySampler(vc.dev, texture_sampler, null);
 
-    const descriptor_set_layout_bindings = [_]vk.DescriptorSetLayoutBinding{
-        .{
-            .binding = 0,
-            .descriptor_type = .combined_image_sampler,
-            .descriptor_count = 1,
-            .stage_flags = .{ .fragment_bit = true },
-            .p_immutable_samplers = null,
-        },
-    };
-    const descriptor_set_layout = try vc.vkd.createDescriptorSetLayout(vc.dev, &.{
-        .flags = .{},
-        .binding_count = descriptor_set_layout_bindings.len,
-        .p_bindings = &descriptor_set_layout_bindings,
-    }, null);
-    defer vc.vkd.destroyDescriptorSetLayout(vc.dev, descriptor_set_layout, null);
-
-    const descriptor_pool_sizes = [_]vk.DescriptorPoolSize{
-        .{
-            .@"type" = .combined_image_sampler,
-            .descriptor_count = 1,
-        },
-    };
-    // NOTE: we'll create only one set per layout
-    const set_layouts = [_]vk.DescriptorSetLayout{
-        descriptor_set_layout,
-    };
-    const descriptor_pool = try vc.vkd.createDescriptorPool(vc.dev, &.{
-        .flags = .{},
-        .max_sets = set_layouts.len,
-        .pool_size_count = descriptor_pool_sizes.len,
-        .p_pool_sizes = &descriptor_pool_sizes,
-    }, null);
-    defer vc.vkd.destroyDescriptorPool(vc.dev, descriptor_pool, null);
-
-    var descriptor_sets: [set_layouts.len]vk.DescriptorSet = undefined;
-    try vc.vkd.allocateDescriptorSets(vc.dev, &.{
-        .descriptor_pool = descriptor_pool,
-        .descriptor_set_count = set_layouts.len,
-        .p_set_layouts = &set_layouts,
-    }, &descriptor_sets);
-
-    std.debug.assert(descriptor_sets.len == 1); // only one for now
-    const descriptor_set = descriptor_sets[0];
-    const image_info = [_]vk.DescriptorImageInfo{
-        .{
-            .sampler = texture_sampler,
-            .image_view = texture_image_view,
-            .image_layout = .shader_read_only_optimal,
-        },
-    };
-    const descriptor_writes = [_]vk.WriteDescriptorSet{
-        .{
-            .dst_set = descriptor_set,
-            .dst_binding = 0,
-            .dst_array_element = 0,
-            .descriptor_count = 1,
-            .descriptor_type = .combined_image_sampler,
-            .p_image_info = &image_info,
-            .p_buffer_info = undefined,
-            .p_texel_buffer_view = undefined,
-        },
-    };
-    vc.vkd.updateDescriptorSets(vc.dev, descriptor_writes.len, &descriptor_writes, 0, undefined);
-
-    const pipeline_layout = try vc.vkd.createPipelineLayout(vc.dev, &.{
-        .flags = .{},
-        .set_layout_count = set_layouts.len,
-        .p_set_layouts = &set_layouts,
-        .push_constant_range_count = 0,
-        .p_push_constant_ranges = undefined,
-    }, null);
-    defer vc.vkd.destroyPipelineLayout(vc.dev, pipeline_layout, null);
-
+    // We have only one render pass
     const render_pass = try createRenderPass(&vc, swapchain.surface_format.format);
     defer vc.vkd.destroyRenderPass(vc.dev, render_pass, null);
 
-    var pipeline = try createPipeline(&vc, pipeline_layout, render_pass);
-    defer vc.vkd.destroyPipeline(vc.dev, pipeline, null);
+    // Pipeline for rendering textured quads (for now just text)
+    var textured_quads_pipeline = try TexturedQuadsPipeline.init(&vc, texture_image_view, render_pass);
+    defer textured_quads_pipeline.deinit(&vc);
 
     var framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
     defer destroyFramebuffers(&vc, gpa, framebuffers);
 
     const vertex_buffer = try vc.vkd.createBuffer(vc.dev, &.{
         .flags = .{},
-        .size = @sizeOf(Vertex) * MAX_VERTEX_COUNT,
+        .size = @sizeOf(TexturedQuad.Vertex) * MAX_VERTEX_COUNT,
         .usage = .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
         .sharing_mode = .exclusive,
         .queue_family_index_count = 0,
@@ -220,7 +134,7 @@ pub fn main() !void {
     try g_lines.append(0); // first line is always at the buffer start
     defer g_lines.deinit();
 
-    var vertices = try gpa.alloc(Vertex, 0);
+    var vertices = try gpa.alloc(TexturedQuad.Vertex, 0);
     g_text_changed = true; // trigger initial text processing
 
     while (!window.shouldClose()) {
@@ -313,10 +227,19 @@ pub fn main() !void {
                 .p_clear_values = @ptrCast([*]const vk.ClearValue, &clear),
             }, .@"inline");
 
-            vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, pipeline);
+            vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, textured_quads_pipeline.handle);
             const offset = [_]vk.DeviceSize{0};
             vc.vkd.cmdBindVertexBuffers(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Buffer, &vertex_buffer), &offset);
-            vc.vkd.cmdBindDescriptorSets(main_cmd_buf, .graphics, pipeline_layout, 0, @intCast(u32, descriptor_sets.len), &descriptor_sets, 0, undefined);
+            vc.vkd.cmdBindDescriptorSets(
+                main_cmd_buf,
+                .graphics,
+                textured_quads_pipeline.layout,
+                0,
+                @intCast(u32, textured_quads_pipeline.descriptor_sets.len),
+                &textured_quads_pipeline.descriptor_sets,
+                0,
+                undefined,
+            );
             vc.vkd.cmdDraw(main_cmd_buf, @intCast(u32, vertices.len), 1, 0, 0);
 
             vc.vkd.cmdEndRenderPass(main_cmd_buf);
@@ -475,70 +398,6 @@ fn createFontTextureImage(vc: *const VulkanContext, pixels: []u8, width: u32, he
     };
 }
 
-fn createTextureImage(vc: *const VulkanContext, filename: [:0]const u8, pool: vk.CommandPool) !VulkanImage {
-    const texture = try stbi.load(filename, .rgb_alpha);
-    defer texture.free();
-
-    // Create a staging buffer
-    const staging_buffer = try vc.vkd.createBuffer(vc.dev, &.{
-        .flags = .{},
-        .size = texture.num_bytes(),
-        .usage = .{ .transfer_src_bit = true },
-        .sharing_mode = .exclusive,
-        .queue_family_index_count = 0,
-        .p_queue_family_indices = undefined,
-    }, null);
-    defer vc.vkd.destroyBuffer(vc.dev, staging_buffer, null);
-    const staging_mem_reqs = vc.vkd.getBufferMemoryRequirements(vc.dev, staging_buffer);
-    const staging_memory = try vc.allocate(staging_mem_reqs, .{ .host_visible_bit = true, .host_coherent_bit = true });
-    defer vc.vkd.freeMemory(vc.dev, staging_memory, null);
-    try vc.vkd.bindBufferMemory(vc.dev, staging_buffer, staging_memory, 0);
-
-    const data = try vc.vkd.mapMemory(vc.dev, staging_memory, 0, vk.WHOLE_SIZE, .{});
-    defer vc.vkd.unmapMemory(vc.dev, staging_memory);
-
-    const image_data_dst = @ptrCast([*]u8, data)[0..texture.pixels.len];
-    std.mem.copy(u8, image_data_dst, texture.pixels);
-
-    // Create an image
-    const image_extent = vk.Extent3D{ // has to be separate, triggers segmentation fault otherwise
-        .width = texture.width,
-        .height = texture.height,
-        .depth = 1,
-    };
-    const texture_image = try vc.vkd.createImage(vc.dev, &.{
-        .flags = .{},
-        .image_type = .@"2d",
-        .format = .r8g8b8a8_srgb,
-        .extent = image_extent,
-        .mip_levels = 1,
-        .array_layers = 1,
-        .samples = .{ .@"1_bit" = true },
-        .tiling = .optimal,
-        .usage = .{ .transfer_dst_bit = true, .sampled_bit = true },
-        .sharing_mode = .exclusive,
-        .queue_family_index_count = 0,
-        .p_queue_family_indices = undefined,
-        .initial_layout = .@"undefined",
-    }, null);
-    errdefer vc.vkd.destroyImage(vc.dev, texture_image, null);
-
-    const mem_reqs = vc.vkd.getImageMemoryRequirements(vc.dev, texture_image);
-    const memory = try vc.allocate(mem_reqs, .{ .device_local_bit = true });
-    errdefer vc.vkd.freeMemory(vc.dev, memory, null);
-    try vc.vkd.bindImageMemory(vc.dev, texture_image, memory, 0);
-
-    // Copy buffer data to image
-    try transitionImageLayout(vc, pool, texture_image, .r8g8b8a8_srgb, .@"undefined", .transfer_dst_optimal);
-    try copyBufferToImage(vc, pool, staging_buffer, texture_image, texture.width, texture.height);
-    try transitionImageLayout(vc, pool, texture_image, .r8g8b8a8_srgb, .transfer_dst_optimal, .shader_read_only_optimal);
-
-    return VulkanImage{
-        .image = texture_image,
-        .memory = memory,
-    };
-}
-
 pub fn createTextureImageView(vc: *const VulkanContext, image: vk.Image, format: vk.Format) !vk.ImageView {
     const components = vk.ComponentMapping{
         .r = .identity,
@@ -564,52 +423,6 @@ pub fn createTextureImageView(vc: *const VulkanContext, image: vk.Image, format:
 
     return image_view;
 }
-
-const Vertex = struct {
-    pos: [2]f32,
-    tex_coord: [2]f32,
-
-    const binding_description = vk.VertexInputBindingDescription{
-        .binding = 0,
-        .stride = @sizeOf(Vertex),
-        .input_rate = .vertex,
-    };
-
-    const attribute_description = [_]vk.VertexInputAttributeDescription{
-        .{
-            .binding = 0,
-            .location = 0,
-            .format = .r32g32_sfloat,
-            .offset = @offsetOf(Vertex, "pos"),
-        },
-        .{
-            .binding = 0,
-            .location = 1,
-            .format = .r32g32_sfloat,
-            .offset = @offsetOf(Vertex, "tex_coord"),
-        },
-    };
-};
-
-const Vec2 = struct {
-    x: f32 = 0,
-    y: f32 = 0,
-};
-
-const Quad = struct {
-    p0: Vec2,
-    p1: Vec2,
-    st0: Vec2,
-    st1: Vec2,
-
-    pub fn getVertices(self: Quad) [6]Vertex {
-        const v0 = Vertex{ .pos = .{ self.p0.x, self.p0.y }, .tex_coord = .{ self.st0.x, self.st0.y } };
-        const v1 = Vertex{ .pos = .{ self.p1.x, self.p0.y }, .tex_coord = .{ self.st1.x, self.st0.y } };
-        const v2 = Vertex{ .pos = .{ self.p1.x, self.p1.y }, .tex_coord = .{ self.st1.x, self.st1.y } };
-        const v3 = Vertex{ .pos = .{ self.p0.x, self.p1.y }, .tex_coord = .{ self.st0.x, self.st1.y } };
-        return .{ v0, v1, v2, v0, v2, v3 };
-    }
-};
 
 fn createRenderPass(vc: *const VulkanContext, attachment_format: vk.Format) !vk.RenderPass {
     const color_attachment = vk.AttachmentDescription{
@@ -653,144 +466,6 @@ fn createRenderPass(vc: *const VulkanContext, attachment_format: vk.Format) !vk.
     }, null);
 }
 
-fn createPipeline(vc: *const VulkanContext, layout: vk.PipelineLayout, render_pass: vk.RenderPass) !vk.Pipeline {
-    const vert_module = try vc.vkd.createShaderModule(vc.dev, &.{
-        .flags = .{},
-        .code_size = resources.triangle_vert.len,
-        .p_code = @ptrCast([*]const u32, resources.triangle_vert),
-    }, null);
-    defer vc.vkd.destroyShaderModule(vc.dev, vert_module, null);
-
-    const frag_module = try vc.vkd.createShaderModule(vc.dev, &.{
-        .flags = .{},
-        .code_size = resources.triangle_frag.len,
-        .p_code = @ptrCast([*]const u32, resources.triangle_frag),
-    }, null);
-    defer vc.vkd.destroyShaderModule(vc.dev, frag_module, null);
-
-    const pssci = [_]vk.PipelineShaderStageCreateInfo{
-        .{
-            .flags = .{},
-            .stage = .{ .vertex_bit = true },
-            .module = vert_module,
-            .p_name = "main",
-            .p_specialization_info = null,
-        },
-        .{
-            .flags = .{},
-            .stage = .{ .fragment_bit = true },
-            .module = frag_module,
-            .p_name = "main",
-            .p_specialization_info = null,
-        },
-    };
-
-    const pvisci = vk.PipelineVertexInputStateCreateInfo{
-        .flags = .{},
-        .vertex_binding_description_count = 1,
-        .p_vertex_binding_descriptions = @ptrCast([*]const vk.VertexInputBindingDescription, &Vertex.binding_description),
-        .vertex_attribute_description_count = Vertex.attribute_description.len,
-        .p_vertex_attribute_descriptions = &Vertex.attribute_description,
-    };
-
-    const piasci = vk.PipelineInputAssemblyStateCreateInfo{
-        .flags = .{},
-        .topology = .triangle_list,
-        .primitive_restart_enable = vk.FALSE,
-    };
-
-    const pvsci = vk.PipelineViewportStateCreateInfo{
-        .flags = .{},
-        .viewport_count = 1,
-        .p_viewports = undefined, // set when recording command buffer with cmdSetViewport
-        .scissor_count = 1,
-        .p_scissors = undefined, // set when recording command buffer with cmdSetScissor
-    };
-
-    const prsci = vk.PipelineRasterizationStateCreateInfo{
-        .flags = .{},
-        .depth_clamp_enable = vk.FALSE,
-        .rasterizer_discard_enable = vk.FALSE,
-        .polygon_mode = .fill,
-        .cull_mode = .{ .back_bit = true },
-        .front_face = .clockwise,
-        .depth_bias_enable = vk.FALSE,
-        .depth_bias_constant_factor = 0,
-        .depth_bias_clamp = 0,
-        .depth_bias_slope_factor = 0,
-        .line_width = 1,
-    };
-
-    const pmsci = vk.PipelineMultisampleStateCreateInfo{
-        .flags = .{},
-        .rasterization_samples = .{ .@"1_bit" = true },
-        .sample_shading_enable = vk.FALSE,
-        .min_sample_shading = 1,
-        .p_sample_mask = null,
-        .alpha_to_coverage_enable = vk.FALSE,
-        .alpha_to_one_enable = vk.FALSE,
-    };
-
-    const pcbas = vk.PipelineColorBlendAttachmentState{
-        .blend_enable = vk.FALSE,
-        .src_color_blend_factor = .one,
-        .dst_color_blend_factor = .zero,
-        .color_blend_op = .add,
-        .src_alpha_blend_factor = .one,
-        .dst_alpha_blend_factor = .zero,
-        .alpha_blend_op = .add,
-        .color_write_mask = .{ .r_bit = true, .g_bit = true, .b_bit = true, .a_bit = true },
-    };
-
-    const pcbsci = vk.PipelineColorBlendStateCreateInfo{
-        .flags = .{},
-        .logic_op_enable = vk.FALSE,
-        .logic_op = .copy,
-        .attachment_count = 1,
-        .p_attachments = @ptrCast([*]const vk.PipelineColorBlendAttachmentState, &pcbas),
-        .blend_constants = [_]f32{ 0, 0, 0, 0 },
-    };
-
-    const dynstate = [_]vk.DynamicState{ .viewport, .scissor };
-    const pdsci = vk.PipelineDynamicStateCreateInfo{
-        .flags = .{},
-        .dynamic_state_count = dynstate.len,
-        .p_dynamic_states = &dynstate,
-    };
-
-    const gpci = vk.GraphicsPipelineCreateInfo{
-        .flags = .{},
-        .stage_count = 2,
-        .p_stages = &pssci,
-        .p_vertex_input_state = &pvisci,
-        .p_input_assembly_state = &piasci,
-        .p_tessellation_state = null,
-        .p_viewport_state = &pvsci,
-        .p_rasterization_state = &prsci,
-        .p_multisample_state = &pmsci,
-        .p_depth_stencil_state = null,
-        .p_color_blend_state = &pcbsci,
-        .p_dynamic_state = &pdsci,
-        .layout = layout,
-        .render_pass = render_pass,
-        .subpass = 0,
-        .base_pipeline_handle = .null_handle,
-        .base_pipeline_index = -1,
-    };
-
-    var pipeline: vk.Pipeline = undefined;
-    _ = try vc.vkd.createGraphicsPipelines(
-        vc.dev,
-        .null_handle,
-        1,
-        @ptrCast([*]const vk.GraphicsPipelineCreateInfo, &gpci),
-        null,
-        @ptrCast([*]vk.Pipeline, &pipeline),
-    );
-
-    return pipeline;
-}
-
 fn createFramebuffers(vc: *const VulkanContext, allocator: Allocator, render_pass: vk.RenderPass, swapchain: Swapchain) ![]vk.Framebuffer {
     const framebuffers = try allocator.alloc(vk.Framebuffer, swapchain.swap_images.len);
     errdefer allocator.free(framebuffers);
@@ -819,13 +494,13 @@ fn destroyFramebuffers(vc: *const VulkanContext, allocator: Allocator, framebuff
     allocator.free(framebuffers);
 }
 
-fn uploadVertices(vc: *const VulkanContext, vertices: []const Vertex, pool: vk.CommandPool, buffer: vk.Buffer) !void {
+fn uploadVertices(vc: *const VulkanContext, vertices: []const TexturedQuad.Vertex, pool: vk.CommandPool, buffer: vk.Buffer) !void {
     if (vertices.len == 0) {
         return;
     }
     const staging_buffer = try vc.vkd.createBuffer(vc.dev, &.{
         .flags = .{},
-        .size = @sizeOf(Vertex) * vertices.len,
+        .size = @sizeOf(TexturedQuad.Vertex) * vertices.len,
         .usage = .{ .transfer_src_bit = true },
         .sharing_mode = .exclusive,
         .queue_family_index_count = 0,
@@ -841,13 +516,13 @@ fn uploadVertices(vc: *const VulkanContext, vertices: []const Vertex, pool: vk.C
         const data = try vc.vkd.mapMemory(vc.dev, staging_memory, 0, vk.WHOLE_SIZE, .{});
         defer vc.vkd.unmapMemory(vc.dev, staging_memory);
 
-        const gpu_vertices = @ptrCast([*]Vertex, @alignCast(@alignOf(Vertex), data));
+        const gpu_vertices = @ptrCast([*]TexturedQuad.Vertex, @alignCast(@alignOf(TexturedQuad.Vertex), data));
         for (vertices) |vertex, i| {
             gpu_vertices[i] = vertex;
         }
     }
 
-    try copyBuffer(vc, pool, buffer, staging_buffer, @sizeOf(Vertex) * vertices.len);
+    try copyBuffer(vc, pool, buffer, staging_buffer, @sizeOf(TexturedQuad.Vertex) * vertices.len);
 }
 
 fn copyBuffer(vc: *const VulkanContext, pool: vk.CommandPool, dst: vk.Buffer, src: vk.Buffer, size: vk.DeviceSize) !void {
@@ -962,15 +637,15 @@ fn copyBufferToImage(vc: *const VulkanContext, pool: vk.CommandPool, buffer: vk.
     try cmdbuf.submit_and_free();
 }
 
-fn getVerticesTmp(text: []const u8, font: fonts.Font, allocator: Allocator) ![]Vertex {
+fn getVerticesTmp(text: []const u8, font: fonts.Font, allocator: Allocator) ![]TexturedQuad.Vertex {
     const start = Vec2{ .x = 50, .y = 50 };
-    var quads = std.ArrayList(Quad).init(allocator);
+    var quads = std.ArrayList(TexturedQuad).init(allocator);
     defer quads.deinit();
     var pos = Vec2{ .x = start.x, .y = start.y };
     for (text) |char| {
         if (char != ' ') {
             const q = font.getQuad(char, pos.x, pos.y);
-            try quads.append(Quad{
+            try quads.append(TexturedQuad{
                 .p0 = .{ .x = q.x0, .y = q.y0 },
                 .p1 = .{ .x = q.x1, .y = q.y1 },
                 .st0 = .{ .x = q.s0, .y = q.t0 },
@@ -983,7 +658,7 @@ fn getVerticesTmp(text: []const u8, font: fonts.Font, allocator: Allocator) ![]V
             pos.y += font.line_height;
         }
     }
-    var vertices = std.ArrayList(Vertex).init(allocator);
+    var vertices = std.ArrayList(TexturedQuad.Vertex).init(allocator);
     for (quads.items) |quad| {
         for (quad.getVertices()) |vertex| {
             try vertices.append(vertex);
@@ -1002,11 +677,11 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
 
     if (action == .press or action == .repeat) {
         switch (key) {
-            .left => if (g_cursor_pos > 0) {
-                g_cursor_pos -= 1;
+            .left => if (g_cursor_buf_pos > 0) {
+                g_cursor_buf_pos -= 1;
             },
-            .right => if (g_cursor_pos < g_text_buffer.items.len - 1) {
-                g_cursor_pos += 1;
+            .right => if (g_cursor_buf_pos < g_text_buffer.items.len - 1) {
+                g_cursor_buf_pos += 1;
             },
             .page_up => {
                 g_top_line_number -|= 30;
@@ -1017,17 +692,17 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
                 g_view_changed = true;
             },
             .enter => {
-                g_text_buffer.insert(g_cursor_pos, '\n') catch unreachable;
-                g_cursor_pos += 1;
+                g_text_buffer.insert(g_cursor_buf_pos, '\n') catch unreachable;
+                g_cursor_buf_pos += 1;
                 g_text_changed = true;
             },
-            .backspace => if (g_cursor_pos > 0) {
-                g_cursor_pos -= 1;
-                _ = g_text_buffer.orderedRemove(g_cursor_pos);
+            .backspace => if (g_cursor_buf_pos > 0) {
+                g_cursor_buf_pos -= 1;
+                _ = g_text_buffer.orderedRemove(g_cursor_buf_pos);
                 g_text_changed = true;
             },
-            .delete => if (g_text_buffer.items.len > 1 and g_cursor_pos < g_text_buffer.items.len - 1) {
-                _ = g_text_buffer.orderedRemove(g_cursor_pos);
+            .delete => if (g_text_buffer.items.len > 1 and g_cursor_buf_pos < g_text_buffer.items.len - 1) {
+                _ = g_text_buffer.orderedRemove(g_cursor_buf_pos);
                 g_text_changed = true;
             },
             else => {},
@@ -1043,8 +718,8 @@ fn processCharEvent(window: glfw.Window, codepoint: u21) void {
     _ = window;
     // Printable character
     const code = @truncate(u8, codepoint);
-    // std.debug.print("g_cursor: {}\n", .{g_cursor_pos});
-    g_text_buffer.insert(g_cursor_pos, code) catch unreachable;
-    g_cursor_pos += 1;
+    // std.debug.print("g_cursor: {}\n", .{g_cursor_buf_pos});
+    g_text_buffer.insert(g_cursor_buf_pos, code) catch unreachable;
+    g_cursor_buf_pos += 1;
     g_text_changed = true;
 }

@@ -1,5 +1,7 @@
 # TODO
 - Draw cursor
+    - Draw a block
+        - Try it with a separate pipeline
 
 # DONE
 + Fix the crash when typing with cursor not on screen
