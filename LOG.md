@@ -1,6 +1,7 @@
 # TODO
 - Draw cursor
-
+    - Repurpose the colored quad pipeline to only do cursors
+    - Use push constants to set cursor position
 
 # DONE
 + Draw a block

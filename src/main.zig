@@ -12,8 +12,7 @@ const VulkanContext = @import("vulkan/context.zig").VulkanContext;
 const Swapchain = @import("vulkan/swapchain.zig").Swapchain;
 const TexturedPipeline = @import("vulkan/pipeline.zig").TexturedPipeline;
 const TexturedQuad = @import("vulkan/pipeline.zig").TexturedQuad;
-const ColoredPipeline = @import("vulkan/pipeline.zig").ColoredPipeline;
-const ColoredQuad = @import("vulkan/pipeline.zig").ColoredQuad;
+const CursorPipeline = @import("vulkan/pipeline.zig").CursorPipeline;
 const Vec2 = @import("math.zig").Vec2;
 
 const dprint = std.debug.print;
@@ -94,8 +93,8 @@ pub fn main() !void {
     defer textured_pipeline.deinit(&vc);
 
     // Pipeline for colored quads (such as cursor or panels)
-    var colored_pipeline = try ColoredPipeline.init(&vc, render_pass);
-    defer colored_pipeline.deinit(&vc);
+    var cursor_pipeline = try CursorPipeline.init(&vc, render_pass);
+    defer cursor_pipeline.deinit(&vc);
 
     var framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
     defer destroyFramebuffers(&vc, gpa, framebuffers);
@@ -141,14 +140,6 @@ pub fn main() !void {
     g_lines = std.ArrayList(usize).init(gpa);
     try g_lines.append(0); // first line is always at the buffer start
     defer g_lines.deinit();
-
-    // TMP cursor
-    const cursor_quad = ColoredQuad{
-        .p0 = .{ .x = 600, .y = 50 },
-        .p1 = .{ .x = 800, .y = 350 },
-        .color = .{ 1, 1, 0, 0 },
-    };
-    const cursor_vertices = cursor_quad.getVertices();
 
     var text_vertices = try gpa.alloc(TexturedQuad.Vertex, 0);
     g_text_changed = true; // trigger initial text processing
@@ -196,7 +187,7 @@ pub fn main() !void {
                 break :x g_text_buffer.items[start_pos..end_pos];
             };
             text_vertices = try getVerticesTmp(text_on_screen, font, gpa);
-            try uploadVertices(&vc, text_vertices, cursor_vertices[0..], main_cmd_pool, vertex_buffer);
+            try uploadVertices(&vc, text_vertices, main_cmd_pool, vertex_buffer);
         }
 
         // Record the main command buffer
@@ -259,10 +250,8 @@ pub fn main() !void {
             vc.vkd.cmdDraw(main_cmd_buf, @intCast(u32, text_vertices.len), 1, 0, 0);
 
             // Draw cursor
-            vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, colored_pipeline.handle);
-            const cursor_offset = [_]vk.DeviceSize{@sizeOf(TexturedQuad.Vertex) * text_vertices.len};
-            vc.vkd.cmdBindVertexBuffers(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Buffer, &vertex_buffer), &cursor_offset);
-            vc.vkd.cmdDraw(main_cmd_buf, @intCast(u32, cursor_vertices.len), 1, 0, 0);
+            vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, cursor_pipeline.handle);
+            vc.vkd.cmdDraw(main_cmd_buf, 4, 1, 0, 0);
 
             vc.vkd.cmdEndRenderPass(main_cmd_buf);
             try vc.vkd.endCommandBuffer(main_cmd_buf);
@@ -516,11 +505,11 @@ fn destroyFramebuffers(vc: *const VulkanContext, allocator: Allocator, framebuff
     allocator.free(framebuffers);
 }
 
-fn uploadVertices(vc: *const VulkanContext, vertices: []const TexturedQuad.Vertex, cursor_vertices: []const ColoredQuad.Vertex, pool: vk.CommandPool, buffer: vk.Buffer) !void {
-    // if (vertices.len == 0) {
-    //     return;
-    // }
-    const buffer_size = @sizeOf(TexturedQuad.Vertex) * vertices.len + @sizeOf(ColoredQuad.Vertex) * cursor_vertices.len;
+fn uploadVertices(vc: *const VulkanContext, vertices: []const TexturedQuad.Vertex, pool: vk.CommandPool, buffer: vk.Buffer) !void {
+    if (vertices.len == 0) {
+        return;
+    }
+    const buffer_size = @sizeOf(TexturedQuad.Vertex) * vertices.len;
     const staging_buffer = try vc.vkd.createBuffer(vc.dev, &.{
         .flags = .{},
         .size = buffer_size,
@@ -542,10 +531,6 @@ fn uploadVertices(vc: *const VulkanContext, vertices: []const TexturedQuad.Verte
         const gpu_vertices = @ptrCast([*]TexturedQuad.Vertex, @alignCast(@alignOf(TexturedQuad.Vertex), data));
         for (vertices) |vertex, i| {
             gpu_vertices[i] = vertex;
-        }
-        const gpu_cursor_vertices = @ptrCast([*]ColoredQuad.Vertex, @alignCast(@alignOf(ColoredQuad.Vertex), gpu_vertices + vertices.len));
-        for (cursor_vertices) |vertex, i| {
-            gpu_cursor_vertices[i] = vertex;
         }
     }
 

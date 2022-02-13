@@ -316,17 +316,17 @@ pub const TexturedQuad = struct {
     }
 };
 
-pub const ColoredPipeline = struct {
+pub const CursorPipeline = struct {
     layout: vk.PipelineLayout,
     handle: vk.Pipeline,
 
-    pub fn init(vc: *const VulkanContext, render_pass: vk.RenderPass) !ColoredPipeline {
+    pub fn init(vc: *const VulkanContext, render_pass: vk.RenderPass) !CursorPipeline {
         // Pipeline layout
         const pipeline_layout = try vc.vkd.createPipelineLayout(vc.dev, &.{
             .flags = .{},
             .set_layout_count = 0,
             .p_set_layouts = undefined,
-            .push_constant_range_count = 0,
+            .push_constant_range_count = 0, // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!
             .p_push_constant_ranges = undefined,
         }, null);
         errdefer vc.vkd.destroyPipelineLayout(vc.dev, pipeline_layout, null);
@@ -335,15 +335,15 @@ pub const ColoredPipeline = struct {
         const pipeline_handle = x: {
             const vert_module = try vc.vkd.createShaderModule(vc.dev, &.{
                 .flags = .{},
-                .code_size = resources.colored_vert.len,
-                .p_code = @ptrCast([*]const u32, resources.colored_vert),
+                .code_size = resources.cursor_vert.len,
+                .p_code = @ptrCast([*]const u32, resources.cursor_vert),
             }, null);
             defer vc.vkd.destroyShaderModule(vc.dev, vert_module, null);
 
             const frag_module = try vc.vkd.createShaderModule(vc.dev, &.{
                 .flags = .{},
-                .code_size = resources.colored_frag.len,
-                .p_code = @ptrCast([*]const u32, resources.colored_frag),
+                .code_size = resources.cursor_frag.len,
+                .p_code = @ptrCast([*]const u32, resources.cursor_frag),
             }, null);
             defer vc.vkd.destroyShaderModule(vc.dev, frag_module, null);
 
@@ -364,18 +364,18 @@ pub const ColoredPipeline = struct {
                 },
             };
 
+            // Everything is hard-coded in vertex shader
             const pvisci = vk.PipelineVertexInputStateCreateInfo{
                 .flags = .{},
-                .vertex_binding_description_count = 1,
-                .p_vertex_binding_descriptions = @ptrCast([*]const vk.VertexInputBindingDescription, &ColoredQuad.Vertex.binding_description),
-                .vertex_attribute_description_count = ColoredQuad.Vertex.attribute_description.len,
-                .p_vertex_attribute_descriptions = &ColoredQuad.Vertex.attribute_description,
+                .vertex_binding_description_count = 0,
+                .p_vertex_binding_descriptions = undefined,
+                .vertex_attribute_description_count = 0,
+                .p_vertex_attribute_descriptions = undefined,
             };
 
-            // TODO: what other topologies can we use?
             const piasci = vk.PipelineInputAssemblyStateCreateInfo{
                 .flags = .{},
-                .topology = .triangle_list,
+                .topology = .triangle_fan,
                 .primitive_restart_enable = vk.FALSE,
             };
 
@@ -471,18 +471,19 @@ pub const ColoredPipeline = struct {
             break :x pipeline;
         };
 
-        return ColoredPipeline{
+        return CursorPipeline{
             .layout = pipeline_layout,
             .handle = pipeline_handle,
         };
     }
 
-    pub fn deinit(self: ColoredPipeline, vc: *const VulkanContext) void {
+    pub fn deinit(self: CursorPipeline, vc: *const VulkanContext) void {
         vc.vkd.destroyPipelineLayout(vc.dev, self.layout, null);
         vc.vkd.destroyPipeline(vc.dev, self.handle, null);
     }
 };
 
+// Unused for now
 pub const ColoredQuad = struct {
     p0: Vec2,
     p1: Vec2,
