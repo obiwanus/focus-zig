@@ -16,6 +16,8 @@ const ColoredPipeline = @import("vulkan/pipeline.zig").ColoredPipeline;
 const ColoredQuad = @import("vulkan/pipeline.zig").ColoredQuad;
 const Vec2 = @import("math.zig").Vec2;
 
+const dprint = std.debug.print;
+
 var GPA = std.heap.GeneralPurposeAllocator(.{ .never_unmap = false }){};
 
 const APP_NAME = "Focus";
@@ -127,8 +129,8 @@ pub fn main() !void {
 
     // Create a buffer for editing
     g_text_buffer = x: {
-        // const initial = @embedFile("../README.md");
-        const initial = @embedFile("../libs/stb_truetype/stb_truetype.c");
+        const initial = @embedFile("../README.md");
+        // const initial = @embedFile("../libs/stb_truetype/stb_truetype.c");
         var buffer = std.ArrayList(u8).init(gpa);
         try buffer.appendSlice(initial);
         break :x buffer;
@@ -140,7 +142,15 @@ pub fn main() !void {
     try g_lines.append(0); // first line is always at the buffer start
     defer g_lines.deinit();
 
-    var vertices = try gpa.alloc(TexturedQuad.Vertex, 0);
+    // TMP cursor
+    const cursor_quad = ColoredQuad{
+        .p0 = .{ .x = 600, .y = 50 },
+        .p1 = .{ .x = 800, .y = 350 },
+        .color = .{ 1, 1, 0, 0 },
+    };
+    const cursor_vertices = cursor_quad.getVertices();
+
+    var text_vertices = try gpa.alloc(TexturedQuad.Vertex, 0);
     g_text_changed = true; // trigger initial text processing
 
     while (!window.shouldClose()) {
@@ -177,7 +187,7 @@ pub fn main() !void {
                 try g_lines.append(g_text_buffer.items.len);
                 g_text_changed = false;
             }
-            gpa.free(vertices);
+            gpa.free(text_vertices);
             const lines_per_screen = @floatToInt(usize, @intToFloat(f32, extent.height) / font.line_height + 1);
             const text_on_screen = x: {
                 const start_pos = g_lines.items[g_top_line_number];
@@ -185,9 +195,8 @@ pub fn main() !void {
                 const end_pos = g_lines.items[last_line_index];
                 break :x g_text_buffer.items[start_pos..end_pos];
             };
-            // std.debug.print("{s}\n", .{text_on_screen});
-            vertices = try getVerticesTmp(text_on_screen, font, gpa);
-            try uploadVertices(&vc, vertices, main_cmd_pool, vertex_buffer);
+            text_vertices = try getVerticesTmp(text_on_screen, font, gpa);
+            try uploadVertices(&vc, text_vertices, cursor_vertices[0..], main_cmd_pool, vertex_buffer);
         }
 
         // Record the main command buffer
@@ -233,6 +242,7 @@ pub fn main() !void {
                 .p_clear_values = @ptrCast([*]const vk.ClearValue, &clear),
             }, .@"inline");
 
+            // Draw text
             vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, textured_pipeline.handle);
             const offset = [_]vk.DeviceSize{0};
             vc.vkd.cmdBindVertexBuffers(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Buffer, &vertex_buffer), &offset);
@@ -246,7 +256,13 @@ pub fn main() !void {
                 0,
                 undefined,
             );
-            vc.vkd.cmdDraw(main_cmd_buf, @intCast(u32, vertices.len), 1, 0, 0);
+            vc.vkd.cmdDraw(main_cmd_buf, @intCast(u32, text_vertices.len), 1, 0, 0);
+
+            // Draw cursor
+            vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, colored_pipeline.handle);
+            const cursor_offset = [_]vk.DeviceSize{@sizeOf(TexturedQuad.Vertex) * text_vertices.len};
+            vc.vkd.cmdBindVertexBuffers(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Buffer, &vertex_buffer), &cursor_offset);
+            vc.vkd.cmdDraw(main_cmd_buf, @intCast(u32, cursor_vertices.len), 1, 0, 0);
 
             vc.vkd.cmdEndRenderPass(main_cmd_buf);
             try vc.vkd.endCommandBuffer(main_cmd_buf);
@@ -500,13 +516,14 @@ fn destroyFramebuffers(vc: *const VulkanContext, allocator: Allocator, framebuff
     allocator.free(framebuffers);
 }
 
-fn uploadVertices(vc: *const VulkanContext, vertices: []const TexturedQuad.Vertex, pool: vk.CommandPool, buffer: vk.Buffer) !void {
-    if (vertices.len == 0) {
-        return;
-    }
+fn uploadVertices(vc: *const VulkanContext, vertices: []const TexturedQuad.Vertex, cursor_vertices: []const ColoredQuad.Vertex, pool: vk.CommandPool, buffer: vk.Buffer) !void {
+    // if (vertices.len == 0) {
+    //     return;
+    // }
+    const buffer_size = @sizeOf(TexturedQuad.Vertex) * vertices.len + @sizeOf(ColoredQuad.Vertex) * cursor_vertices.len;
     const staging_buffer = try vc.vkd.createBuffer(vc.dev, &.{
         .flags = .{},
-        .size = @sizeOf(TexturedQuad.Vertex) * vertices.len,
+        .size = buffer_size,
         .usage = .{ .transfer_src_bit = true },
         .sharing_mode = .exclusive,
         .queue_family_index_count = 0,
@@ -526,9 +543,13 @@ fn uploadVertices(vc: *const VulkanContext, vertices: []const TexturedQuad.Verte
         for (vertices) |vertex, i| {
             gpu_vertices[i] = vertex;
         }
+        const gpu_cursor_vertices = @ptrCast([*]ColoredQuad.Vertex, @alignCast(@alignOf(ColoredQuad.Vertex), gpu_vertices + vertices.len));
+        for (cursor_vertices) |vertex, i| {
+            gpu_cursor_vertices[i] = vertex;
+        }
     }
 
-    try copyBuffer(vc, pool, buffer, staging_buffer, @sizeOf(TexturedQuad.Vertex) * vertices.len);
+    try copyBuffer(vc, pool, buffer, staging_buffer, buffer_size);
 }
 
 fn copyBuffer(vc: *const VulkanContext, pool: vk.CommandPool, dst: vk.Buffer, src: vk.Buffer, size: vk.DeviceSize) !void {
@@ -649,7 +670,7 @@ fn getVerticesTmp(text: []const u8, font: fonts.Font, allocator: Allocator) ![]T
     defer quads.deinit();
     var pos = Vec2{ .x = start.x, .y = start.y };
     for (text) |char| {
-        if (char != ' ') {
+        if (char != ' ' and char != '\n') {
             const q = font.getQuad(char, pos.x, pos.y);
             try quads.append(TexturedQuad{
                 .p0 = .{ .x = q.x0, .y = q.y0 },

@@ -1,9 +1,11 @@
 # TODO
 - Draw cursor
-    - Draw a block
-        - Try it with a separate pipeline
+
 
 # DONE
++ Draw a block
+    + Try it with a separate pipeline
+    + Specify some coordinates somewhere and draw a quad
 + Fix the crash when typing with cursor not on screen
 + Fix one-line file crash (and zero-line file crash too)
 + Fix swapchain recreation

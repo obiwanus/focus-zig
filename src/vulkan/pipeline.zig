@@ -281,7 +281,7 @@ pub const TexturedQuad = struct {
     st0: Vec2,
     st1: Vec2,
 
-    pub const Vertex = struct {
+    pub const Vertex = extern struct {
         pos: [2]f32,
         tex_coord: [2]f32,
 
@@ -488,7 +488,7 @@ pub const ColoredQuad = struct {
     p1: Vec2,
     color: [4]f32,
 
-    pub const Vertex = struct {
+    pub const Vertex = extern struct {
         pos: [2]f32,
         color: [4]f32,
 
