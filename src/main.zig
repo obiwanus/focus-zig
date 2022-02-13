@@ -10,8 +10,10 @@ const fonts = @import("fonts.zig");
 const Allocator = std.mem.Allocator;
 const VulkanContext = @import("vulkan/context.zig").VulkanContext;
 const Swapchain = @import("vulkan/swapchain.zig").Swapchain;
-const TexturedQuadsPipeline = @import("vulkan/pipeline.zig").TexturedQuadsPipeline;
+const TexturedPipeline = @import("vulkan/pipeline.zig").TexturedPipeline;
 const TexturedQuad = @import("vulkan/pipeline.zig").TexturedQuad;
+const ColoredPipeline = @import("vulkan/pipeline.zig").ColoredPipeline;
+const ColoredQuad = @import("vulkan/pipeline.zig").ColoredQuad;
 const Vec2 = @import("math.zig").Vec2;
 
 var GPA = std.heap.GeneralPurposeAllocator(.{ .never_unmap = false }){};
@@ -86,8 +88,12 @@ pub fn main() !void {
     defer vc.vkd.destroyRenderPass(vc.dev, render_pass, null);
 
     // Pipeline for rendering textured quads (for now just text)
-    var textured_quads_pipeline = try TexturedQuadsPipeline.init(&vc, texture_image_view, render_pass);
-    defer textured_quads_pipeline.deinit(&vc);
+    var textured_pipeline = try TexturedPipeline.init(&vc, texture_image_view, render_pass);
+    defer textured_pipeline.deinit(&vc);
+
+    // Pipeline for colored quads (such as cursor or panels)
+    var colored_pipeline = try ColoredPipeline.init(&vc, render_pass);
+    defer colored_pipeline.deinit(&vc);
 
     var framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
     defer destroyFramebuffers(&vc, gpa, framebuffers);
@@ -227,16 +233,16 @@ pub fn main() !void {
                 .p_clear_values = @ptrCast([*]const vk.ClearValue, &clear),
             }, .@"inline");
 
-            vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, textured_quads_pipeline.handle);
+            vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, textured_pipeline.handle);
             const offset = [_]vk.DeviceSize{0};
             vc.vkd.cmdBindVertexBuffers(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Buffer, &vertex_buffer), &offset);
             vc.vkd.cmdBindDescriptorSets(
                 main_cmd_buf,
                 .graphics,
-                textured_quads_pipeline.layout,
+                textured_pipeline.layout,
                 0,
-                @intCast(u32, textured_quads_pipeline.descriptor_sets.len),
-                &textured_quads_pipeline.descriptor_sets,
+                @intCast(u32, textured_pipeline.descriptor_sets.len),
+                &textured_pipeline.descriptor_sets,
                 0,
                 undefined,
             );
