@@ -26,6 +26,7 @@ var g_view_changed: bool = false;
 var g_text_changed: bool = false;
 var g_text_buffer: std.ArrayList(u8) = undefined;
 var g_lines: std.ArrayList(usize) = undefined;
+var g_lines_per_screen: usize = undefined;
 
 var g_top_line_number: usize = 0;
 var g_cursor_buf_pos: usize = 0;
@@ -179,7 +180,7 @@ pub fn main() !void {
                 try g_lines.append(g_text_buffer.items.len);
             }
 
-            const lines_per_screen = @floatToInt(usize, @intToFloat(f32, extent.height) / font.line_height);
+            g_lines_per_screen = @floatToInt(usize, @intToFloat(f32, extent.height) / font.line_height);
 
             // Get cursor position - not super efficient, but should be robust and easy
             {
@@ -194,8 +195,8 @@ pub fn main() !void {
                 // Detect if cursor is outside vertical viewport
                 if (g_cursor_line < g_top_line_number) {
                     g_top_line_number = g_cursor_line;
-                } else if (g_cursor_line > g_top_line_number + lines_per_screen - 1) {
-                    g_top_line_number = g_cursor_line - lines_per_screen + 1;
+                } else if (g_cursor_line > g_top_line_number + g_lines_per_screen - 1) {
+                    g_top_line_number = g_cursor_line - g_lines_per_screen + 1;
                 }
 
                 g_cursor_col_actual = g_cursor_buf_pos - g_lines.items[g_cursor_line];
@@ -203,7 +204,7 @@ pub fn main() !void {
 
             const text_on_screen = x: {
                 const start_pos = g_lines.items[g_top_line_number];
-                const last_line_index = std.math.clamp(g_top_line_number + lines_per_screen, g_top_line_number, g_lines.items.len - 1);
+                const last_line_index = std.math.clamp(g_top_line_number + g_lines_per_screen, g_top_line_number, g_lines.items.len - 1);
                 const end_pos = g_lines.items[last_line_index];
                 break :x g_text_buffer.items[start_pos..end_pos];
             };
@@ -706,6 +707,23 @@ fn getVerticesTmp(text: []const u8, font: fonts.Font, allocator: Allocator) ![]T
     return vertices.toOwnedSlice();
 }
 
+// Directly modifies globals (tmp)
+fn moveCursorToTargetLine(line: usize) void {
+    const target_line = if (line > g_lines.items.len - 2)
+        g_lines.items.len - 2
+    else
+        line;
+    const chars_on_target_line = g_lines.items[target_line + 1] - g_lines.items[target_line] -| 1;
+    const wanted_pos = if (g_cursor_col_wanted) |wanted|
+        wanted
+    else
+        g_cursor_col_actual;
+    const new_line_pos = std.math.min(wanted_pos, chars_on_target_line);
+    g_cursor_col_wanted = if (new_line_pos < wanted_pos) wanted_pos else null; // reset or remember wanted position
+    g_cursor_buf_pos = g_lines.items[target_line] + new_line_pos;
+    g_view_changed = true;
+}
+
 fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: glfw.Action, mods: glfw.Mods) void {
     _ = window;
     _ = scancode;
@@ -723,42 +741,28 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
                 g_cursor_col_wanted = null;
                 g_view_changed = true;
             },
-            .up => if (g_cursor_line > 0) {
-                const chars_on_target_line = g_lines.items[g_cursor_line] - g_lines.items[g_cursor_line - 1] - 1;
-                const wanted_pos = if (g_cursor_col_wanted) |wanted|
-                    wanted
-                else
-                    g_cursor_col_actual;
-                const new_line_pos = std.math.min(wanted_pos, chars_on_target_line);
-                g_cursor_col_wanted = if (new_line_pos < wanted_pos) wanted_pos else null; // reset or remember wanted position
-                g_cursor_buf_pos = g_lines.items[g_cursor_line - 1] + new_line_pos;
-                g_view_changed = true;
+            .up => {
+                const offset: usize = if (mods.control) 5 else 1;
+                moveCursorToTargetLine(g_cursor_line -| offset);
             },
-            .down => if (g_cursor_line < g_lines.items.len - 2) {
-                const chars_on_target_line = g_lines.items[g_cursor_line + 2] - g_lines.items[g_cursor_line + 1] - 1;
-                const wanted_pos = if (g_cursor_col_wanted) |wanted|
-                    wanted
-                else
-                    g_cursor_col_actual;
-                const new_line_pos = std.math.min(wanted_pos, chars_on_target_line);
-                g_cursor_col_wanted = if (new_line_pos < wanted_pos) wanted_pos else null; // reset or remember wanted position
-                g_cursor_buf_pos = g_lines.items[g_cursor_line + 1] + new_line_pos;
-                g_view_changed = true;
+            .down => {
+                const offset: usize = if (mods.control) 5 else 1;
+                moveCursorToTargetLine(g_cursor_line + offset);
+            },
+            .page_up => {
+                moveCursorToTargetLine(g_cursor_line -| (g_lines_per_screen - 1));
+            },
+            .page_down => {
+                moveCursorToTargetLine(g_cursor_line + (g_lines_per_screen - 1));
             },
             .home => {
                 g_cursor_buf_pos = g_lines.items[g_cursor_line];
+                g_cursor_col_wanted = null;
                 g_view_changed = true;
             },
             .end => {
                 g_cursor_buf_pos = g_lines.items[g_cursor_line + 1] - 1;
-                g_view_changed = true;
-            },
-            .page_up => {
-                g_top_line_number -|= 30;
-                g_view_changed = true;
-            },
-            .page_down => {
-                g_top_line_number += 30;
+                g_cursor_col_wanted = std.math.maxInt(usize);
                 g_view_changed = true;
             },
             .enter => {

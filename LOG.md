@@ -1,8 +1,8 @@
 # TODO
-- Move viewport if cursor is outside
-- Fix page up and down
 
 # DONE
++ Fix page up and down
++ Move viewport if cursor is outside
 + Support home and end
 + Move cursor up and down
 + Draw cursor
