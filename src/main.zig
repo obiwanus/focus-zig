@@ -168,7 +168,8 @@ pub fn main() !void {
         if (g_view_changed or g_text_changed) {
             g_view_changed = false;
             if (g_text_changed) {
-                // TODO: do it from cursor
+                g_text_changed = false;
+                // TODO: do it from cursor? - only applicable if the change was made by the cursor
                 g_lines.shrinkRetainingCapacity(1);
                 for (g_text_buffer.items) |char, i| {
                     if (char == '\n') {
@@ -176,12 +177,13 @@ pub fn main() !void {
                     }
                 }
                 try g_lines.append(g_text_buffer.items.len);
-                g_text_changed = false;
             }
+
+            const lines_per_screen = @floatToInt(usize, @intToFloat(f32, extent.height) / font.line_height);
 
             // Get cursor position - not super efficient, but should be robust and easy
             {
-                const cursor_line = for (g_lines.items) |line_start, line| {
+                g_cursor_line = for (g_lines.items) |line_start, line| {
                     if (g_cursor_buf_pos < line_start) {
                         break line - 1;
                     } else if (g_cursor_buf_pos == line_start) {
@@ -189,18 +191,23 @@ pub fn main() !void {
                     }
                 } else g_lines.items.len;
 
-                g_cursor_line = cursor_line - g_top_line_number;
-                g_cursor_col_actual = g_cursor_buf_pos - g_lines.items[cursor_line];
+                // Detect if cursor is outside vertical viewport
+                if (g_cursor_line < g_top_line_number) {
+                    g_top_line_number = g_cursor_line;
+                } else if (g_cursor_line > g_top_line_number + lines_per_screen - 1) {
+                    g_top_line_number = g_cursor_line - lines_per_screen + 1;
+                }
+
+                g_cursor_col_actual = g_cursor_buf_pos - g_lines.items[g_cursor_line];
             }
 
-            gpa.free(text_vertices);
-            const lines_per_screen = @floatToInt(usize, @intToFloat(f32, extent.height) / font.line_height);
             const text_on_screen = x: {
                 const start_pos = g_lines.items[g_top_line_number];
                 const last_line_index = std.math.clamp(g_top_line_number + lines_per_screen, g_top_line_number, g_lines.items.len - 1);
                 const end_pos = g_lines.items[last_line_index];
                 break :x g_text_buffer.items[start_pos..end_pos];
             };
+            gpa.free(text_vertices);
             text_vertices = try getVerticesTmp(text_on_screen, font, gpa);
             try uploadVertices(&vc, text_vertices, main_cmd_pool, vertex_buffer);
         }
@@ -266,7 +273,7 @@ pub fn main() !void {
 
             // Draw cursor
             vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, cursor_pipeline.handle);
-            const cursor_offset = Vec2{ .x = @intToFloat(f32, g_cursor_col_actual), .y = @intToFloat(f32, g_cursor_line) };
+            const cursor_offset = Vec2{ .x = @intToFloat(f32, g_cursor_col_actual), .y = @intToFloat(f32, g_cursor_line - g_top_line_number) };
             vc.vkd.cmdPushConstants(main_cmd_buf, cursor_pipeline.layout, .{ .vertex_bit = true }, 0, @sizeOf(Vec2), &cursor_offset);
             vc.vkd.cmdDraw(main_cmd_buf, 4, 1, 0, 0);
 
