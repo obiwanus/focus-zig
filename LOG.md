@@ -1,9 +1,15 @@
 # TODO
-- Draw cursor
-    - Repurpose the colored quad pipeline to only do cursors
-    - Use push constants to set cursor position
+- Move cursor up and down
+- Move viewport if cursor is outside
+- Support home and end, page up and down
 
 # DONE
++ Draw cursor
+    + Repurpose the colored quad pipeline to only do cursors
+    + Use push constants to set cursor position
+    + Draw cursor at 0,0 in the top left corner
+    + Sync the offsets so the 0,0 of the cursor is where the text starts
+    + Move the cursor and display it
 + Draw a block
     + Try it with a separate pipeline
     + Specify some coordinates somewhere and draw a quad

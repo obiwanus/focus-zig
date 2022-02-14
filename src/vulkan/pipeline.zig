@@ -322,12 +322,17 @@ pub const CursorPipeline = struct {
 
     pub fn init(vc: *const VulkanContext, render_pass: vk.RenderPass) !CursorPipeline {
         // Pipeline layout
+        const push_constant_ranges = [_]vk.PushConstantRange{.{
+            .stage_flags = .{ .vertex_bit = true },
+            .offset = 0,
+            .size = @sizeOf(Vec2),
+        }};
         const pipeline_layout = try vc.vkd.createPipelineLayout(vc.dev, &.{
             .flags = .{},
             .set_layout_count = 0,
             .p_set_layouts = undefined,
-            .push_constant_range_count = 0, // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!
-            .p_push_constant_ranges = undefined,
+            .push_constant_range_count = push_constant_ranges.len,
+            .p_push_constant_ranges = &push_constant_ranges,
         }, null);
         errdefer vc.vkd.destroyPipelineLayout(vc.dev, pipeline_layout, null);
 

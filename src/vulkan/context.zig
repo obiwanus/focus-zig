@@ -212,6 +212,7 @@ const DeviceDispatch = vk.DeviceWrapper(.{
     .cmdCopyBuffer = true,
     .cmdPipelineBarrier = true,
     .cmdCopyBufferToImage = true,
+    .cmdPushConstants = true,
     .createSampler = true,
     .destroySampler = true,
     .createDescriptorSetLayout = true,

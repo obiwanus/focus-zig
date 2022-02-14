@@ -128,8 +128,8 @@ pub fn main() !void {
 
     // Create a buffer for editing
     g_text_buffer = x: {
-        const initial = @embedFile("../README.md");
-        // const initial = @embedFile("../libs/stb_truetype/stb_truetype.c");
+        // const initial = @embedFile("../README.md");
+        const initial = @embedFile("../libs/stb_truetype/stb_truetype.c");
         var buffer = std.ArrayList(u8).init(gpa);
         try buffer.appendSlice(initial);
         break :x buffer;
@@ -178,8 +178,23 @@ pub fn main() !void {
                 try g_lines.append(g_text_buffer.items.len);
                 g_text_changed = false;
             }
+
+            // Get cursor position - not super efficient, but should be robust and easy
+            {
+                const cursor_line = for (g_lines.items) |line_start, line| {
+                    if (g_cursor_buf_pos < line_start) {
+                        break line - 1;
+                    } else if (g_cursor_buf_pos == line_start) {
+                        break line; // for one-line files
+                    }
+                } else g_lines.items.len;
+
+                g_cursor_line = cursor_line - g_top_line_number;
+                g_cursor_col_actual = g_cursor_buf_pos - g_lines.items[cursor_line];
+            }
+
             gpa.free(text_vertices);
-            const lines_per_screen = @floatToInt(usize, @intToFloat(f32, extent.height) / font.line_height + 1);
+            const lines_per_screen = @floatToInt(usize, @intToFloat(f32, extent.height) / font.line_height);
             const text_on_screen = x: {
                 const start_pos = g_lines.items[g_top_line_number];
                 const last_line_index = std.math.clamp(g_top_line_number + lines_per_screen, g_top_line_number, g_lines.items.len - 1);
@@ -251,6 +266,8 @@ pub fn main() !void {
 
             // Draw cursor
             vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, cursor_pipeline.handle);
+            const cursor_offset = Vec2{ .x = @intToFloat(f32, g_cursor_col_actual), .y = @intToFloat(f32, g_cursor_line) };
+            vc.vkd.cmdPushConstants(main_cmd_buf, cursor_pipeline.layout, .{ .vertex_bit = true }, 0, @sizeOf(Vec2), &cursor_offset);
             vc.vkd.cmdDraw(main_cmd_buf, 4, 1, 0, 0);
 
             vc.vkd.cmdEndRenderPass(main_cmd_buf);
@@ -650,7 +667,7 @@ fn copyBufferToImage(vc: *const VulkanContext, pool: vk.CommandPool, buffer: vk.
 }
 
 fn getVerticesTmp(text: []const u8, font: fonts.Font, allocator: Allocator) ![]TexturedQuad.Vertex {
-    const start = Vec2{ .x = 50, .y = 50 };
+    const start = Vec2{ .x = 0, .y = 15 };
     var quads = std.ArrayList(TexturedQuad).init(allocator);
     defer quads.deinit();
     var pos = Vec2{ .x = start.x, .y = start.y };
@@ -691,9 +708,11 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
         switch (key) {
             .left => if (g_cursor_buf_pos > 0) {
                 g_cursor_buf_pos -= 1;
+                g_view_changed = true;
             },
             .right => if (g_cursor_buf_pos < g_text_buffer.items.len - 1) {
                 g_cursor_buf_pos += 1;
+                g_view_changed = true;
             },
             .page_up => {
                 g_top_line_number -|= 30;
