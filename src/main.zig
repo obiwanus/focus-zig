@@ -738,6 +738,14 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
                 g_cursor_buf_pos = g_lines.items[g_cursor_line + 1] + new_line_pos;
                 g_view_changed = true;
             },
+            .home => {
+                g_cursor_buf_pos = g_lines.items[g_cursor_line];
+                g_view_changed = true;
+            },
+            .end => {
+                g_cursor_buf_pos = g_lines.items[g_cursor_line + 1] - 1;
+                g_view_changed = true;
+            },
             .page_up => {
                 g_top_line_number -|= 30;
                 g_view_changed = true;
