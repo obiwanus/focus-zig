@@ -30,7 +30,7 @@ var g_lines: std.ArrayList(usize) = undefined;
 var g_top_line_number: usize = 0;
 var g_cursor_buf_pos: usize = 0;
 var g_cursor_line: usize = 0;
-var g_cursor_col_wanted: usize = 0;
+var g_cursor_col_wanted: ?usize = null;
 var g_cursor_col_actual: usize = 0;
 
 pub fn main() !void {
@@ -708,10 +708,34 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
         switch (key) {
             .left => if (g_cursor_buf_pos > 0) {
                 g_cursor_buf_pos -= 1;
+                g_cursor_col_wanted = null;
                 g_view_changed = true;
             },
             .right => if (g_cursor_buf_pos < g_text_buffer.items.len - 1) {
                 g_cursor_buf_pos += 1;
+                g_cursor_col_wanted = null;
+                g_view_changed = true;
+            },
+            .up => if (g_cursor_line > 0) {
+                const chars_on_target_line = g_lines.items[g_cursor_line] - g_lines.items[g_cursor_line - 1] - 1;
+                const wanted_pos = if (g_cursor_col_wanted) |wanted|
+                    wanted
+                else
+                    g_cursor_col_actual;
+                const new_line_pos = std.math.min(wanted_pos, chars_on_target_line);
+                g_cursor_col_wanted = if (new_line_pos < wanted_pos) wanted_pos else null; // reset or remember wanted position
+                g_cursor_buf_pos = g_lines.items[g_cursor_line - 1] + new_line_pos;
+                g_view_changed = true;
+            },
+            .down => if (g_cursor_line < g_lines.items.len - 2) {
+                const chars_on_target_line = g_lines.items[g_cursor_line + 2] - g_lines.items[g_cursor_line + 1] - 1;
+                const wanted_pos = if (g_cursor_col_wanted) |wanted|
+                    wanted
+                else
+                    g_cursor_col_actual;
+                const new_line_pos = std.math.min(wanted_pos, chars_on_target_line);
+                g_cursor_col_wanted = if (new_line_pos < wanted_pos) wanted_pos else null; // reset or remember wanted position
+                g_cursor_buf_pos = g_lines.items[g_cursor_line + 1] + new_line_pos;
                 g_view_changed = true;
             },
             .page_up => {
@@ -725,15 +749,18 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
             .enter => {
                 g_text_buffer.insert(g_cursor_buf_pos, '\n') catch unreachable;
                 g_cursor_buf_pos += 1;
+                g_cursor_col_wanted = null;
                 g_text_changed = true;
             },
             .backspace => if (g_cursor_buf_pos > 0) {
                 g_cursor_buf_pos -= 1;
                 _ = g_text_buffer.orderedRemove(g_cursor_buf_pos);
+                g_cursor_col_wanted = null;
                 g_text_changed = true;
             },
             .delete => if (g_text_buffer.items.len > 1 and g_cursor_buf_pos < g_text_buffer.items.len - 1) {
                 _ = g_text_buffer.orderedRemove(g_cursor_buf_pos);
+                g_cursor_col_wanted = null;
                 g_text_changed = true;
             },
             else => {},
@@ -747,10 +774,9 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
 
 fn processCharEvent(window: glfw.Window, codepoint: u21) void {
     _ = window;
-    // Printable character
     const code = @truncate(u8, codepoint);
-    // std.debug.print("g_cursor: {}\n", .{g_cursor_buf_pos});
     g_text_buffer.insert(g_cursor_buf_pos, code) catch unreachable;
     g_cursor_buf_pos += 1;
+    g_cursor_col_wanted = null;
     g_text_changed = true;
 }

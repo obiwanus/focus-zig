@@ -1,9 +1,9 @@
 # TODO
-- Move cursor up and down
 - Move viewport if cursor is outside
 - Support home and end, page up and down
 
 # DONE
++ Move cursor up and down
 + Draw cursor
     + Repurpose the colored quad pipeline to only do cursors
     + Use push constants to set cursor position
