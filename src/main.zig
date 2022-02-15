@@ -15,24 +15,143 @@ const TexturedQuad = @import("vulkan/pipeline.zig").TexturedQuad;
 const CursorPipeline = @import("vulkan/pipeline.zig").CursorPipeline;
 const Vec2 = @import("math.zig").Vec2;
 
-const dprint = std.debug.print;
+const print = std.debug.print;
+const assert = std.debug.assert;
 
 var GPA = std.heap.GeneralPurposeAllocator(.{ .never_unmap = false }){};
 
 const APP_NAME = "Focus";
-const MAX_VERTEX_COUNT = 50000;
+const MAX_VERTEX_COUNT = 100000;
 
-var g_view_changed: bool = false;
-var g_text_changed: bool = false;
-var g_text_buffer: std.ArrayList(u8) = undefined;
-var g_lines: std.ArrayList(usize) = undefined;
-var g_lines_per_screen: usize = undefined;
+const Editor = struct {
+    extent: vk.Extent2D,
+    font: fonts.Font,
+    buf: TextBuffer,
+};
 
-var g_top_line_number: usize = 0;
-var g_cursor_buf_pos: usize = 0;
-var g_cursor_line: usize = 0;
-var g_cursor_col_wanted: ?usize = null;
-var g_cursor_col_actual: usize = 0;
+const TextBuffer = struct {
+    bytes: std.ArrayList(u8),
+    // TODO: unicode
+    lines: std.ArrayList(usize),
+    lines_per_screen: usize = undefined,
+    cursor: Cursor,
+
+    text_vertices: std.ArrayList(TexturedQuad.Vertex),
+    text_quads: std.ArrayList(TexturedQuad),
+
+    viewport_top_line: usize = 0, // line from which viewport starts
+    text_changed: bool = false,
+    view_changed: bool = false,
+
+    pub fn init(allocator: Allocator, comptime file_name: []const u8) !TextBuffer {
+        const initial = @embedFile(file_name);
+        var bytes = std.ArrayList(u8).init(allocator);
+        try bytes.appendSlice(initial);
+
+        var lines = std.ArrayList(usize).init(allocator);
+        try lines.append(0); // first line is always at the buffer start
+
+        var text_vertices = std.ArrayList(TexturedQuad.Vertex).init(allocator);
+        var text_quads = std.ArrayList(TexturedQuad).init(allocator);
+
+        return TextBuffer{
+            .bytes = bytes,
+            .lines = lines,
+            .cursor = Cursor{},
+            .text_vertices = text_vertices,
+            .text_quads = text_quads,
+        };
+    }
+
+    pub fn deinit(self: TextBuffer) void {
+        self.lines.deinit();
+        self.bytes.deinit();
+    }
+
+    pub fn recalculateLines(self: *TextBuffer) !void {
+        self.lines.shrinkRetainingCapacity(1);
+        for (self.bytes.items) |char, i| {
+            if (char == '\n') {
+                try self.lines.append(i + 1);
+            }
+        }
+        try self.lines.append(self.bytes.items.len);
+    }
+
+    /// Recalculates cursor line/column coordinates from buffer position
+    pub fn updateCursor(self: *TextBuffer) void {
+        self.cursor.line = for (self.lines.items) |line_start, line| {
+            if (self.cursor.pos < line_start) {
+                break line - 1;
+            } else if (self.cursor.pos == line_start) {
+                break line; // for one-line files
+            }
+        } else self.lines.items.len;
+        self.cursor.col = self.cursor.pos - self.lines.items[self.cursor.line];
+
+        // Detect if cursor is outside vertical viewport
+        if (self.cursor.line < self.viewport_top_line) {
+            self.viewport_top_line = self.cursor.line;
+        } else if (self.cursor.line > self.viewport_top_line + self.lines_per_screen - 1) {
+            self.viewport_top_line = self.cursor.line - self.lines_per_screen + 1;
+        }
+    }
+
+    /// Updates the inner vertex array based on current viewport and buffer contents
+    pub fn updateVisibleVertices(self: *TextBuffer, font: fonts.Font) !void {
+        var bottom_line = self.viewport_top_line + self.lines_per_screen;
+        if (bottom_line > self.lines.items.len - 1) {
+            bottom_line = self.lines.items.len - 1;
+        }
+        const start_pos = self.lines.items[self.viewport_top_line];
+        const end_pos = self.lines.items[bottom_line];
+        const visible_chars = self.bytes.items[start_pos..end_pos];
+
+        // Rebuild text vertices
+        {
+            self.text_vertices.shrinkRetainingCapacity(0);
+            self.text_quads.shrinkRetainingCapacity(0);
+
+            const start = Vec2{ .x = 0, .y = 15 };
+            var pos = Vec2{ .x = start.x, .y = start.y };
+            // Get quads
+            for (visible_chars) |char| {
+                if (char != ' ' and char != '\n') {
+                    const q = font.getQuad(char, pos.x, pos.y);
+                    try self.text_quads.append(TexturedQuad{
+                        .p0 = .{ .x = q.x0, .y = q.y0 },
+                        .p1 = .{ .x = q.x1, .y = q.y1 },
+                        .st0 = .{ .x = q.s0, .y = q.t0 },
+                        .st1 = .{ .x = q.s1, .y = q.t1 },
+                    });
+                }
+                pos.x += font.getXAdvance(char); // TODO: make this constant for fixed-width fonts?
+                if (char == '\n') {
+                    pos.x = start.x;
+                    pos.y += font.line_height;
+                }
+            }
+            // Get vertices
+            for (self.text_quads.items) |quad| {
+                for (quad.getVertices()) |vertex| {
+                    try self.text_vertices.append(vertex);
+                }
+            }
+
+            assert(self.text_vertices.items.len < MAX_VERTEX_COUNT);
+        }
+    }
+};
+
+const Cursor = struct {
+    pos: usize = 0,
+    line: usize = 0, // from the beginning of buffer
+    col: usize = 0, // actual column
+    col_wanted: ?usize = null, // where the cursor wants to be
+};
+
+// Global editor context
+var g: Editor = undefined;
 
 pub fn main() !void {
     // Static arena lives until the end of the program
@@ -56,21 +175,8 @@ pub fn main() !void {
     });
     defer window.destroy();
 
-    window.setKeyCallback(processKeyEvent);
-    window.setCharCallback(processCharEvent);
-
     const vc = try VulkanContext.init(static_allocator, APP_NAME, window);
     defer vc.deinit();
-
-    const size = try window.getSize();
-    var extent = vk.Extent2D{
-        .width = size.width,
-        .height = size.height,
-    };
-    std.debug.print("{any}\n", .{extent});
-
-    var swapchain = try Swapchain.init(&vc, static_allocator, extent);
-    defer swapchain.deinit();
 
     const main_cmd_pool = try vc.vkd.createCommandPool(vc.dev, &.{
         .flags = .{ .reset_command_buffer_bit = true },
@@ -78,12 +184,27 @@ pub fn main() !void {
     }, null);
     defer vc.vkd.destroyCommandPool(vc.dev, main_cmd_pool, null);
 
-    // Pack font into a texture
+    // Pack font into a texture - TODO: do it as part of the context
     const font = try fonts.getPackedFont(gpa, "fonts/consola.ttf", 16);
     const texture_image = try createFontTextureImage(&vc, font.pixels, font.atlas_width, font.atlas_height, main_cmd_pool);
     defer texture_image.deinit(&vc);
     const texture_image_view = try createTextureImageView(&vc, texture_image.image, .r8g8b8a8_srgb);
     defer vc.vkd.destroyImageView(vc.dev, texture_image_view, null);
+
+    // Initialise editor context
+    const size = try window.getSize();
+    g.extent.width = size.width;
+    g.extent.height = size.height;
+    g.font = font; // useless for now
+    g.buf = try TextBuffer.init(gpa, "../LOG.md");
+    defer g.buf.deinit();
+    g.buf.text_changed = true; // trigger initial update
+    g.buf.text_vertices = std.ArrayList(TexturedQuad.Vertex).init(gpa);
+    // TODO: refresh when extent changes
+    g.buf.lines_per_screen = @floatToInt(usize, @intToFloat(f32, g.extent.height) / font.line_height);
+
+    var swapchain = try Swapchain.init(&vc, static_allocator, g.extent);
+    defer swapchain.deinit();
 
     // We have only one render pass
     const render_pass = try createRenderPass(&vc, swapchain.surface_format.format);
@@ -100,7 +221,7 @@ pub fn main() !void {
     var framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
     defer destroyFramebuffers(&vc, gpa, framebuffers);
 
-    const vertex_buffer = try vc.vkd.createBuffer(vc.dev, &.{
+    const text_vertex_buffer = try vc.vkd.createBuffer(vc.dev, &.{
         .flags = .{},
         .size = @sizeOf(TexturedQuad.Vertex) * MAX_VERTEX_COUNT,
         .usage = .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
@@ -108,11 +229,11 @@ pub fn main() !void {
         .queue_family_index_count = 0,
         .p_queue_family_indices = undefined,
     }, null);
-    defer vc.vkd.destroyBuffer(vc.dev, vertex_buffer, null);
-    const mem_reqs = vc.vkd.getBufferMemoryRequirements(vc.dev, vertex_buffer);
+    defer vc.vkd.destroyBuffer(vc.dev, text_vertex_buffer, null);
+    const mem_reqs = vc.vkd.getBufferMemoryRequirements(vc.dev, text_vertex_buffer);
     const memory = try vc.allocate(mem_reqs, .{ .device_local_bit = true });
     defer vc.vkd.freeMemory(vc.dev, memory, null);
-    try vc.vkd.bindBufferMemory(vc.dev, vertex_buffer, memory, 0);
+    try vc.vkd.bindBufferMemory(vc.dev, text_vertex_buffer, memory, 0);
 
     // This is the only command buffer we'll use for drawing.
     // It will be reset and re-recorded every frame
@@ -127,23 +248,8 @@ pub fn main() !void {
     };
     defer vc.vkd.freeCommandBuffers(vc.dev, main_cmd_pool, 1, @ptrCast([*]const vk.CommandBuffer, &main_cmd_buf));
 
-    // Create a buffer for editing
-    g_text_buffer = x: {
-        const initial = @embedFile("../LOG.md");
-        // const initial = @embedFile("../libs/stb_truetype/stb_truetype.c");
-        var buffer = std.ArrayList(u8).init(gpa);
-        try buffer.appendSlice(initial);
-        break :x buffer;
-    };
-    defer g_text_buffer.deinit();
-
-    // An array of line starts
-    g_lines = std.ArrayList(usize).init(gpa);
-    try g_lines.append(0); // first line is always at the buffer start
-    defer g_lines.deinit();
-
-    var text_vertices = try gpa.alloc(TexturedQuad.Vertex, 0);
-    g_text_changed = true; // trigger initial text processing
+    window.setKeyCallback(processKeyEvent);
+    window.setCharCallback(processCharEvent);
 
     while (!window.shouldClose()) {
         // Ask the swapchain for the next image
@@ -151,9 +257,9 @@ pub fn main() !void {
         if (!is_optimal) {
             // Recreate swapchain if necessary
             const new_size = try window.getSize();
-            extent.width = new_size.width;
-            extent.height = new_size.height;
-            try swapchain.recreate(extent);
+            g.extent.width = new_size.width;
+            g.extent.height = new_size.height;
+            try swapchain.recreate(g.extent);
             if (!swapchain.acquire_next_image()) {
                 return error.SwapchainRecreationFailure;
             }
@@ -165,52 +271,17 @@ pub fn main() !void {
         // Wait for input
         try glfw.waitEvents();
 
-        // Handle input
-        if (g_view_changed or g_text_changed) {
-            g_view_changed = false;
-            if (g_text_changed) {
-                g_text_changed = false;
+        // Update view or text
+        if (g.buf.view_changed or g.buf.text_changed) {
+            g.buf.view_changed = false;
+            if (g.buf.text_changed) {
+                g.buf.text_changed = false;
                 // TODO: do it from cursor? - only applicable if the change was made by the cursor
-                g_lines.shrinkRetainingCapacity(1);
-                for (g_text_buffer.items) |char, i| {
-                    if (char == '\n') {
-                        try g_lines.append(i + 1);
-                    }
-                }
-                try g_lines.append(g_text_buffer.items.len);
+                try g.buf.recalculateLines();
             }
-
-            g_lines_per_screen = @floatToInt(usize, @intToFloat(f32, extent.height) / font.line_height);
-
-            // Get cursor position - not super efficient, but should be robust and easy
-            {
-                g_cursor_line = for (g_lines.items) |line_start, line| {
-                    if (g_cursor_buf_pos < line_start) {
-                        break line - 1;
-                    } else if (g_cursor_buf_pos == line_start) {
-                        break line; // for one-line files
-                    }
-                } else g_lines.items.len;
-
-                // Detect if cursor is outside vertical viewport
-                if (g_cursor_line < g_top_line_number) {
-                    g_top_line_number = g_cursor_line;
-                } else if (g_cursor_line > g_top_line_number + g_lines_per_screen - 1) {
-                    g_top_line_number = g_cursor_line - g_lines_per_screen + 1;
-                }
-
-                g_cursor_col_actual = g_cursor_buf_pos - g_lines.items[g_cursor_line];
-            }
-
-            const text_on_screen = x: {
-                const start_pos = g_lines.items[g_top_line_number];
-                const last_line_index = std.math.clamp(g_top_line_number + g_lines_per_screen, g_top_line_number, g_lines.items.len - 1);
-                const end_pos = g_lines.items[last_line_index];
-                break :x g_text_buffer.items[start_pos..end_pos];
-            };
-            gpa.free(text_vertices);
-            text_vertices = try getVerticesTmp(text_on_screen, font, gpa);
-            try uploadVertices(&vc, text_vertices, main_cmd_pool, vertex_buffer);
+            g.buf.updateCursor();
+            try g.buf.updateVisibleVertices(g.font);
+            try uploadVertices(&vc, g.buf.text_vertices.items, main_cmd_pool, text_vertex_buffer);
         }
 
         // Record the main command buffer
@@ -228,8 +299,8 @@ pub fn main() !void {
             const viewport = vk.Viewport{
                 .x = 0,
                 .y = 0,
-                .width = @intToFloat(f32, extent.width),
-                .height = @intToFloat(f32, extent.height),
+                .width = @intToFloat(f32, g.extent.width),
+                .height = @intToFloat(f32, g.extent.height),
                 .min_depth = 0,
                 .max_depth = 1,
             };
@@ -237,7 +308,7 @@ pub fn main() !void {
 
             const scissor = vk.Rect2D{
                 .offset = .{ .x = 0, .y = 0 },
-                .extent = extent,
+                .extent = g.extent,
             };
             vc.vkd.cmdSetScissor(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Rect2D, &scissor));
 
@@ -246,7 +317,7 @@ pub fn main() !void {
             };
             const render_area = vk.Rect2D{
                 .offset = .{ .x = 0, .y = 0 },
-                .extent = extent,
+                .extent = g.extent,
             };
             vc.vkd.cmdBeginRenderPass(main_cmd_buf, &.{
                 .render_pass = render_pass,
@@ -259,7 +330,7 @@ pub fn main() !void {
             // Draw text
             vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, textured_pipeline.handle);
             const offset = [_]vk.DeviceSize{0};
-            vc.vkd.cmdBindVertexBuffers(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Buffer, &vertex_buffer), &offset);
+            vc.vkd.cmdBindVertexBuffers(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Buffer, &text_vertex_buffer), &offset);
             vc.vkd.cmdBindDescriptorSets(
                 main_cmd_buf,
                 .graphics,
@@ -270,11 +341,11 @@ pub fn main() !void {
                 0,
                 undefined,
             );
-            vc.vkd.cmdDraw(main_cmd_buf, @intCast(u32, text_vertices.len), 1, 0, 0);
+            vc.vkd.cmdDraw(main_cmd_buf, @intCast(u32, g.buf.text_vertices.items.len), 1, 0, 0);
 
             // Draw cursor
             vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, cursor_pipeline.handle);
-            const cursor_offset = Vec2{ .x = @intToFloat(f32, g_cursor_col_actual), .y = @intToFloat(f32, g_cursor_line - g_top_line_number) };
+            const cursor_offset = Vec2{ .x = @intToFloat(f32, g.buf.cursor.col), .y = @intToFloat(f32, g.buf.cursor.line - g.buf.viewport_top_line) };
             vc.vkd.cmdPushConstants(main_cmd_buf, cursor_pipeline.layout, .{ .vertex_bit = true }, 0, @sizeOf(Vec2), &cursor_offset);
             vc.vkd.cmdDraw(main_cmd_buf, 4, 1, 0, 0);
 
@@ -674,54 +745,21 @@ fn copyBufferToImage(vc: *const VulkanContext, pool: vk.CommandPool, buffer: vk.
     try cmdbuf.submit_and_free();
 }
 
-fn getVerticesTmp(text: []const u8, font: fonts.Font, allocator: Allocator) ![]TexturedQuad.Vertex {
-    const start = Vec2{ .x = 0, .y = 15 };
-    var quads = std.ArrayList(TexturedQuad).init(allocator);
-    defer quads.deinit();
-    var pos = Vec2{ .x = start.x, .y = start.y };
-    for (text) |char| {
-        if (char != ' ' and char != '\n') {
-            const q = font.getQuad(char, pos.x, pos.y);
-            try quads.append(TexturedQuad{
-                .p0 = .{ .x = q.x0, .y = q.y0 },
-                .p1 = .{ .x = q.x1, .y = q.y1 },
-                .st0 = .{ .x = q.s0, .y = q.t0 },
-                .st1 = .{ .x = q.s1, .y = q.t1 },
-            });
-        }
-        pos.x += font.getXAdvance(char); // TODO: make this constant for fixed-width fonts
-        if (char == '\n') {
-            pos.x = start.x;
-            pos.y += font.line_height;
-        }
-    }
-    var vertices = std.ArrayList(TexturedQuad.Vertex).init(allocator);
-    for (quads.items) |quad| {
-        for (quad.getVertices()) |vertex| {
-            try vertices.append(vertex);
-        }
-    }
-
-    std.debug.assert(vertices.items.len < MAX_VERTEX_COUNT);
-
-    return vertices.toOwnedSlice();
-}
-
 // Directly modifies globals (tmp)
 fn moveCursorToTargetLine(line: usize) void {
-    const target_line = if (line > g_lines.items.len - 2)
-        g_lines.items.len - 2
+    const target_line = if (line > g.buf.lines.items.len - 2)
+        g.buf.lines.items.len - 2
     else
         line;
-    const chars_on_target_line = g_lines.items[target_line + 1] - g_lines.items[target_line] -| 1;
-    const wanted_pos = if (g_cursor_col_wanted) |wanted|
+    const chars_on_target_line = g.buf.lines.items[target_line + 1] - g.buf.lines.items[target_line] -| 1;
+    const wanted_pos = if (g.buf.cursor.col_wanted) |wanted|
         wanted
     else
-        g_cursor_col_actual;
+        g.buf.cursor.col;
     const new_line_pos = std.math.min(wanted_pos, chars_on_target_line);
-    g_cursor_col_wanted = if (new_line_pos < wanted_pos) wanted_pos else null; // reset or remember wanted position
-    g_cursor_buf_pos = g_lines.items[target_line] + new_line_pos;
-    g_view_changed = true;
+    g.buf.cursor.col_wanted = if (new_line_pos < wanted_pos) wanted_pos else null; // reset or remember wanted position
+    g.buf.cursor.pos = g.buf.lines.items[target_line] + new_line_pos;
+    g.buf.view_changed = true;
 }
 
 fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: glfw.Action, mods: glfw.Mods) void {
@@ -731,72 +769,72 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
 
     if (action == .press or action == .repeat) {
         switch (key) {
-            .left => if (g_cursor_buf_pos > 0) {
-                g_cursor_buf_pos -= 1;
-                g_cursor_col_wanted = null;
-                g_view_changed = true;
+            .left => if (g.buf.cursor.pos > 0) {
+                g.buf.cursor.pos -= 1;
+                g.buf.cursor.col_wanted = null;
+                g.buf.view_changed = true;
             },
-            .right => if (g_cursor_buf_pos < g_text_buffer.items.len - 1) {
-                g_cursor_buf_pos += 1;
-                g_cursor_col_wanted = null;
-                g_view_changed = true;
+            .right => if (g.buf.cursor.pos < g.buf.bytes.items.len - 1) {
+                g.buf.cursor.pos += 1;
+                g.buf.cursor.col_wanted = null;
+                g.buf.view_changed = true;
             },
             .up => {
                 const offset: usize = if (mods.control) 5 else 1;
-                moveCursorToTargetLine(g_cursor_line -| offset);
+                moveCursorToTargetLine(g.buf.cursor.line -| offset);
             },
             .down => {
                 const offset: usize = if (mods.control) 5 else 1;
-                moveCursorToTargetLine(g_cursor_line + offset);
+                moveCursorToTargetLine(g.buf.cursor.line + offset);
             },
             .page_up => {
-                moveCursorToTargetLine(g_cursor_line -| (g_lines_per_screen - 1));
+                moveCursorToTargetLine(g.buf.cursor.line -| (g.buf.lines_per_screen - 1));
             },
             .page_down => {
-                moveCursorToTargetLine(g_cursor_line + (g_lines_per_screen - 1));
+                moveCursorToTargetLine(g.buf.cursor.line + (g.buf.lines_per_screen - 1));
             },
             .home => {
-                g_cursor_buf_pos = g_lines.items[g_cursor_line];
-                g_cursor_col_wanted = null;
-                g_view_changed = true;
+                g.buf.cursor.pos = g.buf.lines.items[g.buf.cursor.line];
+                g.buf.cursor.col_wanted = null;
+                g.buf.view_changed = true;
             },
             .end => {
-                g_cursor_buf_pos = g_lines.items[g_cursor_line + 1] - 1;
-                g_cursor_col_wanted = std.math.maxInt(usize);
-                g_view_changed = true;
+                g.buf.cursor.pos = g.buf.lines.items[g.buf.cursor.line + 1] - 1;
+                g.buf.cursor.col_wanted = std.math.maxInt(usize);
+                g.buf.view_changed = true;
             },
             .enter => {
                 if (mods.control and mods.shift) {
                     // Insert line above
-                    g_cursor_buf_pos = g_lines.items[g_cursor_line];
-                    g_text_buffer.insert(g_cursor_buf_pos, '\n') catch unreachable;
+                    g.buf.cursor.pos = g.buf.lines.items[g.buf.cursor.line];
+                    g.buf.bytes.insert(g.buf.cursor.pos, '\n') catch unreachable;
                 } else if (mods.control) {
                     // Insert line below
-                    g_cursor_buf_pos = g_lines.items[g_cursor_line + 1];
-                    g_text_buffer.insert(g_cursor_buf_pos, '\n') catch unreachable;
+                    g.buf.cursor.pos = g.buf.lines.items[g.buf.cursor.line + 1];
+                    g.buf.bytes.insert(g.buf.cursor.pos, '\n') catch unreachable;
                 } else {
                     // Break the line normally
-                    g_text_buffer.insert(g_cursor_buf_pos, '\n') catch unreachable;
-                    g_cursor_buf_pos += 1;
+                    g.buf.bytes.insert(g.buf.cursor.pos, '\n') catch unreachable;
+                    g.buf.cursor.pos += 1;
                 }
-                g_cursor_col_wanted = null;
-                g_text_changed = true;
+                g.buf.cursor.col_wanted = null;
+                g.buf.text_changed = true;
             },
-            .backspace => if (g_cursor_buf_pos > 0) {
-                g_cursor_buf_pos -= 1;
-                _ = g_text_buffer.orderedRemove(g_cursor_buf_pos);
-                g_cursor_col_wanted = null;
-                g_text_changed = true;
+            .backspace => if (g.buf.cursor.pos > 0) {
+                g.buf.cursor.pos -= 1;
+                _ = g.buf.bytes.orderedRemove(g.buf.cursor.pos);
+                g.buf.cursor.col_wanted = null;
+                g.buf.text_changed = true;
             },
-            .delete => if (g_text_buffer.items.len > 1 and g_cursor_buf_pos < g_text_buffer.items.len - 1) {
-                _ = g_text_buffer.orderedRemove(g_cursor_buf_pos);
-                g_cursor_col_wanted = null;
-                g_text_changed = true;
+            .delete => if (g.buf.bytes.items.len > 1 and g.buf.cursor.pos < g.buf.bytes.items.len - 1) {
+                _ = g.buf.bytes.orderedRemove(g.buf.cursor.pos);
+                g.buf.cursor.col_wanted = null;
+                g.buf.text_changed = true;
             },
             else => {},
         }
-        g_top_line_number = std.math.clamp(g_top_line_number, 0, g_lines.items.len -| 2);
-        // std.debug.print("g_top_line_number: {}\n", .{g_top_line_number});
+        g.buf.viewport_top_line = std.math.clamp(g.buf.viewport_top_line, 0, g.buf.lines.items.len -| 2);
+        // std.debug.print("g.buf.viewport_top_line: {}\n", .{g.buf.viewport_top_line});
     }
 
     // std.debug.print("Key: {any}, scancode: {any}, action: {any}, mods: {any}\n", .{ key, scancode, action, mods });
@@ -805,8 +843,8 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
 fn processCharEvent(window: glfw.Window, codepoint: u21) void {
     _ = window;
     const code = @truncate(u8, codepoint);
-    g_text_buffer.insert(g_cursor_buf_pos, code) catch unreachable;
-    g_cursor_buf_pos += 1;
-    g_cursor_col_wanted = null;
-    g_text_changed = true;
+    g.buf.bytes.insert(g.buf.cursor.pos, code) catch unreachable;
+    g.buf.cursor.pos += 1;
+    g.buf.cursor.col_wanted = null;
+    g.buf.text_changed = true;
 }
