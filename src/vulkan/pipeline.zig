@@ -5,6 +5,8 @@ const resources = @import("resources");
 const VulkanContext = @import("context.zig").VulkanContext;
 const Vec2 = @import("../math.zig").Vec2;
 
+const assert = std.debug.assert;
+
 pub const TexturedPipeline = struct {
     texture_sampler: vk.Sampler,
     descriptor_set_layout: vk.DescriptorSetLayout,
@@ -13,7 +15,7 @@ pub const TexturedPipeline = struct {
     layout: vk.PipelineLayout,
     handle: vk.Pipeline,
 
-    pub fn init(vc: *const VulkanContext, texture_image_view: vk.ImageView, render_pass: vk.RenderPass) !TexturedPipeline {
+    pub fn init(vc: *const VulkanContext, render_pass: vk.RenderPass) !TexturedPipeline {
         // Sampler for the texture
         const texture_sampler = try vc.vkd.createSampler(vc.dev, &.{
             .flags = .{},
@@ -52,16 +54,16 @@ pub const TexturedPipeline = struct {
         }, null);
         errdefer vc.vkd.destroyDescriptorSetLayout(vc.dev, descriptor_set_layout, null);
 
+        const set_layouts = [_]vk.DescriptorSetLayout{
+            descriptor_set_layout,
+        };
+
         // Descriptor pool
         const descriptor_pool_sizes = [_]vk.DescriptorPoolSize{
             .{
                 .@"type" = .combined_image_sampler,
                 .descriptor_count = 1,
             },
-        };
-        // NOTE: we'll create only one set per layout
-        const set_layouts = [_]vk.DescriptorSetLayout{
-            descriptor_set_layout,
         };
         const descriptor_pool = try vc.vkd.createDescriptorPool(vc.dev, &.{
             .flags = .{},
@@ -84,28 +86,7 @@ pub const TexturedPipeline = struct {
         }, &descriptor_sets);
 
         // NOTE: only one for now. Only 1 texture is supported
-        std.debug.assert(descriptor_sets.len == 1);
-        const descriptor_set = descriptor_sets[0];
-        const image_info = [_]vk.DescriptorImageInfo{
-            .{
-                .sampler = texture_sampler,
-                .image_view = texture_image_view,
-                .image_layout = .shader_read_only_optimal,
-            },
-        };
-        const descriptor_writes = [_]vk.WriteDescriptorSet{
-            .{
-                .dst_set = descriptor_set,
-                .dst_binding = 0,
-                .dst_array_element = 0,
-                .descriptor_count = 1,
-                .descriptor_type = .combined_image_sampler,
-                .p_image_info = &image_info,
-                .p_buffer_info = undefined,
-                .p_texel_buffer_view = undefined,
-            },
-        };
-        vc.vkd.updateDescriptorSets(vc.dev, descriptor_writes.len, &descriptor_writes, 0, undefined);
+        assert(descriptor_sets.len == 1);
 
         // Pipeline layout
         const pipeline_layout = try vc.vkd.createPipelineLayout(vc.dev, &.{
@@ -264,6 +245,33 @@ pub const TexturedPipeline = struct {
             .layout = pipeline_layout,
             .handle = pipeline_handle,
         };
+    }
+
+    pub fn setTextureDescriptor(self: TexturedPipeline, vc: *const VulkanContext, texture_image_view: vk.ImageView) void {
+        // NOTE: not sure if this is the intended way to pass textures to pipelines
+        // Maybe it would make sense to create all descriptors beforehand and then
+        // copy them around somehow?
+        // Still, even if so, we don't have a texture image until we generate one for the font anyway.
+        const image_info = [_]vk.DescriptorImageInfo{
+            .{
+                .sampler = self.texture_sampler,
+                .image_view = texture_image_view,
+                .image_layout = .shader_read_only_optimal,
+            },
+        };
+        const descriptor_writes = [_]vk.WriteDescriptorSet{
+            .{
+                .dst_set = self.descriptor_sets[0],
+                .dst_binding = 0,
+                .dst_array_element = 0,
+                .descriptor_count = 1,
+                .descriptor_type = .combined_image_sampler,
+                .p_image_info = &image_info,
+                .p_buffer_info = undefined,
+                .p_texel_buffer_view = undefined,
+            },
+        };
+        vc.vkd.updateDescriptorSets(vc.dev, descriptor_writes.len, &descriptor_writes, 0, undefined);
     }
 
     pub fn deinit(self: TexturedPipeline, vc: *const VulkanContext) void {

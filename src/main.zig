@@ -5,10 +5,11 @@ const glfw = @import("glfw");
 const vk = @import("vulkan");
 const stbi = @import("stbi");
 
-const fonts = @import("fonts.zig");
+const vu = @import("vulkan/utils.zig");
 
 const Allocator = std.mem.Allocator;
 const VulkanContext = @import("vulkan/context.zig").VulkanContext;
+const Font = @import("fonts.zig").Font;
 const Swapchain = @import("vulkan/swapchain.zig").Swapchain;
 const TexturedPipeline = @import("vulkan/pipeline.zig").TexturedPipeline;
 const TexturedQuad = @import("vulkan/pipeline.zig").TexturedQuad;
@@ -58,12 +59,9 @@ pub fn main() !void {
     }, null);
     defer vc.vkd.destroyCommandPool(vc.dev, main_cmd_pool, null);
 
-    // Pack font into a texture - TODO: do it as part of the context
-    g_screen.font = try fonts.getPackedFont(gpa, "fonts/consola.ttf", 16);
-    const texture_image = try createFontTextureImage(&vc, g_screen.font.pixels, g_screen.font.atlas_width, g_screen.font.atlas_height, main_cmd_pool);
-    defer texture_image.deinit(&vc);
-    const texture_image_view = try createTextureImageView(&vc, texture_image.image, .r8g8b8a8_srgb);
-    defer vc.vkd.destroyImageView(vc.dev, texture_image_view, null);
+    // Pack font into a texture
+    g_screen.font = try Font.init(&vc, gpa, "fonts/consola.ttf", 16, main_cmd_pool);
+    defer g_screen.font.deinit(&vc);
 
     // Initialise global context
     const size = try window.getSize();
@@ -86,7 +84,8 @@ pub fn main() !void {
     defer vc.vkd.destroyRenderPass(vc.dev, render_pass, null);
 
     // Pipeline for rendering textured quads (for now just text)
-    var textured_pipeline = try TexturedPipeline.init(&vc, texture_image_view, render_pass);
+    var textured_pipeline = try TexturedPipeline.init(&vc, render_pass);
+    textured_pipeline.setTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
     defer textured_pipeline.deinit(&vc);
 
     // Pipeline for colored quads (such as cursor or panels)
@@ -260,10 +259,10 @@ pub fn main() !void {
 
 const Screen = struct {
     size: vk.Extent2D,
-    font: fonts.Font,
+    font: Font,
     total_lines: usize, // how many fit vertically for the current font
 
-    pub fn setFont(self: *Screen, font: fonts.Font) void {
+    pub fn setFont(self: *Screen, font: Font) void {
         // TODO: update total lines here
         _ = self;
         _ = font;
@@ -345,7 +344,7 @@ const TextBuffer = struct {
     }
 
     /// Updates the inner vertex array based on current viewport and buffer contents
-    pub fn updateVisibleVertices(self: *TextBuffer, font: fonts.Font) !void {
+    pub fn updateVisibleVertices(self: *TextBuffer, font: Font) !void {
         var bottom_line = self.viewport_top_line + g_screen.total_lines;
         if (bottom_line > self.lines.items.len - 1) {
             bottom_line = self.lines.items.len - 1;
@@ -491,154 +490,6 @@ fn processCharEvent(window: glfw.Window, codepoint: u21) void {
     g_buf.text_changed = true;
 }
 
-const VulkanImage = struct {
-    image: vk.Image,
-    memory: vk.DeviceMemory,
-
-    fn deinit(self: VulkanImage, vc: *const VulkanContext) void {
-        vc.vkd.freeMemory(vc.dev, self.memory, null);
-        vc.vkd.destroyImage(vc.dev, self.image, null);
-    }
-};
-
-pub const SingleTimeCommandBuffer = struct {
-    vc: *const VulkanContext,
-    pool: vk.CommandPool,
-    buf: vk.CommandBuffer,
-
-    pub fn create_and_begin(vc: *const VulkanContext, pool: vk.CommandPool) !SingleTimeCommandBuffer {
-        var self: SingleTimeCommandBuffer = undefined;
-        self.vc = vc;
-        self.pool = pool;
-        self.buf = x: {
-            var buf: vk.CommandBuffer = undefined;
-            try vc.vkd.allocateCommandBuffers(vc.dev, &.{
-                .command_pool = pool,
-                .level = .primary,
-                .command_buffer_count = 1,
-            }, @ptrCast([*]vk.CommandBuffer, &buf));
-            errdefer vc.vkd.freeCommandBuffers(vc.dev, pool, 1, @ptrCast([*]const vk.CommandBuffer, &buf));
-            break :x buf;
-        };
-
-        try vc.vkd.beginCommandBuffer(self.buf, &.{
-            .flags = .{ .one_time_submit_bit = true },
-            .p_inheritance_info = null,
-        });
-
-        return self;
-    }
-
-    pub fn free(self: SingleTimeCommandBuffer) !void {
-        self.vc.vkd.freeCommandBuffers(self.vc.dev, self.pool, 1, @ptrCast([*]const vk.CommandBuffer, &self.buf));
-    }
-
-    pub fn submit_and_free(self: SingleTimeCommandBuffer) !void {
-        // TODO: should we accept the queue as a parameter?
-        const queue = self.vc.graphics_queue.handle;
-        try self.vc.vkd.endCommandBuffer(self.buf);
-        const si = vk.SubmitInfo{
-            .wait_semaphore_count = 0,
-            .p_wait_semaphores = undefined,
-            .p_wait_dst_stage_mask = undefined,
-            .command_buffer_count = 1,
-            .p_command_buffers = @ptrCast([*]const vk.CommandBuffer, &self.buf),
-            .signal_semaphore_count = 0,
-            .p_signal_semaphores = undefined,
-        };
-        try self.vc.vkd.queueSubmit(queue, 1, @ptrCast([*]const vk.SubmitInfo, &si), .null_handle);
-        try self.vc.vkd.queueWaitIdle(queue);
-        try self.free();
-    }
-};
-
-fn createFontTextureImage(vc: *const VulkanContext, pixels: []u8, width: u32, height: u32, pool: vk.CommandPool) !VulkanImage {
-    // Create a staging buffer
-    const staging_buffer = try vc.vkd.createBuffer(vc.dev, &.{
-        .flags = .{},
-        .size = pixels.len,
-        .usage = .{ .transfer_src_bit = true },
-        .sharing_mode = .exclusive,
-        .queue_family_index_count = 0,
-        .p_queue_family_indices = undefined,
-    }, null);
-    defer vc.vkd.destroyBuffer(vc.dev, staging_buffer, null);
-    const staging_mem_reqs = vc.vkd.getBufferMemoryRequirements(vc.dev, staging_buffer);
-    const staging_memory = try vc.allocate(staging_mem_reqs, .{ .host_visible_bit = true, .host_coherent_bit = true });
-    defer vc.vkd.freeMemory(vc.dev, staging_memory, null);
-    try vc.vkd.bindBufferMemory(vc.dev, staging_buffer, staging_memory, 0);
-
-    const data = try vc.vkd.mapMemory(vc.dev, staging_memory, 0, vk.WHOLE_SIZE, .{});
-    defer vc.vkd.unmapMemory(vc.dev, staging_memory);
-
-    const image_data_dst = @ptrCast([*]u8, data)[0..pixels.len];
-    std.mem.copy(u8, image_data_dst, pixels);
-
-    // Create an image
-    const image_extent = vk.Extent3D{ // has to be separate, triggers segmentation fault otherwise
-        .width = @intCast(u32, width),
-        .height = @intCast(u32, height),
-        .depth = 1,
-    };
-    const texture_image = try vc.vkd.createImage(vc.dev, &.{
-        .flags = .{},
-        .image_type = .@"2d",
-        .format = .r8g8b8a8_srgb,
-        .extent = image_extent,
-        .mip_levels = 1,
-        .array_layers = 1,
-        .samples = .{ .@"1_bit" = true },
-        .tiling = .optimal,
-        .usage = .{ .transfer_dst_bit = true, .sampled_bit = true },
-        .sharing_mode = .exclusive,
-        .queue_family_index_count = 0,
-        .p_queue_family_indices = undefined,
-        .initial_layout = .@"undefined",
-    }, null);
-    errdefer vc.vkd.destroyImage(vc.dev, texture_image, null);
-
-    const mem_reqs = vc.vkd.getImageMemoryRequirements(vc.dev, texture_image);
-    const memory = try vc.allocate(mem_reqs, .{ .device_local_bit = true });
-    errdefer vc.vkd.freeMemory(vc.dev, memory, null);
-    try vc.vkd.bindImageMemory(vc.dev, texture_image, memory, 0);
-
-    // Copy buffer data to image
-    try transitionImageLayout(vc, pool, texture_image, .r8g8b8a8_srgb, .@"undefined", .transfer_dst_optimal);
-    try copyBufferToImage(vc, pool, staging_buffer, texture_image, width, height);
-    try transitionImageLayout(vc, pool, texture_image, .r8g8b8a8_srgb, .transfer_dst_optimal, .shader_read_only_optimal);
-
-    return VulkanImage{
-        .image = texture_image,
-        .memory = memory,
-    };
-}
-
-pub fn createTextureImageView(vc: *const VulkanContext, image: vk.Image, format: vk.Format) !vk.ImageView {
-    const components = vk.ComponentMapping{
-        .r = .identity,
-        .g = .identity,
-        .b = .identity,
-        .a = .identity,
-    };
-    const subresource_range = vk.ImageSubresourceRange{
-        .aspect_mask = .{ .color_bit = true },
-        .base_mip_level = 0,
-        .level_count = 1,
-        .base_array_layer = 0,
-        .layer_count = 1,
-    };
-    const image_view = try vc.vkd.createImageView(vc.dev, &.{
-        .flags = .{},
-        .image = image,
-        .view_type = .@"2d",
-        .format = format,
-        .components = components,
-        .subresource_range = subresource_range,
-    }, null);
-
-    return image_view;
-}
-
 fn createRenderPass(vc: *const VulkanContext, attachment_format: vk.Format) !vk.RenderPass {
     const color_attachment = vk.AttachmentDescription{
         .flags = .{},
@@ -742,7 +593,7 @@ fn uploadVertices(vc: *const VulkanContext, vertices: []const TexturedQuad.Verte
 }
 
 fn copyBuffer(vc: *const VulkanContext, pool: vk.CommandPool, dst: vk.Buffer, src: vk.Buffer, size: vk.DeviceSize) !void {
-    const cmdbuf = try SingleTimeCommandBuffer.create_and_begin(vc, pool);
+    const cmdbuf = try vu.SingleTimeCommandBuffer.create_and_begin(vc, pool);
 
     const region = vk.BufferCopy{
         .src_offset = 0,
@@ -750,105 +601,6 @@ fn copyBuffer(vc: *const VulkanContext, pool: vk.CommandPool, dst: vk.Buffer, sr
         .size = size,
     };
     vc.vkd.cmdCopyBuffer(cmdbuf.buf, src, dst, 1, @ptrCast([*]const vk.BufferCopy, &region));
-
-    try cmdbuf.submit_and_free();
-}
-
-fn transitionImageLayout(vc: *const VulkanContext, pool: vk.CommandPool, image: vk.Image, format: vk.Format, old: vk.ImageLayout, new: vk.ImageLayout) !void {
-    _ = format; // ignoring for now
-
-    const subresource_range = vk.ImageSubresourceRange{
-        .aspect_mask = .{ .color_bit = true },
-        .base_mip_level = 0,
-        .level_count = 1,
-        .base_array_layer = 0,
-        .layer_count = 1,
-    };
-    var src_access_mask: vk.AccessFlags = undefined;
-    var dst_access_mask: vk.AccessFlags = undefined;
-    var src_stage_mask: vk.PipelineStageFlags = undefined;
-    var dst_stage_mask: vk.PipelineStageFlags = undefined;
-    if (old == .@"undefined" and new == .transfer_dst_optimal) {
-        src_access_mask = .{};
-        dst_access_mask = .{ .transfer_write_bit = true };
-        src_stage_mask = .{ .top_of_pipe_bit = true };
-        dst_stage_mask = .{ .transfer_bit = true };
-    } else if (old == .transfer_dst_optimal and new == .shader_read_only_optimal) {
-        src_access_mask = .{ .transfer_write_bit = true };
-        dst_access_mask = .{ .shader_read_bit = true };
-        src_stage_mask = .{ .transfer_bit = true };
-        dst_stage_mask = .{ .fragment_shader_bit = true };
-    } else {
-        unreachable;
-    }
-
-    const image_barrier = vk.ImageMemoryBarrier{
-        .src_access_mask = src_access_mask,
-        .dst_access_mask = dst_access_mask,
-        .old_layout = old,
-        .new_layout = new,
-        .src_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
-        .dst_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
-        .image = image,
-        .subresource_range = subresource_range,
-    };
-
-    const cmdbuf = try SingleTimeCommandBuffer.create_and_begin(vc, pool);
-
-    vc.vkd.cmdPipelineBarrier(
-        cmdbuf.buf,
-        src_stage_mask,
-        dst_stage_mask,
-        .{},
-        0,
-        undefined,
-        0,
-        undefined,
-        1,
-        @ptrCast([*]const vk.ImageMemoryBarrier, &image_barrier),
-    );
-
-    try cmdbuf.submit_and_free();
-}
-
-fn copyBufferToImage(vc: *const VulkanContext, pool: vk.CommandPool, buffer: vk.Buffer, image: vk.Image, width: u32, height: u32) !void {
-    const cmdbuf = try SingleTimeCommandBuffer.create_and_begin(vc, pool);
-
-    const region = x: {
-        const subresource = vk.ImageSubresourceLayers{
-            .aspect_mask = .{ .color_bit = true },
-            .mip_level = 0,
-            .base_array_layer = 0,
-            .layer_count = 1,
-        };
-        const offset = vk.Offset3D{
-            .x = 0,
-            .y = 0,
-            .z = 0,
-        };
-        const extent = vk.Extent3D{
-            .width = width,
-            .height = height,
-            .depth = 1,
-        };
-        break :x vk.BufferImageCopy{
-            .buffer_offset = 0,
-            .buffer_row_length = 0,
-            .buffer_image_height = 0,
-            .image_subresource = subresource,
-            .image_offset = offset,
-            .image_extent = extent,
-        };
-    };
-
-    vc.vkd.cmdCopyBufferToImage(
-        cmdbuf.buf,
-        buffer,
-        image,
-        .transfer_dst_optimal,
-        1,
-        @ptrCast([*]const vk.BufferImageCopy, &region),
-    );
 
     try cmdbuf.submit_and_free();
 }
