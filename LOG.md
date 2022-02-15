@@ -1,4 +1,5 @@
 # TODO
+- Think about what we need to be global and what not
 - Render independently of window size
     - Separate font texture image from texture pipeline
 - Blend fonts using the alpha channel
