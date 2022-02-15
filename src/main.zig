@@ -129,8 +129,8 @@ pub fn main() !void {
 
     // Create a buffer for editing
     g_text_buffer = x: {
-        // const initial = @embedFile("../README.md");
-        const initial = @embedFile("../libs/stb_truetype/stb_truetype.c");
+        const initial = @embedFile("../LOG.md");
+        // const initial = @embedFile("../libs/stb_truetype/stb_truetype.c");
         var buffer = std.ArrayList(u8).init(gpa);
         try buffer.appendSlice(initial);
         break :x buffer;
@@ -766,8 +766,19 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
                 g_view_changed = true;
             },
             .enter => {
-                g_text_buffer.insert(g_cursor_buf_pos, '\n') catch unreachable;
-                g_cursor_buf_pos += 1;
+                if (mods.control and mods.shift) {
+                    // Insert line above
+                    g_cursor_buf_pos = g_lines.items[g_cursor_line];
+                    g_text_buffer.insert(g_cursor_buf_pos, '\n') catch unreachable;
+                } else if (mods.control) {
+                    // Insert line below
+                    g_cursor_buf_pos = g_lines.items[g_cursor_line + 1];
+                    g_text_buffer.insert(g_cursor_buf_pos, '\n') catch unreachable;
+                } else {
+                    // Break the line normally
+                    g_text_buffer.insert(g_cursor_buf_pos, '\n') catch unreachable;
+                    g_cursor_buf_pos += 1;
+                }
                 g_cursor_col_wanted = null;
                 g_text_changed = true;
             },

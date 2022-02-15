@@ -1,6 +1,8 @@
 # TODO
+- Fix editing near the end of the buffer (can't get cursor close enough)
 
 # DONE
++ Implement new line with no breaking, above and below
 + Fix page up and down
 + Move viewport if cursor is outside
 + Support home and end
