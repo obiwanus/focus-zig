@@ -8,7 +8,7 @@ layout(push_constant) uniform constants
 } PushConstants;
 
 const vec2 SCREEN_SIZE = vec2(2498.0, 1417.0);
-const vec2 PANEL_OFFSET = vec2(30.0, 10.0);
+const vec2 PANEL_OFFSET = vec2(29.0, 10.0);
 
 // TODO: set this dynamically based on font size - e.g. when moving to another monitor.
 const vec2 CURSOR_DIMS = vec2(10.0, 23.0); // in pixels
