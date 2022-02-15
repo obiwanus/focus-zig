@@ -417,10 +417,10 @@ pub const CursorPipeline = struct {
             };
 
             const pcbas = vk.PipelineColorBlendAttachmentState{
-                .blend_enable = vk.FALSE,
+                .blend_enable = vk.TRUE,
                 .src_color_blend_factor = .one,
-                .dst_color_blend_factor = .zero,
-                .color_blend_op = .add,
+                .dst_color_blend_factor = .one_minus_src_alpha,
+                .color_blend_op = .subtract,
                 .src_alpha_blend_factor = .one,
                 .dst_alpha_blend_factor = .zero,
                 .alpha_blend_op = .add,
