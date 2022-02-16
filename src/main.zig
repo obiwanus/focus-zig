@@ -584,9 +584,7 @@ fn uploadVertices(vc: *const VulkanContext, vertices: []const TexturedQuad.Verte
         defer vc.vkd.unmapMemory(vc.dev, staging_memory);
 
         const gpu_vertices = @ptrCast([*]TexturedQuad.Vertex, @alignCast(@alignOf(TexturedQuad.Vertex), data));
-        for (vertices) |vertex, i| {
-            gpu_vertices[i] = vertex;
-        }
+        std.mem.copy(TexturedQuad.Vertex, gpu_vertices[0..vertices.len], vertices);
     }
 
     try vu.copyBuffer(vc, pool, buffer, staging_buffer, buffer_size);
