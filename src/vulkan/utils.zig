@@ -152,3 +152,16 @@ pub fn copyBufferToImage(vc: *const VulkanContext, pool: vk.CommandPool, buffer:
 
     try cmdbuf.submit_and_free();
 }
+
+pub fn copyBuffer(vc: *const VulkanContext, pool: vk.CommandPool, dst: vk.Buffer, src: vk.Buffer, size: vk.DeviceSize) !void {
+    const cmdbuf = try SingleTimeCommandBuffer.create_and_begin(vc, pool);
+
+    const region = vk.BufferCopy{
+        .src_offset = 0,
+        .dst_offset = 0,
+        .size = size,
+    };
+    vc.vkd.cmdCopyBuffer(cmdbuf.buf, src, dst, 1, @ptrCast([*]const vk.BufferCopy, &region));
+
+    try cmdbuf.submit_and_free();
+}

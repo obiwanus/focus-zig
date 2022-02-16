@@ -589,18 +589,5 @@ fn uploadVertices(vc: *const VulkanContext, vertices: []const TexturedQuad.Verte
         }
     }
 
-    try copyBuffer(vc, pool, buffer, staging_buffer, buffer_size);
-}
-
-fn copyBuffer(vc: *const VulkanContext, pool: vk.CommandPool, dst: vk.Buffer, src: vk.Buffer, size: vk.DeviceSize) !void {
-    const cmdbuf = try vu.SingleTimeCommandBuffer.create_and_begin(vc, pool);
-
-    const region = vk.BufferCopy{
-        .src_offset = 0,
-        .dst_offset = 0,
-        .size = size,
-    };
-    vc.vkd.cmdCopyBuffer(cmdbuf.buf, src, dst, 1, @ptrCast([*]const vk.BufferCopy, &region));
-
-    try cmdbuf.submit_and_free();
+    try vu.copyBuffer(vc, pool, buffer, staging_buffer, buffer_size);
 }
