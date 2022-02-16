@@ -315,11 +315,13 @@ pub const TexturedQuad = struct {
         };
     };
 
-    pub fn getVertices(self: TexturedQuad) [6]Vertex {
-        const v0 = Vertex{ .pos = .{ self.p0.x, self.p0.y }, .tex_coord = .{ self.st0.x, self.st0.y } };
-        const v1 = Vertex{ .pos = .{ self.p1.x, self.p0.y }, .tex_coord = .{ self.st1.x, self.st0.y } };
-        const v2 = Vertex{ .pos = .{ self.p1.x, self.p1.y }, .tex_coord = .{ self.st1.x, self.st1.y } };
-        const v3 = Vertex{ .pos = .{ self.p0.x, self.p1.y }, .tex_coord = .{ self.st0.x, self.st1.y } };
+    pub fn getVertices(self: TexturedQuad, screen: vk.Extent2D) [6]Vertex {
+        const width = @intToFloat(f32, screen.width);
+        const height = @intToFloat(f32, screen.height);
+        const v0 = Vertex{ .pos = .{ 2 * self.p0.x / width - 1, 2 * self.p0.y / height - 1 }, .tex_coord = .{ self.st0.x, self.st0.y } };
+        const v1 = Vertex{ .pos = .{ 2 * self.p1.x / width - 1, 2 * self.p0.y / height - 1 }, .tex_coord = .{ self.st1.x, self.st0.y } };
+        const v2 = Vertex{ .pos = .{ 2 * self.p1.x / width - 1, 2 * self.p1.y / height - 1 }, .tex_coord = .{ self.st1.x, self.st1.y } };
+        const v3 = Vertex{ .pos = .{ 2 * self.p0.x / width - 1, 2 * self.p1.y / height - 1 }, .tex_coord = .{ self.st0.x, self.st1.y } };
         return .{ v0, v1, v2, v0, v2, v3 };
     }
 };

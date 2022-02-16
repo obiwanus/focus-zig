@@ -149,8 +149,9 @@ pub fn main() !void {
                 g_screen.font.deinit(&vc);
                 g_screen.font = try Font.init(&vc, gpa, FONT_NAME, FONT_SIZE * new_scale.x_scale, main_cmd_pool);
                 textured_pipeline.setTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
-                g_buf.view_changed = true;
             }
+
+            g_buf.view_changed = true;
         }
 
         // Wait for input
@@ -165,7 +166,7 @@ pub fn main() !void {
                 try g_buf.recalculateLines();
             }
             g_buf.updateCursor();
-            try g_buf.updateVisibleVertices(g_screen.font);
+            try g_buf.updateVisibleVertices(g_screen.font, g_screen.size);
             try uploadVertices(&vc, g_buf.text_vertices.items, main_cmd_pool, text_vertex_buffer);
         }
 
@@ -361,7 +362,7 @@ const TextBuffer = struct {
     }
 
     /// Updates the inner vertex array based on current viewport and buffer contents
-    pub fn updateVisibleVertices(self: *TextBuffer, font: Font) !void {
+    pub fn updateVisibleVertices(self: *TextBuffer, font: Font, screen_size: vk.Extent2D) !void {
         var bottom_line = self.viewport_top_line + g_screen.total_lines;
         if (bottom_line > self.lines.items.len - 1) {
             bottom_line = self.lines.items.len - 1;
@@ -396,7 +397,9 @@ const TextBuffer = struct {
             }
             // Get vertices
             for (self.text_quads.items) |quad| {
-                for (quad.getVertices()) |vertex| {
+                // Convert them to unit coordinates on the fly
+                // NOTE: not sure if we should do it in the shader instead
+                for (quad.getVertices(screen_size)) |vertex| {
                     try self.text_vertices.append(vertex);
                 }
             }
