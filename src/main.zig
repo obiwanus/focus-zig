@@ -22,6 +22,8 @@ const assert = std.debug.assert;
 var GPA = std.heap.GeneralPurposeAllocator(.{ .never_unmap = false }){};
 
 const APP_NAME = "Focus";
+const FONT_NAME = "fonts/consola.ttf";
+const FONT_SIZE = 16; // for scale = 1.0
 const MAX_VERTEX_COUNT = 100000;
 
 // NOTE: this buffer is global temporary. We don't want it to be global eventually
@@ -46,7 +48,6 @@ pub fn main() !void {
         .focused = true,
         .maximized = true,
         .scale_to_monitor = true,
-        .srgb_capable = true,
     });
     defer window.destroy();
 
@@ -59,22 +60,23 @@ pub fn main() !void {
     }, null);
     defer vc.vkd.destroyCommandPool(vc.dev, main_cmd_pool, null);
 
-    // Pack font into a texture
-    g_screen.font = try Font.init(&vc, gpa, "fonts/consola.ttf", 16, main_cmd_pool);
-    defer g_screen.font.deinit(&vc);
-
     // Initialise global context
-    const size = try window.getSize();
-    g_screen.size = vk.Extent2D{
-        .width = size.width,
-        .height = size.height,
+    g_screen.size = x: {
+        const size = try window.getFramebufferSize();
+        break :x vk.Extent2D{
+            .width = size.width,
+            .height = size.height,
+        };
     };
+    g_screen.scale = try window.getContentScale();
+    g_screen.font = try Font.init(&vc, gpa, FONT_NAME, 16, main_cmd_pool);
+    defer g_screen.font.deinit(&vc);
+    g_screen.total_lines = @floatToInt(usize, @intToFloat(f32, g_screen.size.height) / g_screen.font.line_height);
+
     g_buf = try TextBuffer.init(gpa, "../LOG.md");
     defer g_buf.deinit();
     g_buf.text_changed = true; // trigger initial update
     g_buf.text_vertices = std.ArrayList(TexturedQuad.Vertex).init(gpa);
-    // TODO: refresh when extent changes
-    g_screen.total_lines = @floatToInt(usize, @intToFloat(f32, g_screen.size.height) / g_screen.font.line_height);
 
     var swapchain = try Swapchain.init(&vc, static_allocator, g_screen.size);
     defer swapchain.deinit();
@@ -130,16 +132,25 @@ pub fn main() !void {
         const is_optimal = swapchain.acquire_next_image();
         if (!is_optimal) {
             // Recreate swapchain if necessary
-            const new_size = try window.getSize();
+            const new_size = try window.getFramebufferSize();
             g_screen.size.width = new_size.width;
             g_screen.size.height = new_size.height;
             try swapchain.recreate(g_screen.size);
             if (!swapchain.acquire_next_image()) {
                 return error.SwapchainRecreationFailure;
             }
-
             destroyFramebuffers(&vc, gpa, framebuffers);
             framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
+
+            // Make sure the font is updated
+            const new_scale = try window.getContentScale();
+            if (g_screen.scaleChanged(new_scale)) {
+                g_screen.scale = new_scale;
+                g_screen.font.deinit(&vc);
+                g_screen.font = try Font.init(&vc, gpa, FONT_NAME, FONT_SIZE * new_scale.x_scale, main_cmd_pool);
+                textured_pipeline.setTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
+                g_buf.view_changed = true;
+            }
         }
 
         // Wait for input
@@ -259,8 +270,14 @@ pub fn main() !void {
 
 const Screen = struct {
     size: vk.Extent2D,
+    scale: glfw.Window.ContentScale,
     font: Font,
     total_lines: usize, // how many fit vertically for the current font
+
+    pub fn scaleChanged(self: Screen, new_scale: glfw.Window.ContentScale) bool {
+        assert(new_scale.x_scale == new_scale.y_scale);
+        return self.scale.x_scale != new_scale.x_scale;
+    }
 
     pub fn setFont(self: *Screen, font: Font) void {
         // TODO: update total lines here

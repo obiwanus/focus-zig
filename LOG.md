@@ -1,12 +1,13 @@
 # TODO
 - Render independently of window size
     + Separate font texture image from texture pipeline
-    - Somehow get monitor dpi (must not depend on window size)
+    + Somehow get monitor dpi (must not depend on window size)
 - Blend fonts using the alpha channel
 - Support UTF-8
 - Fix editing near the end of the buffer (can't get cursor close enough)
 
 # DONE
++ Change font size according to monitor scale
 + Refactor global variables into structs (not sure I like it though)
 + Implement new line with no breaking, above and below
 + Fix page up and down
