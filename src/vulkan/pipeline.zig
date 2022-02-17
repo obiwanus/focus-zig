@@ -11,12 +11,13 @@ const assert = std.debug.assert;
 
 pub const TexturedPipeline = struct {
     texture_sampler: vk.Sampler,
+    descriptor_pool: vk.DescriptorPool,
     descriptor_set_layout: vk.DescriptorSetLayout,
     descriptor_set: vk.DescriptorSet,
     layout: vk.PipelineLayout,
     handle: vk.Pipeline,
 
-    pub fn init(vc: *const VulkanContext, render_pass: vk.RenderPass, descriptor_pool: vk.DescriptorPool, uniform_buffer: vu.UniformBuffer) !TexturedPipeline {
+    pub fn init(vc: *const VulkanContext, render_pass: vk.RenderPass, uniform_buffer: vu.UniformBuffer) !TexturedPipeline {
         // Sampler for the texture
         const texture_sampler = try vc.vkd.createSampler(vc.dev, &.{
             .flags = .{},
@@ -37,6 +38,26 @@ pub const TexturedPipeline = struct {
             .unnormalized_coordinates = vk.FALSE,
         }, null);
         errdefer vc.vkd.destroySampler(vc.dev, texture_sampler, null);
+
+        const descriptor_pool = x: {
+            const pool_sizes = [_]vk.DescriptorPoolSize{
+                .{
+                    .@"type" = .combined_image_sampler,
+                    .descriptor_count = 1,
+                },
+                .{
+                    .@"type" = .uniform_buffer,
+                    .descriptor_count = 1,
+                },
+            };
+            break :x try vc.vkd.createDescriptorPool(vc.dev, &.{
+                .flags = .{},
+                .max_sets = 1,
+                .pool_size_count = pool_sizes.len,
+                .p_pool_sizes = &pool_sizes,
+            }, null);
+        };
+        errdefer vc.vkd.destroyDescriptorPool(vc.dev, descriptor_pool, null);
 
         // Descriptor set layout
         const descriptor_set_layout_bindings = [_]vk.DescriptorSetLayoutBinding{
@@ -243,6 +264,7 @@ pub const TexturedPipeline = struct {
 
         return TexturedPipeline{
             .texture_sampler = texture_sampler,
+            .descriptor_pool = descriptor_pool,
             .descriptor_set_layout = descriptor_set_layout,
             .descriptor_set = descriptor_set,
             .layout = pipeline_layout,
@@ -280,6 +302,7 @@ pub const TexturedPipeline = struct {
     pub fn deinit(self: TexturedPipeline, vc: *const VulkanContext) void {
         vc.vkd.destroySampler(vc.dev, self.texture_sampler, null);
         vc.vkd.destroyDescriptorSetLayout(vc.dev, self.descriptor_set_layout, null);
+        vc.vkd.destroyDescriptorPool(vc.dev, self.descriptor_pool, null);
         vc.vkd.destroyPipelineLayout(vc.dev, self.layout, null);
         vc.vkd.destroyPipeline(vc.dev, self.handle, null);
     }
@@ -329,18 +352,85 @@ pub const TexturedQuad = struct {
 pub const CursorPipeline = struct {
     layout: vk.PipelineLayout,
     handle: vk.Pipeline,
+    descriptor_pool: vk.DescriptorPool,
+    descriptor_set: vk.DescriptorSet,
+    descriptor_set_layout: vk.DescriptorSetLayout,
 
-    pub fn init(vc: *const VulkanContext, render_pass: vk.RenderPass) !CursorPipeline {
-        // Pipeline layout
+    pub fn init(vc: *const VulkanContext, render_pass: vk.RenderPass, uniform_buffer: vu.UniformBuffer) !CursorPipeline {
+        const descriptor_pool = x: {
+            const pool_sizes = [_]vk.DescriptorPoolSize{
+                .{
+                    .@"type" = .uniform_buffer,
+                    .descriptor_count = 1,
+                },
+            };
+            break :x try vc.vkd.createDescriptorPool(vc.dev, &.{
+                .flags = .{},
+                .max_sets = 1,
+                .pool_size_count = pool_sizes.len,
+                .p_pool_sizes = &pool_sizes,
+            }, null);
+        };
+        errdefer vc.vkd.destroyDescriptorPool(vc.dev, descriptor_pool, null);
+
+        // Descriptor set layout
+        const descriptor_set_layout_bindings = [_]vk.DescriptorSetLayoutBinding{
+            .{
+                .binding = 0,
+                .descriptor_type = .uniform_buffer,
+                .descriptor_count = 1,
+                .stage_flags = .{ .vertex_bit = true },
+                .p_immutable_samplers = null,
+            },
+        };
+        const descriptor_set_layout = try vc.vkd.createDescriptorSetLayout(vc.dev, &.{
+            .flags = .{},
+            .binding_count = descriptor_set_layout_bindings.len,
+            .p_bindings = &descriptor_set_layout_bindings,
+        }, null);
+        errdefer vc.vkd.destroyDescriptorSetLayout(vc.dev, descriptor_set_layout, null);
+
+        // Allocate descriptor sets
+        var descriptor_set: vk.DescriptorSet = undefined;
+        try vc.vkd.allocateDescriptorSets(vc.dev, &.{
+            .descriptor_pool = descriptor_pool,
+            .descriptor_set_count = 1,
+            .p_set_layouts = @ptrCast([*]const vk.DescriptorSetLayout, &descriptor_set_layout),
+        }, @ptrCast([*]vk.DescriptorSet, &descriptor_set));
+
+        // Set the uniform buffer to the appropriate descriptor
+        {
+            const buffer_info = vk.DescriptorBufferInfo{
+                .buffer = uniform_buffer.buffer,
+                .offset = 0,
+                .range = @sizeOf(@TypeOf(uniform_buffer.data)), // Can probably use vk.WHOLE_SIZE?
+            };
+            const descriptor_writes = [_]vk.WriteDescriptorSet{
+                .{
+                    .dst_set = descriptor_set,
+                    .dst_binding = 0,
+                    .dst_array_element = 0,
+                    .descriptor_count = 1,
+                    .descriptor_type = .uniform_buffer,
+                    .p_image_info = undefined,
+                    .p_buffer_info = @ptrCast([*]const vk.DescriptorBufferInfo, &buffer_info),
+                    .p_texel_buffer_view = undefined,
+                },
+            };
+            vc.vkd.updateDescriptorSets(vc.dev, descriptor_writes.len, &descriptor_writes, 0, undefined);
+        }
+
         const push_constant_ranges = [_]vk.PushConstantRange{.{
             .stage_flags = .{ .vertex_bit = true },
             .offset = 0,
             .size = @sizeOf(Vec2),
         }};
+
+        // Pipeline layout
         const pipeline_layout = try vc.vkd.createPipelineLayout(vc.dev, &.{
             .flags = .{},
-            .set_layout_count = 0,
-            .p_set_layouts = undefined,
+            .set_layout_count = 1,
+            .p_set_layouts = @ptrCast([*]const vk.DescriptorSetLayout, &descriptor_set_layout),
             .push_constant_range_count = push_constant_ranges.len,
             .p_push_constant_ranges = &push_constant_ranges,
         }, null);
@@ -489,53 +579,16 @@ pub const CursorPipeline = struct {
         return CursorPipeline{
             .layout = pipeline_layout,
             .handle = pipeline_handle,
+            .descriptor_pool = descriptor_pool,
+            .descriptor_set = descriptor_set,
+            .descriptor_set_layout = descriptor_set_layout,
         };
     }
 
     pub fn deinit(self: CursorPipeline, vc: *const VulkanContext) void {
+        vc.vkd.destroyDescriptorSetLayout(vc.dev, self.descriptor_set_layout, null);
+        vc.vkd.destroyDescriptorPool(vc.dev, self.descriptor_pool, null);
         vc.vkd.destroyPipelineLayout(vc.dev, self.layout, null);
         vc.vkd.destroyPipeline(vc.dev, self.handle, null);
-    }
-};
-
-// Unused for now
-pub const ColoredQuad = struct {
-    p0: Vec2,
-    p1: Vec2,
-    color: [4]f32,
-
-    pub const Vertex = extern struct {
-        pos: [2]f32,
-        color: [4]f32,
-
-        const binding_description = vk.VertexInputBindingDescription{
-            .binding = 0,
-            .stride = @sizeOf(Vertex),
-            .input_rate = .vertex,
-        };
-
-        const attribute_description = [_]vk.VertexInputAttributeDescription{
-            .{
-                .binding = 0,
-                .location = 0,
-                .format = .r32g32_sfloat,
-                .offset = @offsetOf(Vertex, "pos"),
-            },
-            .{
-                .binding = 0,
-                .location = 1,
-                .format = .r32g32b32a32_sfloat,
-                .offset = @offsetOf(Vertex, "color"),
-            },
-        };
-    };
-
-    pub fn getVertices(self: ColoredQuad) [6]Vertex {
-        // Yes, inefficient, but we don't care
-        const v0 = Vertex{ .pos = .{ self.p0.x, self.p0.y }, .color = self.color };
-        const v1 = Vertex{ .pos = .{ self.p1.x, self.p0.y }, .color = self.color };
-        const v2 = Vertex{ .pos = .{ self.p1.x, self.p1.y }, .color = self.color };
-        const v3 = Vertex{ .pos = .{ self.p0.x, self.p1.y }, .color = self.color };
-        return .{ v0, v1, v2, v0, v2, v3 };
     }
 };

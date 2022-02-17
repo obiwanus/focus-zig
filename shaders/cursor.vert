@@ -7,7 +7,7 @@ layout(push_constant) uniform constants
     vec2 offset; // in positions
 } PushConstants;
 
-layout(binding = 1) uniform Global {
+layout(binding = 0) uniform Global {
     vec2 screen_size;
     vec2 panel_topleft;
     vec2 cursor_size;
@@ -25,7 +25,7 @@ void main() {
         vec2(-1.0, 0.0),
         vec2(g.cursor_size.x + 1.0, 0.0),
         vec2(g.cursor_size.x + 1.0, g.cursor_size.y),
-        vec2(0.0, g.cursor_size.y));
+        vec2(-1.0, g.cursor_size.y));
 
     vec2 vertex = VERTICES[gl_VertexIndex] + g.panel_topleft + PushConstants.offset * g.cursor_size;
     gl_Position = screen_to_canonical(vertex);

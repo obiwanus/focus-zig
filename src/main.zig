@@ -85,27 +85,6 @@ pub fn main() !void {
     const render_pass = try createRenderPass(&vc, swapchain.surface_format.format);
     defer vc.vkd.destroyRenderPass(vc.dev, render_pass, null);
 
-    // Descriptor sets for font atlas and uniform buffer descriptors
-    const descriptor_pool = x: {
-        const pool_sizes = [_]vk.DescriptorPoolSize{
-            .{
-                .@"type" = .combined_image_sampler,
-                .descriptor_count = 1,
-            },
-            .{
-                .@"type" = .uniform_buffer,
-                .descriptor_count = 2,
-            },
-        };
-        break :x try vc.vkd.createDescriptorPool(vc.dev, &.{
-            .flags = .{},
-            .max_sets = 2,
-            .pool_size_count = pool_sizes.len,
-            .p_pool_sizes = &pool_sizes,
-        }, null);
-    };
-    defer vc.vkd.destroyDescriptorPool(vc.dev, descriptor_pool, null);
-
     // Uniform buffer - shared between pipelines
     var uniform_buffer = try vu.UniformBuffer.init(
         &vc,
@@ -117,13 +96,13 @@ pub fn main() !void {
     try uniform_buffer.writeToGPU(&vc);
 
     // Pipeline for rendering textured quads (for now just text)
-    var textured_pipeline = try TexturedPipeline.init(&vc, render_pass, descriptor_pool, uniform_buffer);
+    var textured_pipeline = try TexturedPipeline.init(&vc, render_pass, uniform_buffer);
     textured_pipeline.setTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
     defer textured_pipeline.deinit(&vc);
 
-    // // Pipeline for colored quads (such as cursor or panels)
-    // var cursor_pipeline = try CursorPipeline.init(&vc, render_pass);
-    // defer cursor_pipeline.deinit(&vc);
+    // Pipeline for colored quads (such as cursor or panels)
+    var cursor_pipeline = try CursorPipeline.init(&vc, render_pass, uniform_buffer);
+    defer cursor_pipeline.deinit(&vc);
 
     var framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
     defer destroyFramebuffers(&vc, gpa, framebuffers);
@@ -171,12 +150,6 @@ pub fn main() !void {
                 return error.SwapchainRecreationFailure;
             }
 
-            destroyFramebuffers(&vc, gpa, framebuffers);
-            framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
-
-            uniform_buffer.setScreenSize(g_screen.size);
-            try uniform_buffer.writeToGPU(&vc);
-
             // Make sure the font is updated
             const new_scale = try window.getContentScale();
             if (g_screen.scaleChanged(new_scale)) {
@@ -186,6 +159,19 @@ pub fn main() !void {
                 g_screen.total_lines = @floatToInt(usize, @intToFloat(f32, g_screen.size.height) / g_screen.font.line_height);
                 textured_pipeline.setTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
             }
+
+            uniform_buffer.data.screen_size = Vec2{
+                .x = @intToFloat(f32, new_size.width),
+                .y = @intToFloat(f32, new_size.height),
+            };
+            uniform_buffer.data.cursor_size = Vec2{
+                .x = g_screen.font.xadvance,
+                .y = g_screen.font.line_height,
+            };
+            try uniform_buffer.writeToGPU(&vc);
+
+            destroyFramebuffers(&vc, gpa, framebuffers);
+            framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
 
             g_buf.view_changed = true;
         }
@@ -265,11 +251,21 @@ pub fn main() !void {
             );
             vc.vkd.cmdDraw(main_cmd_buf, @intCast(u32, g_buf.text_vertices.items.len), 1, 0, 0);
 
-            // // Draw cursor
-            // vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, cursor_pipeline.handle);
-            // const cursor_offset = Vec2{ .x = @intToFloat(f32, g_buf.cursor.col), .y = @intToFloat(f32, g_buf.cursor.line - g_buf.viewport_top_line) };
-            // vc.vkd.cmdPushConstants(main_cmd_buf, cursor_pipeline.layout, .{ .vertex_bit = true }, 0, @sizeOf(Vec2), &cursor_offset);
-            // vc.vkd.cmdDraw(main_cmd_buf, 4, 1, 0, 0);
+            // Draw cursor
+            vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, cursor_pipeline.handle);
+            const cursor_offset = Vec2{ .x = @intToFloat(f32, g_buf.cursor.col), .y = @intToFloat(f32, g_buf.cursor.line - g_buf.viewport_top_line) };
+            vc.vkd.cmdPushConstants(main_cmd_buf, cursor_pipeline.layout, .{ .vertex_bit = true }, 0, @sizeOf(Vec2), &cursor_offset);
+            vc.vkd.cmdBindDescriptorSets(
+                main_cmd_buf,
+                .graphics,
+                cursor_pipeline.layout,
+                0,
+                1,
+                @ptrCast([*]const vk.DescriptorSet, &cursor_pipeline.descriptor_set),
+                0,
+                undefined,
+            );
+            vc.vkd.cmdDraw(main_cmd_buf, 4, 1, 0, 0);
 
             vc.vkd.cmdEndRenderPass(main_cmd_buf);
             try vc.vkd.endCommandBuffer(main_cmd_buf);

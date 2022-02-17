@@ -208,13 +208,6 @@ pub const UniformBuffer = struct {
         };
     }
 
-    pub fn setScreenSize(self: *UniformBuffer, screen_size: vk.Extent2D) void {
-        self.data.screen_size = Vec2{
-            .x = @intToFloat(f32, screen_size.width),
-            .y = @intToFloat(f32, screen_size.height),
-        };
-    }
-
     pub fn writeToGPU(self: UniformBuffer, vc: *const VulkanContext) !void {
         const mapped_data = try vc.vkd.mapMemory(vc.dev, self.memory, 0, vk.WHOLE_SIZE, .{});
         defer vc.vkd.unmapMemory(vc.dev, self.memory);
