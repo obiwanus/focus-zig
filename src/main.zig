@@ -69,7 +69,7 @@ pub fn main() !void {
         };
     };
     g_screen.scale = try window.getContentScale();
-    g_screen.font = try Font.init(&vc, gpa, FONT_NAME, 16, main_cmd_pool);
+    g_screen.font = try Font.init(&vc, gpa, FONT_NAME, FONT_SIZE, main_cmd_pool);
     defer g_screen.font.deinit(&vc);
     g_screen.total_lines = @floatToInt(usize, @intToFloat(f32, g_screen.size.height) / g_screen.font.line_height);
 

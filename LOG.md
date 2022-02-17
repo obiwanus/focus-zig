@@ -1,10 +1,12 @@
 # TODO
-- Adjust font's line height
+- Fix cursor positioning on both monitors
+- Fix line number adjustment on screen resize
 - Blend fonts using the alpha channel
 - Support UTF-8
 - Fix editing near the end of the buffer (can't get cursor close enough)
 
 # DONE
++ Adjust font's line height
 + Draw cursor independently of screen size
 + Pass screen size in uniforms
 + Render independently of window size

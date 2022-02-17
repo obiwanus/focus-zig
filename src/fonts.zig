@@ -47,13 +47,18 @@ pub const Font = struct {
 
         const atlas_texture = try createFontTexture(vc, pixels, ATLAS_WIDTH, ATLAS_HEIGHT, cmd_pool);
 
+        // Get metrics
+        const font_info = try stbtt.initFont(font_data);
+        const v_metrics = stbtt.getFontVMetrics(font_info);
+        const scale = stbtt.scaleForPixelHeight(font_info, size);
+        const line_height = scale * @intToFloat(f32, v_metrics.ascent - v_metrics.descent + v_metrics.line_gap);
         // Should be the same for all characters
         const xadvance = chars[@intCast(usize, @intCast(c_int, 'a') - FIRST_CHAR)].xadvance;
 
         return Font{
             .chars = chars,
             .xadvance = xadvance,
-            .line_height = 23, // TODO: set based on vertical metrics
+            .line_height = line_height * 1.2, // I like more space in between
             .atlas_texture = atlas_texture,
         };
     }

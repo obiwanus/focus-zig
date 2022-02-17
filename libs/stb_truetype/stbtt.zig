@@ -158,26 +158,51 @@ extern fn stbtt_GetNumberOfFonts(data: [*c]const u8) c_int;
 pub const getNumberOfFonts = stbtt_GetNumberOfFonts;
 extern fn stbtt_GetFontOffsetForIndex(data: [*c]const u8, index: c_int) c_int;
 pub const getFontOffsetForIndex = stbtt_GetFontOffsetForIndex;
+
 extern fn stbtt_InitFont(info: [*c]FontInfo, data: [*c]const u8, offset: c_int) c_int;
 
 pub fn initFont(data: []const u8) !FontInfo {
     // NOTE: always using offset 0 because we don't use TTF collections
     var font_info: FontInfo = undefined;
-    const result = stbtt_InitFont(&font_info, data, 0);
+    const result = stbtt_InitFont(&font_info, data.ptr, 0);
     if (result == 0) {
         return error.InitFontError;
     }
     return font_info;
 }
 
+extern fn stbtt_GetFontVMetrics(info: [*c]const FontInfo, ascent: [*c]c_int, descent: [*c]c_int, lineGap: [*c]c_int) void;
+
+pub const FontVMetrics = struct {
+    ascent: i32,
+    descent: i32,
+    line_gap: i32,
+};
+
+pub fn getFontVMetrics(info: FontInfo) FontVMetrics {
+    var ascent: c_int = undefined;
+    var descent: c_int = undefined;
+    var line_gap: c_int = undefined;
+
+    stbtt_GetFontVMetrics(&info, &ascent, &descent, &line_gap);
+
+    return FontVMetrics{
+        .ascent = ascent,
+        .descent = descent,
+        .line_gap = line_gap,
+    };
+}
+
+extern fn stbtt_ScaleForPixelHeight(info: [*c]const FontInfo, pixels: f32) f32;
+
+pub fn scaleForPixelHeight(info: FontInfo, pixels: f32) f32 {
+    return stbtt_ScaleForPixelHeight(&info, pixels);
+}
+
 extern fn stbtt_FindGlyphIndex(info: [*c]const FontInfo, unicode_codepoint: c_int) c_int;
 pub const findGlyphIndex = stbtt_FindGlyphIndex;
-extern fn stbtt_ScaleForPixelHeight(info: [*c]const FontInfo, pixels: f32) f32;
-pub const scaleForPixelHeight = stbtt_ScaleForPixelHeight;
 extern fn stbtt_ScaleForMappingEmToPixels(info: [*c]const FontInfo, pixels: f32) f32;
 pub const scaleForMappingEmToPixels = stbtt_ScaleForMappingEmToPixels;
-extern fn stbtt_GetFontVMetrics(info: [*c]const FontInfo, ascent: [*c]c_int, descent: [*c]c_int, lineGap: [*c]c_int) void;
-pub const getFontVMetrics = stbtt_GetFontVMetrics;
 extern fn stbtt_GetFontVMetricsOS2(info: [*c]const FontInfo, typoAscent: [*c]c_int, typoDescent: [*c]c_int, typoLineGap: [*c]c_int) c_int;
 pub const getFontVMetricsOS2 = stbtt_GetFontVMetricsOS2;
 extern fn stbtt_GetFontBoundingBox(info: [*c]const FontInfo, x0: [*c]c_int, y0: [*c]c_int, x1: [*c]c_int, y1: [*c]c_int) void;
