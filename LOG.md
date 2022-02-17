@@ -1,10 +1,11 @@
 # TODO
-- Fix line number adjustment on screen resize
 - Blend fonts using the alpha channel
+- Have some margins for moving the viewport
 - Support UTF-8
 - Fix editing near the end of the buffer (can't get cursor close enough)
 
 # DONE
++ Fix line number adjustment on screen resize
 + Fix cursor positioning on both monitors
 + Adjust font's line height
 + Draw cursor independently of screen size

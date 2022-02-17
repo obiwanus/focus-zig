@@ -146,6 +146,7 @@ pub fn main() !void {
             const new_size = try window.getFramebufferSize();
             g_screen.size.width = new_size.width;
             g_screen.size.height = new_size.height;
+            g_screen.total_lines = @floatToInt(usize, @intToFloat(f32, g_screen.size.height) / g_screen.font.line_height);
             try swapchain.recreate(g_screen.size);
             if (!swapchain.acquire_next_image()) {
                 return error.SwapchainRecreationFailure;
@@ -157,7 +158,6 @@ pub fn main() !void {
                 g_screen.scale = new_scale;
                 g_screen.font.deinit(&vc);
                 g_screen.font = try Font.init(&vc, gpa, FONT_NAME, FONT_SIZE * new_scale.x_scale, main_cmd_pool);
-                g_screen.total_lines = @floatToInt(usize, @intToFloat(f32, g_screen.size.height) / g_screen.font.line_height);
                 textured_pipeline.setTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
             }
 
