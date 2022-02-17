@@ -73,7 +73,7 @@ pub fn main() !void {
     defer g_screen.font.deinit(&vc);
     g_screen.total_lines = @floatToInt(usize, @intToFloat(f32, g_screen.size.height) / g_screen.font.line_height);
 
-    g_buf = try TextBuffer.init(gpa, "../LOG.md");
+    g_buf = try TextBuffer.init(gpa, "main.zig");
     defer g_buf.deinit();
     g_buf.text_changed = true; // trigger initial update
     g_buf.text_vertices = std.ArrayList(TexturedQuad.Vertex).init(gpa);
@@ -90,6 +90,7 @@ pub fn main() !void {
         &vc,
         g_screen.size,
         .{ .x = 30, .y = 15 },
+        .{ .x = g_screen.font.xadvance, .y = g_screen.font.letter_height },
         .{ .x = g_screen.font.xadvance, .y = g_screen.font.line_height },
     );
     defer uniform_buffer.deinit(&vc);
@@ -165,6 +166,10 @@ pub fn main() !void {
                 .y = @intToFloat(f32, new_size.height),
             };
             uniform_buffer.data.cursor_size = Vec2{
+                .x = g_screen.font.xadvance,
+                .y = g_screen.font.letter_height,
+            };
+            uniform_buffer.data.cursor_advance = Vec2{
                 .x = g_screen.font.xadvance,
                 .y = g_screen.font.line_height,
             };
@@ -402,7 +407,7 @@ const TextBuffer = struct {
             self.text_vertices.shrinkRetainingCapacity(0);
             self.text_quads.shrinkRetainingCapacity(0);
 
-            const start = Vec2{ .x = 0, .y = 15 };
+            const start = Vec2{ .x = 0, .y = font.baseline }; // will be repositioned by the shader
             var pos = Vec2{ .x = start.x, .y = start.y };
             // Get quads
             for (visible_chars) |char| {

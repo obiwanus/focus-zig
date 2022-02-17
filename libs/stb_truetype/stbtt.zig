@@ -174,9 +174,9 @@ pub fn initFont(data: []const u8) !FontInfo {
 extern fn stbtt_GetFontVMetrics(info: [*c]const FontInfo, ascent: [*c]c_int, descent: [*c]c_int, lineGap: [*c]c_int) void;
 
 pub const FontVMetrics = struct {
-    ascent: i32,
-    descent: i32,
-    line_gap: i32,
+    ascent: f32,
+    descent: f32,
+    line_gap: f32,
 };
 
 pub fn getFontVMetrics(info: FontInfo) FontVMetrics {
@@ -187,9 +187,9 @@ pub fn getFontVMetrics(info: FontInfo) FontVMetrics {
     stbtt_GetFontVMetrics(&info, &ascent, &descent, &line_gap);
 
     return FontVMetrics{
-        .ascent = ascent,
-        .descent = descent,
-        .line_gap = line_gap,
+        .ascent = @intToFloat(f32, ascent),
+        .descent = @intToFloat(f32, descent),
+        .line_gap = @intToFloat(f32, line_gap),
     };
 }
 

@@ -19,7 +19,9 @@ const FIRST_CHAR = 32;
 pub const Font = struct {
     chars: []stbtt.PackedChar,
     xadvance: f32,
+    baseline: f32,
     line_height: f32,
+    letter_height: f32,
     atlas_texture: FontTexture,
 
     pub fn init(vc: *const VulkanContext, allocator: Allocator, filename: []const u8, size: f32, cmd_pool: vk.CommandPool) !Font {
@@ -51,14 +53,18 @@ pub const Font = struct {
         const font_info = try stbtt.initFont(font_data);
         const v_metrics = stbtt.getFontVMetrics(font_info);
         const scale = stbtt.scaleForPixelHeight(font_info, size);
-        const line_height = scale * @intToFloat(f32, v_metrics.ascent - v_metrics.descent + v_metrics.line_gap);
+        const line_height = scale * (v_metrics.ascent - v_metrics.descent + v_metrics.line_gap);
+        const baseline = scale * v_metrics.ascent;
+        const letter_height = scale * (v_metrics.ascent - v_metrics.descent);
         // Should be the same for all characters
         const xadvance = chars[@intCast(usize, @intCast(c_int, 'a') - FIRST_CHAR)].xadvance;
 
         return Font{
             .chars = chars,
             .xadvance = xadvance,
+            .baseline = baseline,
             .line_height = line_height * 1.2, // I like more space in between
+            .letter_height = letter_height,
             .atlas_texture = atlas_texture,
         };
     }

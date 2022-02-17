@@ -176,9 +176,10 @@ pub const UniformBuffer = struct {
         screen_size: Vec2,
         panel_topleft: Vec2,
         cursor_size: Vec2,
+        cursor_advance: Vec2,
     };
 
-    pub fn init(vc: *const VulkanContext, extent: vk.Extent2D, panel_topleft: Vec2, cursor_size: Vec2) !UniformBuffer {
+    pub fn init(vc: *const VulkanContext, extent: vk.Extent2D, panel_topleft: Vec2, cursor_size: Vec2, cursor_advance: Vec2) !UniformBuffer {
         const buffer = try vc.vkd.createBuffer(vc.dev, &.{
             .flags = .{},
             .size = @sizeOf(UniformBuffer.Data),
@@ -202,6 +203,7 @@ pub const UniformBuffer = struct {
                 .screen_size = screen_size,
                 .panel_topleft = panel_topleft,
                 .cursor_size = cursor_size,
+                .cursor_advance = cursor_advance,
             },
             .buffer = buffer,
             .memory = memory,
