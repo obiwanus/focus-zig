@@ -210,7 +210,7 @@ pub const UniformBuffer = struct {
         };
     }
 
-    pub fn writeToGPU(self: UniformBuffer, vc: *const VulkanContext) !void {
+    pub fn sendToGPU(self: UniformBuffer, vc: *const VulkanContext) !void {
         const mapped_data = try vc.vkd.mapMemory(vc.dev, self.memory, 0, vk.WHOLE_SIZE, .{});
         defer vc.vkd.unmapMemory(vc.dev, self.memory);
         const data = @ptrCast(*Data, @alignCast(@alignOf(Data), mapped_data));

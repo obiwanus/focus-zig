@@ -11,7 +11,7 @@ const Allocator = std.mem.Allocator;
 const VulkanContext = @import("vulkan/context.zig").VulkanContext;
 const Font = @import("fonts.zig").Font;
 const Swapchain = @import("vulkan/swapchain.zig").Swapchain;
-const TexturedPipeline = @import("vulkan/pipeline.zig").TexturedPipeline;
+const TexturedPipeline = @import("vulkan/pipeline.zig").TextPipeline;
 const TexturedQuad = @import("vulkan/pipeline.zig").TexturedQuad;
 const CursorPipeline = @import("vulkan/pipeline.zig").CursorPipeline;
 const Vec2 = @import("math.zig").Vec2;
@@ -94,12 +94,12 @@ pub fn main() !void {
         .{ .x = g_screen.font.xadvance, .y = g_screen.font.line_height },
     );
     defer uniform_buffer.deinit(&vc);
-    try uniform_buffer.writeToGPU(&vc);
+    try uniform_buffer.sendToGPU(&vc);
 
     // Pipeline for rendering textured quads (for now just text)
-    var textured_pipeline = try TexturedPipeline.init(&vc, render_pass, uniform_buffer);
-    textured_pipeline.setTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
-    defer textured_pipeline.deinit(&vc);
+    var text_pipeline = try TexturedPipeline.init(&vc, render_pass, uniform_buffer);
+    text_pipeline.updateFontTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
+    defer text_pipeline.deinit(&vc);
 
     // Pipeline for colored quads (such as cursor or panels)
     var cursor_pipeline = try CursorPipeline.init(&vc, render_pass, uniform_buffer);
@@ -158,7 +158,7 @@ pub fn main() !void {
                 g_screen.scale = new_scale;
                 g_screen.font.deinit(&vc);
                 g_screen.font = try Font.init(&vc, gpa, FONT_NAME, FONT_SIZE * new_scale.x_scale, main_cmd_pool);
-                textured_pipeline.setTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
+                text_pipeline.updateFontTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
             }
 
             uniform_buffer.data.screen_size = Vec2{
@@ -173,7 +173,7 @@ pub fn main() !void {
                 .x = g_screen.font.xadvance,
                 .y = g_screen.font.line_height,
             };
-            try uniform_buffer.writeToGPU(&vc);
+            try uniform_buffer.sendToGPU(&vc);
 
             destroyFramebuffers(&vc, gpa, framebuffers);
             framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
@@ -241,16 +241,16 @@ pub fn main() !void {
             }, .@"inline");
 
             // Draw text
-            vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, textured_pipeline.handle);
+            vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, text_pipeline.handle);
             const offset = [_]vk.DeviceSize{0};
             vc.vkd.cmdBindVertexBuffers(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Buffer, &text_vertex_buffer), &offset);
             vc.vkd.cmdBindDescriptorSets(
                 main_cmd_buf,
                 .graphics,
-                textured_pipeline.layout,
+                text_pipeline.layout,
                 0,
                 1,
-                @ptrCast([*]const vk.DescriptorSet, &textured_pipeline.descriptor_set),
+                @ptrCast([*]const vk.DescriptorSet, &text_pipeline.descriptor_set),
                 0,
                 undefined,
             );

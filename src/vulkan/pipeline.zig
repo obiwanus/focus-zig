@@ -9,7 +9,7 @@ const Vec2 = @import("../math.zig").Vec2;
 
 const assert = std.debug.assert;
 
-pub const TexturedPipeline = struct {
+pub const TextPipeline = struct {
     texture_sampler: vk.Sampler,
     descriptor_pool: vk.DescriptorPool,
     descriptor_set_layout: vk.DescriptorSetLayout,
@@ -17,7 +17,7 @@ pub const TexturedPipeline = struct {
     layout: vk.PipelineLayout,
     handle: vk.Pipeline,
 
-    pub fn init(vc: *const VulkanContext, render_pass: vk.RenderPass, uniform_buffer: vu.UniformBuffer) !TexturedPipeline {
+    pub fn init(vc: *const VulkanContext, render_pass: vk.RenderPass, uniform_buffer: vu.UniformBuffer) !TextPipeline {
         // Sampler for the texture
         const texture_sampler = try vc.vkd.createSampler(vc.dev, &.{
             .flags = .{},
@@ -262,7 +262,7 @@ pub const TexturedPipeline = struct {
             break :x pipeline;
         };
 
-        return TexturedPipeline{
+        return TextPipeline{
             .texture_sampler = texture_sampler,
             .descriptor_pool = descriptor_pool,
             .descriptor_set_layout = descriptor_set_layout,
@@ -272,7 +272,7 @@ pub const TexturedPipeline = struct {
         };
     }
 
-    pub fn setTextureDescriptor(self: TexturedPipeline, vc: *const VulkanContext, texture_image_view: vk.ImageView) void {
+    pub fn updateFontTextureDescriptor(self: TextPipeline, vc: *const VulkanContext, texture_image_view: vk.ImageView) void {
         // NOTE: not sure if this is the intended way to pass textures to pipelines
         // Maybe it would make sense to create all descriptors beforehand and then
         // copy them around somehow?
@@ -299,7 +299,7 @@ pub const TexturedPipeline = struct {
         vc.vkd.updateDescriptorSets(vc.dev, descriptor_writes.len, &descriptor_writes, 0, undefined);
     }
 
-    pub fn deinit(self: TexturedPipeline, vc: *const VulkanContext) void {
+    pub fn deinit(self: TextPipeline, vc: *const VulkanContext) void {
         vc.vkd.destroySampler(vc.dev, self.texture_sampler, null);
         vc.vkd.destroyDescriptorSetLayout(vc.dev, self.descriptor_set_layout, null);
         vc.vkd.destroyDescriptorPool(vc.dev, self.descriptor_pool, null);
