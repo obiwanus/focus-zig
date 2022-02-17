@@ -1,6 +1,7 @@
 const std = @import("std");
 const vk = @import("vulkan");
 
+const Vec2 = @import("../math.zig").Vec2;
 const VulkanContext = @import("context.zig").VulkanContext;
 
 pub const SingleTimeCommandBuffer = struct {
@@ -165,3 +166,64 @@ pub fn copyBuffer(vc: *const VulkanContext, pool: vk.CommandPool, dst: vk.Buffer
 
     try cmdbuf.submit_and_free();
 }
+
+pub const UniformBuffer = struct {
+    data: Data,
+    buffer: vk.Buffer,
+    memory: vk.DeviceMemory,
+
+    const Data = extern struct {
+        screen_size: Vec2,
+        panel_topleft: Vec2,
+        cursor_size: Vec2,
+    };
+
+    pub fn init(vc: *const VulkanContext, extent: vk.Extent2D, panel_topleft: Vec2, cursor_size: Vec2) !UniformBuffer {
+        const buffer = try vc.vkd.createBuffer(vc.dev, &.{
+            .flags = .{},
+            .size = @sizeOf(UniformBuffer.Data),
+            .usage = .{ .uniform_buffer_bit = true },
+            .sharing_mode = .exclusive,
+            .queue_family_index_count = 0,
+            .p_queue_family_indices = undefined,
+        }, null);
+        errdefer vc.vkd.destroyBuffer(vc.dev, buffer, null);
+        const mem_reqs = vc.vkd.getBufferMemoryRequirements(vc.dev, buffer);
+        const memory = try vc.allocate(mem_reqs, .{ .host_visible_bit = true, .host_coherent_bit = true });
+        try vc.vkd.bindBufferMemory(vc.dev, buffer, memory, 0);
+
+        const screen_size = Vec2{
+            .x = @intToFloat(f32, extent.width),
+            .y = @intToFloat(f32, extent.height),
+        };
+
+        return UniformBuffer{
+            .data = Data{
+                .screen_size = screen_size,
+                .panel_topleft = panel_topleft,
+                .cursor_size = cursor_size,
+            },
+            .buffer = buffer,
+            .memory = memory,
+        };
+    }
+
+    pub fn setScreenSize(self: *UniformBuffer, screen_size: vk.Extent2D) void {
+        self.data.screen_size = Vec2{
+            .x = @intToFloat(f32, screen_size.width),
+            .y = @intToFloat(f32, screen_size.height),
+        };
+    }
+
+    pub fn writeToGPU(self: UniformBuffer, vc: *const VulkanContext) !void {
+        const mapped_data = try vc.vkd.mapMemory(vc.dev, self.memory, 0, vk.WHOLE_SIZE, .{});
+        defer vc.vkd.unmapMemory(vc.dev, self.memory);
+        const data = @ptrCast(*Data, @alignCast(@alignOf(Data), mapped_data));
+        data.* = self.data;
+    }
+
+    pub fn deinit(self: UniformBuffer, vc: *const VulkanContext) void {
+        vc.vkd.destroyBuffer(vc.dev, self.buffer, null);
+        vc.vkd.freeMemory(vc.dev, self.memory, null);
+    }
+};

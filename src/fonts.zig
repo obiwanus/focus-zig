@@ -18,6 +18,7 @@ const FIRST_CHAR = 32;
 
 pub const Font = struct {
     chars: []stbtt.PackedChar,
+    xadvance: f32,
     line_height: f32,
     atlas_texture: FontTexture,
 
@@ -46,9 +47,12 @@ pub const Font = struct {
 
         const atlas_texture = try createFontTexture(vc, pixels, ATLAS_WIDTH, ATLAS_HEIGHT, cmd_pool);
 
+        // Should be the same for all characters
+        const xadvance = chars[@intCast(usize, @intCast(c_int, 'a') - FIRST_CHAR)].xadvance;
+
         return Font{
             .chars = chars,
-            // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            .xadvance = xadvance,
             .line_height = 23, // TODO: set based on vertical metrics
             .atlas_texture = atlas_texture,
         };
@@ -81,11 +85,6 @@ pub const Font = struct {
             char_index = 0;
         }
         return char_index;
-    }
-
-    pub fn getXAdvance(self: Font, char: u8) f32 {
-        const char_index = self.getCharIndex(char);
-        return self.chars[@intCast(usize, char_index)].xadvance;
     }
 };
 
