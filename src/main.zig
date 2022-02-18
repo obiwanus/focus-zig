@@ -192,7 +192,7 @@ pub fn main() !void {
                 // TODO: do it from cursor? - only applicable if the change was made by the cursor
                 try g_buf.recalculateLines();
             }
-            g_buf.updateCursor();
+            g_buf.updateCursorAndViewport();
             try g_buf.updateVisibleVertices(g_screen.font);
             try uploadVertices(&vc, g_buf.text_vertices.items, main_cmd_pool, text_vertex_buffer);
         }
@@ -374,7 +374,7 @@ const TextBuffer = struct {
     }
 
     /// Recalculates cursor line/column coordinates from buffer position
-    pub fn updateCursor(self: *TextBuffer) void {
+    pub fn updateCursorAndViewport(self: *TextBuffer) void {
         self.cursor.line = for (self.lines.items) |line_start, line| {
             if (self.cursor.pos < line_start) {
                 break line - 1;
@@ -384,11 +384,20 @@ const TextBuffer = struct {
         } else self.lines.items.len;
         self.cursor.col = self.cursor.pos - self.lines.items[self.cursor.line];
 
+        // How many lines/cols from the edge triggers viewport move
+        // const padding_x = 10;
+        const padding_y = 5;
+        const bottom_line = self.viewport_top_line + g_screen.total_lines;
+
+        // Allowed cursor positions within viewport
+        const line_min = self.viewport_top_line + padding_y;
+        const line_max = bottom_line - padding_y - 1;
+
         // Detect if cursor is outside vertical viewport
-        if (self.cursor.line < self.viewport_top_line) {
-            self.viewport_top_line = self.cursor.line;
-        } else if (self.cursor.line > self.viewport_top_line + g_screen.total_lines - 1) {
-            self.viewport_top_line = self.cursor.line - g_screen.total_lines + 1;
+        if (self.cursor.line < line_min) {
+            self.viewport_top_line = self.cursor.line -| padding_y;
+        } else if (self.cursor.line > line_max) {
+            self.viewport_top_line = self.cursor.line + padding_y + 1 - g_screen.total_lines;
         }
     }
 
