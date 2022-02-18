@@ -25,27 +25,17 @@ pub const Font = struct {
     atlas_texture: FontTexture,
 
     pub fn init(vc: *const VulkanContext, allocator: Allocator, filename: []const u8, size: f32, cmd_pool: vk.CommandPool) !Font {
-        var pixels_tmp = try allocator.alloc(u8, ATLAS_WIDTH * ATLAS_HEIGHT);
-        defer allocator.free(pixels_tmp);
-        var pixels = try allocator.alloc(u8, ATLAS_WIDTH * ATLAS_HEIGHT * 4); // 4 channels
+        var pixels = try allocator.alloc(u8, ATLAS_WIDTH * ATLAS_HEIGHT);
         defer allocator.free(pixels); // after they are uploaded we don't need them
 
         const font_data = try readEntireFile(filename, allocator);
         defer allocator.free(font_data);
 
-        var pack_context = try stbtt.packBegin(pixels_tmp, ATLAS_WIDTH, ATLAS_HEIGHT, 0, 5, null);
+        var pack_context = try stbtt.packBegin(pixels, ATLAS_WIDTH, ATLAS_HEIGHT, 0, 5, null);
         defer stbtt.packEnd(&pack_context);
         stbtt.packSetOversampling(&pack_context, OVERSAMPLING, OVERSAMPLING);
 
         const chars = try stbtt.packFontRange(&pack_context, font_data, size, FIRST_CHAR, 32 * 3, allocator);
-
-        // TODO: stop doing this
-        for (pixels_tmp) |pixel, i| {
-            pixels[i * 4 + 0] = pixel;
-            pixels[i * 4 + 1] = pixel;
-            pixels[i * 4 + 2] = pixel;
-            pixels[i * 4 + 3] = 255;
-        }
 
         const atlas_texture = try createFontTexture(vc, pixels, ATLAS_WIDTH, ATLAS_HEIGHT, cmd_pool);
 
@@ -143,7 +133,7 @@ fn createFontTexture(vc: *const VulkanContext, pixels: []u8, width: u32, height:
     const texture_image = try vc.vkd.createImage(vc.dev, &.{
         .flags = .{},
         .image_type = .@"2d",
-        .format = .r8g8b8a8_srgb,
+        .format = .r8_srgb,
         .extent = image_extent,
         .mip_levels = 1,
         .array_layers = 1,
@@ -163,11 +153,11 @@ fn createFontTexture(vc: *const VulkanContext, pixels: []u8, width: u32, height:
     try vc.vkd.bindImageMemory(vc.dev, texture_image, memory, 0);
 
     // Copy buffer data to image
-    try vu.transitionImageLayout(vc, pool, texture_image, .r8g8b8a8_srgb, .@"undefined", .transfer_dst_optimal);
+    try vu.transitionImageLayout(vc, pool, texture_image, .r8_srgb, .@"undefined", .transfer_dst_optimal);
     try vu.copyBufferToImage(vc, pool, staging_buffer, texture_image, width, height);
-    try vu.transitionImageLayout(vc, pool, texture_image, .r8g8b8a8_srgb, .transfer_dst_optimal, .shader_read_only_optimal);
+    try vu.transitionImageLayout(vc, pool, texture_image, .r8_srgb, .transfer_dst_optimal, .shader_read_only_optimal);
 
-    const image_view = try createImageView(vc, texture_image, .r8g8b8a8_srgb);
+    const image_view = try createImageView(vc, texture_image, .r8_srgb);
 
     return FontTexture{
         .image = texture_image,
@@ -178,10 +168,10 @@ fn createFontTexture(vc: *const VulkanContext, pixels: []u8, width: u32, height:
 
 pub fn createImageView(vc: *const VulkanContext, image: vk.Image, format: vk.Format) !vk.ImageView {
     const components = vk.ComponentMapping{
-        .r = .identity,
-        .g = .identity,
-        .b = .identity,
-        .a = .identity,
+        .r = .one,
+        .g = .one,
+        .b = .one,
+        .a = .r,
     };
     const subresource_range = vk.ImageSubresourceRange{
         .aspect_mask = .{ .color_bit = true },

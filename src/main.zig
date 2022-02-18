@@ -11,7 +11,7 @@ const Allocator = std.mem.Allocator;
 const VulkanContext = @import("vulkan/context.zig").VulkanContext;
 const Font = @import("fonts.zig").Font;
 const Swapchain = @import("vulkan/swapchain.zig").Swapchain;
-const TexturedPipeline = @import("vulkan/pipeline.zig").TextPipeline;
+const TextPipeline = @import("vulkan/pipeline.zig").TextPipeline;
 const TexturedQuad = @import("vulkan/pipeline.zig").TexturedQuad;
 const CursorPipeline = @import("vulkan/pipeline.zig").CursorPipeline;
 const Vec2 = @import("math.zig").Vec2;
@@ -96,8 +96,8 @@ pub fn main() !void {
     defer uniform_buffer.deinit(&vc);
     try uniform_buffer.sendToGPU(&vc);
 
-    // Pipeline for rendering textured quads (for now just text)
-    var text_pipeline = try TexturedPipeline.init(&vc, render_pass, uniform_buffer);
+    // Pipeline for rendering text
+    var text_pipeline = try TextPipeline.init(&vc, render_pass, uniform_buffer);
     text_pipeline.updateFontTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
     defer text_pipeline.deinit(&vc);
 

@@ -127,15 +127,15 @@ pub const TextPipeline = struct {
         const pipeline_handle = x: {
             const vert_module = try vc.vkd.createShaderModule(vc.dev, &.{
                 .flags = .{},
-                .code_size = resources.textured_vert.len,
-                .p_code = @ptrCast([*]const u32, resources.textured_vert),
+                .code_size = resources.text_vert.len,
+                .p_code = @ptrCast([*]const u32, resources.text_vert),
             }, null);
             defer vc.vkd.destroyShaderModule(vc.dev, vert_module, null);
 
             const frag_module = try vc.vkd.createShaderModule(vc.dev, &.{
                 .flags = .{},
-                .code_size = resources.textured_frag.len,
-                .p_code = @ptrCast([*]const u32, resources.textured_frag),
+                .code_size = resources.text_frag.len,
+                .p_code = @ptrCast([*]const u32, resources.text_frag),
             }, null);
             defer vc.vkd.destroyShaderModule(vc.dev, frag_module, null);
 
@@ -203,9 +203,9 @@ pub const TextPipeline = struct {
             };
 
             const pcbas = vk.PipelineColorBlendAttachmentState{
-                .blend_enable = vk.FALSE,
-                .src_color_blend_factor = .one,
-                .dst_color_blend_factor = .zero,
+                .blend_enable = vk.TRUE,
+                .src_color_blend_factor = .src_alpha,
+                .dst_color_blend_factor = .one,
                 .color_blend_op = .add,
                 .src_alpha_blend_factor = .one,
                 .dst_alpha_blend_factor = .zero,

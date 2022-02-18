@@ -34,8 +34,8 @@ pub fn build(b: *std.build.Builder) void {
 
     // Resources
     const resources = vulkanzig.ResourceGenStep.init(b, "resources.zig");
-    resources.addShader("textured_vert", "shaders/textured.vert");
-    resources.addShader("textured_frag", "shaders/textured.frag");
+    resources.addShader("text_vert", "shaders/text.vert");
+    resources.addShader("text_frag", "shaders/text.frag");
     resources.addShader("cursor_vert", "shaders/cursor.vert");
     resources.addShader("cursor_frag", "shaders/cursor.frag");
     exe.addPackage(resources.package);
