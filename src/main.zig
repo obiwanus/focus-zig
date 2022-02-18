@@ -498,6 +498,12 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
                 g_buf.cursor.col_wanted = std.math.maxInt(usize);
                 g_buf.view_changed = true;
             },
+            .tab => {
+                g_buf.bytes.insertSlice(g_buf.cursor.pos, "    ") catch unreachable;
+                g_buf.cursor.pos += 4;
+                g_buf.cursor.col_wanted = null;
+                g_buf.text_changed = true;
+            },
             .enter => {
                 if (mods.control and mods.shift) {
                     // Insert line above
