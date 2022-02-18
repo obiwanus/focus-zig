@@ -26,6 +26,13 @@ const FONT_NAME = "fonts/consola.ttf";
 const FONT_SIZE = 16; // for scale = 1.0
 const MAX_VERTEX_COUNT = 100000;
 
+const TEXT_MARGIN = Margin{
+    .left = 30,
+    .top = 15,
+    .right = 30,
+    .bottom = 15,
+};
+
 // NOTE: this buffer is global temporary. We don't want it to be global eventually
 var g_buf: TextBuffer = undefined;
 var g_screen: Screen = undefined;
@@ -47,6 +54,7 @@ pub fn main() !void {
         .client_api = .no_api,
         .focused = true,
         .maximized = true,
+        // .decorated = false,
         .scale_to_monitor = true,
     });
     defer window.destroy();
@@ -220,8 +228,14 @@ pub fn main() !void {
             vc.vkd.cmdSetViewport(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Viewport, &viewport));
 
             const scissor = vk.Rect2D{
-                .offset = .{ .x = 0, .y = 0 },
-                .extent = g_screen.size,
+                .offset = .{
+                    .x = TEXT_MARGIN.left,
+                    .y = 5, // we don't want to cut the cursor off
+                },
+                .extent = .{
+                    .width = g_screen.size.width -| (TEXT_MARGIN.left + TEXT_MARGIN.right),
+                    .height = g_screen.size.height -| 10,
+                },
             };
             vc.vkd.cmdSetScissor(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Rect2D, &scissor));
 
@@ -306,6 +320,13 @@ pub fn main() !void {
     try vc.vkd.queueWaitIdle(vc.graphics_queue.handle);
 }
 
+const Margin = struct {
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+};
+
 const Screen = struct {
     size: vk.Extent2D,
     scale: glfw.Window.ContentScale,
@@ -386,7 +407,7 @@ const TextBuffer = struct {
 
         // How many lines/cols from the edge triggers viewport move
         // const padding_x = 10;
-        const padding_y = 5;
+        const padding_y = 3;
         const bottom_line = self.viewport_top_line + g_screen.total_lines;
 
         // Allowed cursor positions within viewport
