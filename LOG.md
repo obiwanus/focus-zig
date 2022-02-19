@@ -5,6 +5,7 @@
 - Fix editing near the end of the buffer (can't get cursor close enough)
 
 # DONE
++ Support tab and backspace better
 + Have vertical margins for moving the viewport
 + Blend fonts using the alpha channel
 + Fix line number adjustment on screen resize

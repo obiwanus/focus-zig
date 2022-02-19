@@ -24,6 +24,7 @@ var GPA = std.heap.GeneralPurposeAllocator(.{ .never_unmap = false }){};
 const APP_NAME = "Focus";
 const FONT_NAME = "fonts/consola.ttf";
 const FONT_SIZE = 16; // for scale = 1.0
+const TAB_SIZE = 4;
 const MAX_VERTEX_COUNT = 100000;
 
 const TEXT_MARGIN = Margin{
@@ -529,8 +530,9 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
                 g_buf.view_changed = true;
             },
             .tab => {
-                g_buf.bytes.insertSlice(g_buf.cursor.pos, "    ") catch unreachable;
-                g_buf.cursor.pos += 4;
+                const to_next_tabstop = TAB_SIZE - g_buf.cursor.col % TAB_SIZE;
+                g_buf.bytes.insertSlice(g_buf.cursor.pos, "    "[0..to_next_tabstop]) catch unreachable;
+                g_buf.cursor.pos += to_next_tabstop;
                 g_buf.cursor.col_wanted = null;
                 g_buf.text_changed = true;
             },
@@ -552,8 +554,27 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
                 g_buf.text_changed = true;
             },
             .backspace => if (g_buf.cursor.pos > 0) {
-                g_buf.cursor.pos -= 1;
-                _ = g_buf.bytes.orderedRemove(g_buf.cursor.pos);
+                const to_prev_tabstop = x: {
+                    var spaces = g_buf.cursor.col % TAB_SIZE;
+                    if (spaces == 0 and g_buf.cursor.col > 0) spaces = 4;
+                    break :x spaces;
+                };
+                // Check if we can delete spaces to the previous tabstop
+                if (to_prev_tabstop > 0) {
+                    const pos = g_buf.cursor.pos;
+                    const all_spaces = for (g_buf.bytes.items[(pos - to_prev_tabstop)..pos]) |char| {
+                        if (char != ' ') break false;
+                    } else true;
+                    if (all_spaces) {
+                        // Delete all spaces
+                        g_buf.cursor.pos -= to_prev_tabstop;
+                        g_buf.bytes.replaceRange(g_buf.cursor.pos, to_prev_tabstop, ""[0..]) catch unreachable;
+                    } else {
+                        // Just delete 1 char
+                        g_buf.cursor.pos -= 1;
+                        _ = g_buf.bytes.orderedRemove(g_buf.cursor.pos);
+                    }
+                }
                 g_buf.cursor.col_wanted = null;
                 g_buf.text_changed = true;
             },
