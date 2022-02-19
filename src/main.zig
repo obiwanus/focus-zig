@@ -27,6 +27,7 @@ const FONT_SIZE = 16; // for scale = 1.0
 const TAB_SIZE = 4;
 const MAX_VERTEX_COUNT = 100000;
 
+// Distance from edges to where text starts
 const TEXT_MARGIN = Margin{
     .left = 30,
     .top = 15,
@@ -80,7 +81,13 @@ pub fn main() !void {
     g_screen.scale = try window.getContentScale();
     g_screen.font = try Font.init(&vc, gpa, FONT_NAME, FONT_SIZE, main_cmd_pool);
     defer g_screen.font.deinit(&vc);
-    g_screen.total_lines = @floatToInt(usize, @intToFloat(f32, g_screen.size.height) / g_screen.font.line_height);
+
+    {
+        const working_area_width = g_screen.size.width - TEXT_MARGIN.left - TEXT_MARGIN.right;
+        const working_area_height = g_screen.size.height - TEXT_MARGIN.top - TEXT_MARGIN.bottom;
+        g_screen.total_cols = @floatToInt(usize, @intToFloat(f32, working_area_width) / g_screen.font.xadvance);
+        g_screen.total_lines = @floatToInt(usize, @intToFloat(f32, working_area_height) / g_screen.font.line_height);
+    }
 
     g_buf = try TextBuffer.init(gpa, "main.zig");
     defer g_buf.deinit();
@@ -98,7 +105,7 @@ pub fn main() !void {
     var uniform_buffer = try vu.UniformBuffer.init(
         &vc,
         g_screen.size,
-        .{ .x = 30, .y = 15 },
+        .{ .x = @intToFloat(f32, TEXT_MARGIN.left) - @intToFloat(f32, g_buf.viewport.left) * g_screen.font.xadvance, .y = TEXT_MARGIN.top },
         .{ .x = g_screen.font.xadvance, .y = g_screen.font.letter_height },
         .{ .x = g_screen.font.xadvance, .y = g_screen.font.line_height },
     );
@@ -155,7 +162,7 @@ pub fn main() !void {
             const new_size = try window.getFramebufferSize();
             g_screen.size.width = new_size.width;
             g_screen.size.height = new_size.height;
-            g_screen.total_lines = @floatToInt(usize, @intToFloat(f32, g_screen.size.height) / g_screen.font.line_height);
+
             try swapchain.recreate(g_screen.size);
             if (!swapchain.acquire_next_image()) {
                 return error.SwapchainRecreationFailure;
@@ -170,19 +177,10 @@ pub fn main() !void {
                 text_pipeline.updateFontTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
             }
 
-            uniform_buffer.data.screen_size = Vec2{
-                .x = @intToFloat(f32, new_size.width),
-                .y = @intToFloat(f32, new_size.height),
-            };
-            uniform_buffer.data.cursor_size = Vec2{
-                .x = g_screen.font.xadvance,
-                .y = g_screen.font.letter_height,
-            };
-            uniform_buffer.data.cursor_advance = Vec2{
-                .x = g_screen.font.xadvance,
-                .y = g_screen.font.line_height,
-            };
-            try uniform_buffer.sendToGPU(&vc);
+            const working_area_width = g_screen.size.width - TEXT_MARGIN.left - TEXT_MARGIN.right;
+            const working_area_height = g_screen.size.height - TEXT_MARGIN.top - TEXT_MARGIN.bottom;
+            g_screen.total_cols = @floatToInt(usize, @intToFloat(f32, working_area_width) / g_screen.font.xadvance);
+            g_screen.total_lines = @floatToInt(usize, @intToFloat(f32, working_area_height) / g_screen.font.line_height);
 
             destroyFramebuffers(&vc, gpa, framebuffers);
             framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
@@ -204,6 +202,27 @@ pub fn main() !void {
             g_buf.updateCursorAndViewport();
             try g_buf.updateVisibleVertices(g_screen.font);
             try uploadVertices(&vc, g_buf.text_vertices.items, main_cmd_pool, text_vertex_buffer);
+
+            // Update uniform buffer
+            {
+                uniform_buffer.data.screen_size = Vec2{
+                    .x = @intToFloat(f32, g_screen.size.width),
+                    .y = @intToFloat(f32, g_screen.size.height),
+                };
+                uniform_buffer.data.panel_topleft = Vec2{
+                    .x = @intToFloat(f32, TEXT_MARGIN.left) - @intToFloat(f32, g_buf.viewport.left) * g_screen.font.xadvance,
+                    .y = TEXT_MARGIN.top,
+                };
+                uniform_buffer.data.cursor_size = Vec2{
+                    .x = g_screen.font.xadvance,
+                    .y = g_screen.font.letter_height,
+                };
+                uniform_buffer.data.cursor_advance = Vec2{
+                    .x = g_screen.font.xadvance,
+                    .y = g_screen.font.line_height,
+                };
+                try uniform_buffer.sendToGPU(&vc);
+            }
         }
 
         // Record the main command buffer
@@ -273,7 +292,10 @@ pub fn main() !void {
 
             // Draw cursor
             vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, cursor_pipeline.handle);
-            const cursor_offset = Vec2{ .x = @intToFloat(f32, g_buf.cursor.col), .y = @intToFloat(f32, g_buf.cursor.line - g_buf.viewport_top_line) };
+            const cursor_offset = Vec2{
+                .x = @intToFloat(f32, g_buf.cursor.col),
+                .y = @intToFloat(f32, g_buf.cursor.line - g_buf.viewport.top),
+            };
             vc.vkd.cmdPushConstants(main_cmd_buf, cursor_pipeline.layout, .{ .vertex_bit = true }, 0, @sizeOf(Vec2), &cursor_offset);
             vc.vkd.cmdBindDescriptorSets(
                 main_cmd_buf,
@@ -332,7 +354,8 @@ const Screen = struct {
     size: vk.Extent2D,
     scale: glfw.Window.ContentScale,
     font: Font,
-    total_lines: usize, // how many fit vertically for the current font
+    total_lines: usize,
+    total_cols: usize,
 
     pub fn scaleChanged(self: Screen, new_scale: glfw.Window.ContentScale) bool {
         assert(new_scale.x_scale == new_scale.y_scale);
@@ -345,11 +368,11 @@ const TextBuffer = struct {
     // TODO: unicode
     lines: std.ArrayList(usize),
     cursor: Cursor,
+    viewport: Viewport,
 
     text_vertices: std.ArrayList(TexturedQuad.Vertex),
     text_quads: std.ArrayList(TexturedQuad),
 
-    viewport_top_line: usize = 0, // line from which viewport starts
     text_changed: bool = false,
     view_changed: bool = false,
 
@@ -358,6 +381,11 @@ const TextBuffer = struct {
         line: usize = 0, // from the beginning of buffer
         col: usize = 0, // actual column
         col_wanted: ?usize = null, // where the cursor wants to be
+    };
+
+    const Viewport = struct {
+        top: usize = 0, // in lines
+        left: usize = 0, // in colums
     };
 
     pub fn init(allocator: Allocator, comptime file_name: []const u8) !TextBuffer {
@@ -375,6 +403,7 @@ const TextBuffer = struct {
             .bytes = bytes,
             .lines = lines,
             .cursor = Cursor{},
+            .viewport = Viewport{},
             .text_vertices = text_vertices,
             .text_quads = text_quads,
         };
@@ -406,30 +435,35 @@ const TextBuffer = struct {
         } else self.lines.items.len;
         self.cursor.col = self.cursor.pos - self.lines.items[self.cursor.line];
 
-        // How many lines/cols from the edge triggers viewport move
-        // const padding_x = 10;
-        const padding_y = 3;
-        const bottom_line = self.viewport_top_line + g_screen.total_lines;
+        // TODO: make a viewport method
 
         // Allowed cursor positions within viewport
-        const line_min = self.viewport_top_line + padding_y;
-        const line_max = bottom_line - padding_y - 1;
+        const padding = 4;
+        const line_min = self.viewport.top + padding;
+        const line_max = self.viewport.top + g_screen.total_lines - padding - 1;
+        const col_min = self.viewport.left + padding;
+        const col_max = self.viewport.left + g_screen.total_cols - padding - 1;
 
-        // Detect if cursor is outside vertical viewport
+        // Detect if cursor is outside viewport
         if (self.cursor.line < line_min) {
-            self.viewport_top_line = self.cursor.line -| padding_y;
+            self.viewport.top = self.cursor.line -| padding;
         } else if (self.cursor.line > line_max) {
-            self.viewport_top_line = self.cursor.line + padding_y + 1 - g_screen.total_lines;
+            self.viewport.top = self.cursor.line + padding + 1 - g_screen.total_lines;
+        }
+        if (self.cursor.col < col_min) {
+            self.viewport.left -|= (col_min - self.cursor.col);
+        } else if (self.cursor.col > col_max) {
+            self.viewport.left += (self.cursor.col - col_max);
         }
     }
 
     /// Updates the inner vertex array based on current viewport and buffer contents
     pub fn updateVisibleVertices(self: *TextBuffer, font: Font) !void {
-        var bottom_line = self.viewport_top_line + g_screen.total_lines;
+        var bottom_line = self.viewport.top + g_screen.total_lines;
         if (bottom_line > self.lines.items.len - 1) {
             bottom_line = self.lines.items.len - 1;
         }
-        const start_pos = self.lines.items[self.viewport_top_line];
+        const start_pos = self.lines.items[self.viewport.top];
         const end_pos = self.lines.items[bottom_line];
         const visible_chars = self.bytes.items[start_pos..end_pos];
 
@@ -560,20 +594,22 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
                     break :x spaces;
                 };
                 // Check if we can delete spaces to the previous tabstop
+                var all_spaces: bool = false;
                 if (to_prev_tabstop > 0) {
                     const pos = g_buf.cursor.pos;
-                    const all_spaces = for (g_buf.bytes.items[(pos - to_prev_tabstop)..pos]) |char| {
+                    all_spaces = for (g_buf.bytes.items[(pos - to_prev_tabstop)..pos]) |char| {
                         if (char != ' ') break false;
                     } else true;
                     if (all_spaces) {
                         // Delete all spaces
                         g_buf.cursor.pos -= to_prev_tabstop;
                         g_buf.bytes.replaceRange(g_buf.cursor.pos, to_prev_tabstop, ""[0..]) catch unreachable;
-                    } else {
-                        // Just delete 1 char
-                        g_buf.cursor.pos -= 1;
-                        _ = g_buf.bytes.orderedRemove(g_buf.cursor.pos);
                     }
+                }
+                if (!all_spaces) {
+                    // Just delete 1 char
+                    g_buf.cursor.pos -= 1;
+                    _ = g_buf.bytes.orderedRemove(g_buf.cursor.pos);
                 }
                 g_buf.cursor.col_wanted = null;
                 g_buf.text_changed = true;
@@ -585,7 +621,7 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
             },
             else => {},
         }
-        g_buf.viewport_top_line = std.math.clamp(g_buf.viewport_top_line, 0, g_buf.lines.items.len -| 2);
+        g_buf.viewport.top = std.math.clamp(g_buf.viewport.top, 0, g_buf.lines.items.len -| 2);
     }
 }
 

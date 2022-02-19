@@ -1,10 +1,11 @@
 # TODO
-- Have horizontal margins for viewport
-    - Draw viewport from a different x position
 - Support UTF-8
 - Fix editing near the end of the buffer (can't get cursor close enough)
 
 # DONE
++ Have horizontal margins for viewport
+    + Draw viewport from a differet x position
+    + Fix viewport when dragging window to another screen
 + Support tab and backspace better
 + Have vertical margins for moving the viewport
 + Blend fonts using the alpha channel
