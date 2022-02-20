@@ -2,6 +2,7 @@ const std = @import("std");
 const stbtt = @import("stbtt");
 
 const vk = @import("vulkan");
+const u = @import("utils.zig");
 const vu = @import("vulkan/utils.zig");
 
 const Allocator = std.mem.Allocator;
@@ -66,7 +67,7 @@ pub const Font = struct {
     }
 
     // TODO: support unicode
-    pub fn getQuad(self: Font, char: u8, x: f32, y: f32) stbtt.AlignedQuad {
+    pub fn getQuad(self: Font, char: u.Codepoint, x: f32, y: f32) stbtt.AlignedQuad {
         const char_index = self.getCharIndex(char);
         const quad = stbtt.getPackedQuad(
             self.chars.ptr,
@@ -80,7 +81,7 @@ pub const Font = struct {
         return quad;
     }
 
-    fn getCharIndex(self: Font, char: u8) c_int {
+    fn getCharIndex(self: Font, char: u.Codepoint) c_int {
         var char_index = @intCast(c_int, char) - FIRST_CHAR;
         if (char_index < 0 or char_index >= self.chars.len) {
             char_index = 0;

@@ -5,6 +5,7 @@ const glfw = @import("glfw");
 const vk = @import("vulkan");
 const stbi = @import("stbi");
 
+const u = @import("utils.zig");
 const vu = @import("vulkan/utils.zig");
 
 const Allocator = std.mem.Allocator;
@@ -365,7 +366,7 @@ const Screen = struct {
 
 const TextBuffer = struct {
     bytes: std.ArrayList(u8),
-    // TODO: unicode
+    chars: std.ArrayList(u.Codepoint), // unicode codepoints
     lines: std.ArrayList(usize),
     cursor: Cursor,
     viewport: Viewport,
@@ -393,6 +394,16 @@ const TextBuffer = struct {
         var bytes = std.ArrayList(u8).init(allocator);
         try bytes.appendSlice(initial);
 
+        // For simplicity we assume that a codepoint equals a character (though it's not true).
+        // If we ever encounter multi-codepoint characters, we can revisit this
+        var chars = std.ArrayList(u.Codepoint).init(allocator);
+        try chars.ensureTotalCapacity(bytes.items.len);
+        const utf8_view = try std.unicode.Utf8View.init(bytes.items);
+        var codepoints = utf8_view.iterator();
+        while (codepoints.nextCodepoint()) |codepoint| {
+            try chars.append(codepoint);
+        }
+
         var lines = std.ArrayList(usize).init(allocator);
         try lines.append(0); // first line is always at the buffer start
 
@@ -401,6 +412,7 @@ const TextBuffer = struct {
 
         return TextBuffer{
             .bytes = bytes,
+            .chars = chars,
             .lines = lines,
             .cursor = Cursor{},
             .viewport = Viewport{},
@@ -412,16 +424,17 @@ const TextBuffer = struct {
     pub fn deinit(self: TextBuffer) void {
         self.lines.deinit();
         self.bytes.deinit();
+        self.chars.deinit();
     }
 
     pub fn recalculateLines(self: *TextBuffer) !void {
         self.lines.shrinkRetainingCapacity(1);
-        for (self.bytes.items) |char, i| {
+        for (self.chars.items) |char, i| {
             if (char == '\n') {
                 try self.lines.append(i + 1);
             }
         }
-        try self.lines.append(self.bytes.items.len);
+        try self.lines.append(self.chars.items.len);
     }
 
     /// Recalculates cursor line/column coordinates from buffer position
@@ -463,9 +476,6 @@ const TextBuffer = struct {
         if (bottom_line > self.lines.items.len - 1) {
             bottom_line = self.lines.items.len - 1;
         }
-        const start_pos = self.lines.items[self.viewport.top];
-        const end_pos = self.lines.items[bottom_line];
-        const visible_chars = self.bytes.items[start_pos..end_pos];
 
         // If char is outside these boundaries we don't have to draw it
         const col_min = self.viewport.left;
@@ -475,6 +485,12 @@ const TextBuffer = struct {
         {
             self.text_vertices.shrinkRetainingCapacity(0);
             self.text_quads.shrinkRetainingCapacity(0);
+
+            const visible_chars = x: {
+                const start_pos = self.lines.items[self.viewport.top];
+                const end_pos = self.lines.items[bottom_line];
+                break :x self.chars.items[start_pos..end_pos];
+            };
 
             const start = Vec2{ .x = 0, .y = font.baseline }; // will be repositioned by the shader
             var col: usize = 0;
@@ -539,7 +555,7 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
                 g_buf.cursor.col_wanted = null;
                 g_buf.view_changed = true;
             },
-            .right => if (g_buf.cursor.pos < g_buf.bytes.items.len - 1) {
+            .right => if (g_buf.cursor.pos < g_buf.chars.items.len - 1) {
                 g_buf.cursor.pos += 1;
                 g_buf.cursor.col_wanted = null;
                 g_buf.view_changed = true;
@@ -570,7 +586,8 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
             },
             .tab => {
                 const to_next_tabstop = TAB_SIZE - g_buf.cursor.col % TAB_SIZE;
-                g_buf.bytes.insertSlice(g_buf.cursor.pos, "    "[0..to_next_tabstop]) catch unreachable;
+                const SPACES = [_]u.Codepoint{ ' ', ' ', ' ', ' ' };
+                g_buf.chars.insertSlice(g_buf.cursor.pos, SPACES[0..to_next_tabstop]) catch unreachable;
                 g_buf.cursor.pos += to_next_tabstop;
                 g_buf.cursor.col_wanted = null;
                 g_buf.text_changed = true;
@@ -579,14 +596,14 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
                 if (mods.control and mods.shift) {
                     // Insert line above
                     g_buf.cursor.pos = g_buf.lines.items[g_buf.cursor.line];
-                    g_buf.bytes.insert(g_buf.cursor.pos, '\n') catch unreachable;
+                    g_buf.chars.insert(g_buf.cursor.pos, '\n') catch unreachable;
                 } else if (mods.control) {
                     // Insert line below
                     g_buf.cursor.pos = g_buf.lines.items[g_buf.cursor.line + 1];
-                    g_buf.bytes.insert(g_buf.cursor.pos, '\n') catch unreachable;
+                    g_buf.chars.insert(g_buf.cursor.pos, '\n') catch unreachable;
                 } else {
                     // Break the line normally
-                    g_buf.bytes.insert(g_buf.cursor.pos, '\n') catch unreachable;
+                    g_buf.chars.insert(g_buf.cursor.pos, '\n') catch unreachable;
                     g_buf.cursor.pos += 1;
                 }
                 g_buf.cursor.col_wanted = null;
@@ -602,25 +619,26 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
                 var all_spaces: bool = false;
                 if (to_prev_tabstop > 0) {
                     const pos = g_buf.cursor.pos;
-                    all_spaces = for (g_buf.bytes.items[(pos - to_prev_tabstop)..pos]) |char| {
+                    all_spaces = for (g_buf.chars.items[(pos - to_prev_tabstop)..pos]) |char| {
                         if (char != ' ') break false;
                     } else true;
                     if (all_spaces) {
                         // Delete all spaces
                         g_buf.cursor.pos -= to_prev_tabstop;
-                        g_buf.bytes.replaceRange(g_buf.cursor.pos, to_prev_tabstop, ""[0..]) catch unreachable;
+                        const EMPTY_ARRAY = [_]u.Codepoint{};
+                        g_buf.chars.replaceRange(g_buf.cursor.pos, to_prev_tabstop, EMPTY_ARRAY[0..]) catch unreachable;
                     }
                 }
                 if (!all_spaces) {
                     // Just delete 1 char
                     g_buf.cursor.pos -= 1;
-                    _ = g_buf.bytes.orderedRemove(g_buf.cursor.pos);
+                    _ = g_buf.chars.orderedRemove(g_buf.cursor.pos);
                 }
                 g_buf.cursor.col_wanted = null;
                 g_buf.text_changed = true;
             },
-            .delete => if (g_buf.bytes.items.len > 1 and g_buf.cursor.pos < g_buf.bytes.items.len - 1) {
-                _ = g_buf.bytes.orderedRemove(g_buf.cursor.pos);
+            .delete => if (g_buf.chars.items.len > 1 and g_buf.cursor.pos < g_buf.chars.items.len - 1) {
+                _ = g_buf.chars.orderedRemove(g_buf.cursor.pos);
                 g_buf.cursor.col_wanted = null;
                 g_buf.text_changed = true;
             },
@@ -630,10 +648,9 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
     }
 }
 
-fn processCharEvent(window: glfw.Window, codepoint: u21) void {
+fn processCharEvent(window: glfw.Window, codepoint: u.Codepoint) void {
     _ = window;
-    const code = @truncate(u8, codepoint);
-    g_buf.bytes.insert(g_buf.cursor.pos, code) catch unreachable;
+    g_buf.chars.insert(g_buf.cursor.pos, codepoint) catch unreachable;
     g_buf.cursor.pos += 1;
     g_buf.cursor.col_wanted = null;
     g_buf.text_changed = true;

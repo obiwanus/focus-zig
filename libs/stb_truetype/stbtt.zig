@@ -133,7 +133,14 @@ pub const PackRange = extern struct {
     v_oversample: u8,
 };
 extern fn stbtt_PackFontRanges(spc: [*c]PackContext, fontdata: [*c]const u8, font_index: c_int, ranges: [*c]PackRange, num_ranges: c_int) c_int;
-pub const packFontRanges = stbtt_PackFontRanges;
+
+pub fn packFontRanges(spc: [*c]PackContext, fontdata: [*c]const u8, font_index: c_int, ranges: [*c]PackRange, num_ranges: c_int) !void {
+    const result = stbtt_PackFontRanges(spc, fontdata, font_index, ranges, num_ranges);
+    if (result == 0) {
+        return error.PackFontRangesError;
+    }
+}
+
 extern fn stbtt_PackSetOversampling(spc: [*c]PackContext, h_oversample: c_uint, v_oversample: c_uint) void;
 pub const packSetOversampling = stbtt_PackSetOversampling;
 extern fn stbtt_PackSetSkipMissingCodepoints(spc: [*c]PackContext, skip: c_int) void;
