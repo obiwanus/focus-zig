@@ -3,6 +3,7 @@
 - Fix editing near the end of the buffer (can't get cursor close enough)
 
 # DONE
++ See if we can easily generate only vertices that actually are seen on the screen
 + Have horizontal margins for viewport
     + Draw viewport from a differet x position
     + Fix viewport when dragging window to another screen

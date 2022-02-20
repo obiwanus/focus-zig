@@ -467,16 +467,21 @@ const TextBuffer = struct {
         const end_pos = self.lines.items[bottom_line];
         const visible_chars = self.bytes.items[start_pos..end_pos];
 
+        // If char is outside these boundaries we don't have to draw it
+        const col_min = self.viewport.left;
+        const col_max = self.viewport.left + g_screen.total_cols;
+
         // Rebuild text vertices
         {
             self.text_vertices.shrinkRetainingCapacity(0);
             self.text_quads.shrinkRetainingCapacity(0);
 
             const start = Vec2{ .x = 0, .y = font.baseline }; // will be repositioned by the shader
-            var pos = Vec2{ .x = start.x, .y = start.y };
+            var col: usize = 0;
+            var pos = Vec2{ .x = start.x, .y = start.y }; // in pixels
             // Get quads
             for (visible_chars) |char| {
-                if (char != ' ' and char != '\n') {
+                if (char != ' ' and char != '\n' and col_min <= col and col <= col_max) {
                     const q = font.getQuad(char, pos.x, pos.y);
                     try self.text_quads.append(TexturedQuad{
                         .p0 = .{ .x = q.x0, .y = q.y0 },
@@ -486,15 +491,15 @@ const TextBuffer = struct {
                     });
                 }
                 pos.x += font.xadvance;
+                col += 1;
                 if (char == '\n') {
                     pos.x = start.x;
                     pos.y += font.line_height;
+                    col = 0;
                 }
             }
-            // Get vertices
+            // Get vertices from quads
             for (self.text_quads.items) |quad| {
-                // Convert them to unit coordinates on the fly
-                // NOTE: not sure if we should do it in the shader instead
                 for (quad.getVertices()) |vertex| {
                     try self.text_vertices.append(vertex);
                 }
