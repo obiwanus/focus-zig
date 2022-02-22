@@ -15,15 +15,14 @@ const ATLAS_WIDTH = 2048;
 const ATLAS_HEIGHT = 2048;
 const OVERSAMPLING = 8;
 
-const FIRST_CHAR = 32;
-
 pub const Font = struct {
-    chars: []stbtt.PackedChar,
     xadvance: f32,
     baseline: f32,
     line_height: f32,
     letter_height: f32,
     atlas_texture: FontTexture,
+    ascii: CharRange,
+    cyrillic: CharRange,
 
     pub fn init(vc: *const VulkanContext, allocator: Allocator, filename: []const u8, size: f32, cmd_pool: vk.CommandPool) !Font {
         var pixels = try allocator.alloc(u8, ATLAS_WIDTH * ATLAS_HEIGHT);
@@ -36,7 +35,28 @@ pub const Font = struct {
         defer stbtt.packEnd(&pack_context);
         stbtt.packSetOversampling(&pack_context, OVERSAMPLING, OVERSAMPLING);
 
-        const chars = try stbtt.packFontRange(&pack_context, font_data, size, FIRST_CHAR, 32 * 3, allocator);
+        const ascii = x: {
+            const first = 32;
+            const num_chars = 32 * 3;
+            const chars = try stbtt.packFontRange(&pack_context, font_data, size, first, num_chars, allocator);
+            break :x CharRange{
+                .first = first,
+                .num_chars = num_chars,
+                .chars = chars,
+            };
+        };
+
+        const cyrillic = x: {
+            const first = 0x0410; // А
+            const last_char = 0x0451; // ё
+            const num_chars = last_char - first + 1;
+            const chars = try stbtt.packFontRange(&pack_context, font_data, size, first, num_chars, allocator);
+            break :x CharRange{
+                .first = first,
+                .num_chars = num_chars,
+                .chars = chars,
+            };
+        };
 
         const atlas_texture = try createFontTexture(vc, pixels, ATLAS_WIDTH, ATLAS_HEIGHT, cmd_pool);
 
@@ -47,16 +67,18 @@ pub const Font = struct {
         const line_height = scale * (v_metrics.ascent - v_metrics.descent + v_metrics.line_gap);
         const baseline = scale * v_metrics.ascent;
         const letter_height = scale * (v_metrics.ascent - v_metrics.descent);
-        // Should be the same for all characters
-        const xadvance = chars[@intCast(usize, @intCast(c_int, 'a') - FIRST_CHAR)].xadvance;
+
+        const xadvance = ascii.chars[@intCast(usize, 'a' - ascii.first)].xadvance;
+        assert(xadvance == ascii.chars[@intCast(usize, 'i' - ascii.first)].xadvance); // Should be the same for all characters
 
         return Font{
-            .chars = chars,
             .xadvance = xadvance,
             .baseline = baseline,
             .line_height = line_height * 1.2, // I like more space in between
             .letter_height = letter_height,
             .atlas_texture = atlas_texture,
+            .ascii = ascii,
+            .cyrillic = cyrillic,
         };
     }
 
@@ -70,7 +92,7 @@ pub const Font = struct {
     pub fn getQuad(self: Font, char: u.Codepoint, x: f32, y: f32) stbtt.AlignedQuad {
         const char_index = self.getCharIndex(char);
         const quad = stbtt.getPackedQuad(
-            self.chars.ptr,
+            self.ascii.chars.ptr,
             ATLAS_WIDTH,
             ATLAS_HEIGHT,
             char_index,
@@ -82,12 +104,18 @@ pub const Font = struct {
     }
 
     fn getCharIndex(self: Font, char: u.Codepoint) c_int {
-        var char_index = @intCast(c_int, char) - FIRST_CHAR;
-        if (char_index < 0 or char_index >= self.chars.len) {
+        var char_index = @intCast(c_int, char) - @intCast(c_int, self.ascii.first);
+        if (char_index < 0 or char_index >= self.ascii.chars.len) {
             char_index = 0;
         }
         return char_index;
     }
+};
+
+const CharRange = struct {
+    first: usize,
+    num_chars: usize,
+    chars: []stbtt.PackedChar,
 };
 
 const FontTexture = struct {
