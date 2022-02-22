@@ -88,11 +88,22 @@ pub const Font = struct {
         vc.vkd.destroyImage(vc.dev, self.atlas_texture.image, null);
     }
 
-    // TODO: support unicode
     pub fn getQuad(self: Font, char: u.Codepoint, x: f32, y: f32) stbtt.AlignedQuad {
-        const char_index = self.getCharIndex(char);
+        var range: CharRange = undefined;
+        var char_index: c_int = undefined;
+        if (self.ascii.getIndex(char)) |index| {
+            range = self.ascii;
+            char_index = index;
+        } else if (self.cyrillic.getIndex(char)) |index| {
+            range = self.cyrillic;
+            char_index = index;
+        } else {
+            // Unknown symbol
+            range = self.ascii;
+            char_index = 0;
+        }
         const quad = stbtt.getPackedQuad(
-            self.ascii.chars.ptr,
+            range.chars.ptr,
             ATLAS_WIDTH,
             ATLAS_HEIGHT,
             char_index,
@@ -102,20 +113,20 @@ pub const Font = struct {
         );
         return quad;
     }
-
-    fn getCharIndex(self: Font, char: u.Codepoint) c_int {
-        var char_index = @intCast(c_int, char) - @intCast(c_int, self.ascii.first);
-        if (char_index < 0 or char_index >= self.ascii.chars.len) {
-            char_index = 0;
-        }
-        return char_index;
-    }
 };
 
 const CharRange = struct {
     first: usize,
     num_chars: usize,
     chars: []stbtt.PackedChar,
+
+    pub fn getIndex(self: CharRange, char: u.Codepoint) ?c_int {
+        var index = @intCast(c_int, char) - @intCast(c_int, self.first);
+        if (index < 0 or index >= self.chars.len) {
+            return null;
+        }
+        return index;
+    }
 };
 
 const FontTexture = struct {

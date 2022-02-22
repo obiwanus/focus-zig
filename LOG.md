@@ -1,13 +1,13 @@
 # TODO
-- Support UTF-8
-    + Use unicode codepoints instead of u8 everywhere
-    - Fetch unicode codepoints based on available ranges in fonts (with a fallback)
-        + Pack cyrillic symbols into the atlas
-        - Fetch cyrillic quads when needed
 - Make an open file dialog like in VSCode
 - Fix editing near the end of the buffer (can't get cursor close enough)
 
 # DONE
++ Support UTF-8
+    + Use unicode codepoints instead of u8 everywhere
+    + Fetch unicode codepoints based on available ranges in fonts (with a fallback)
+        + Pack cyrillic symbols into the atlas
+        + Fetch cyrillic quads when needed
 + See if we can easily generate only vertices that actually are seen on the screen
 + Have horizontal margins for viewport
     + Draw viewport from a differet x position
