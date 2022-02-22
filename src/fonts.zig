@@ -89,18 +89,13 @@ pub const Font = struct {
     }
 
     pub fn getQuad(self: Font, char: u.Codepoint, x: f32, y: f32) stbtt.AlignedQuad {
-        var range: CharRange = undefined;
-        var char_index: c_int = undefined;
+        var range = self.ascii;
+        var char_index: c_int = 0;
         if (self.ascii.getIndex(char)) |index| {
-            range = self.ascii;
             char_index = index;
         } else if (self.cyrillic.getIndex(char)) |index| {
             range = self.cyrillic;
             char_index = index;
-        } else {
-            // Unknown symbol
-            range = self.ascii;
-            char_index = 0;
         }
         const quad = stbtt.getPackedQuad(
             range.chars.ptr,
