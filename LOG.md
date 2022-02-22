@@ -1,8 +1,10 @@
 # TODO
 - Make an open file dialog like in VSCode
+    - Draw a rectangle where the dialog would go
 - Fix editing near the end of the buffer (can't get cursor close enough)
 
 # DONE
++ Try to use a single descriptor set for the uniform buffer
 + Support UTF-8
     + Use unicode codepoints instead of u8 everywhere
     + Fetch unicode codepoints based on available ranges in fonts (with a fallback)

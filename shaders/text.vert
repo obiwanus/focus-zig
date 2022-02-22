@@ -5,7 +5,7 @@ layout(location = 1) in vec2 a_tex_coord;
 
 layout(location = 0) out vec2 v_tex_coord;
 
-layout(binding = 1) uniform Global {
+layout(set = 0, binding = 0) uniform Global {
     vec2 screen_size;
     vec2 panel_topleft;
     vec2 cursor_size;

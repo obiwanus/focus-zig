@@ -17,7 +17,7 @@ pub const TextPipeline = struct {
     layout: vk.PipelineLayout,
     handle: vk.Pipeline,
 
-    pub fn init(vc: *const VulkanContext, render_pass: vk.RenderPass, uniform_buffer: vu.UniformBuffer) !TextPipeline {
+    pub fn init(vc: *const VulkanContext, render_pass: vk.RenderPass, ubo_set_layout: vk.DescriptorSetLayout) !TextPipeline {
         // Sampler for the texture
         const texture_sampler = try vc.vkd.createSampler(vc.dev, &.{
             .flags = .{},
@@ -45,10 +45,6 @@ pub const TextPipeline = struct {
                     .@"type" = .combined_image_sampler,
                     .descriptor_count = 1,
                 },
-                .{
-                    .@"type" = .uniform_buffer,
-                    .descriptor_count = 1,
-                },
             };
             break :x try vc.vkd.createDescriptorPool(vc.dev, &.{
                 .flags = .{},
@@ -68,13 +64,6 @@ pub const TextPipeline = struct {
                 .stage_flags = .{ .fragment_bit = true },
                 .p_immutable_samplers = null,
             },
-            .{
-                .binding = 1,
-                .descriptor_type = .uniform_buffer,
-                .descriptor_count = 1,
-                .stage_flags = .{ .vertex_bit = true },
-                .p_immutable_samplers = null,
-            },
         };
         const descriptor_set_layout = try vc.vkd.createDescriptorSetLayout(vc.dev, &.{
             .flags = .{},
@@ -91,33 +80,16 @@ pub const TextPipeline = struct {
             .p_set_layouts = @ptrCast([*]const vk.DescriptorSetLayout, &descriptor_set_layout),
         }, @ptrCast([*]vk.DescriptorSet, &descriptor_set));
 
-        // Set the uniform buffer to the appropriate descriptor
-        {
-            const buffer_info = vk.DescriptorBufferInfo{
-                .buffer = uniform_buffer.buffer,
-                .offset = 0,
-                .range = @sizeOf(@TypeOf(uniform_buffer.data)), // Can probably use vk.WHOLE_SIZE?
-            };
-            const descriptor_writes = [_]vk.WriteDescriptorSet{
-                .{
-                    .dst_set = descriptor_set,
-                    .dst_binding = 1,
-                    .dst_array_element = 0,
-                    .descriptor_count = 1,
-                    .descriptor_type = .uniform_buffer,
-                    .p_image_info = undefined,
-                    .p_buffer_info = @ptrCast([*]const vk.DescriptorBufferInfo, &buffer_info),
-                    .p_texel_buffer_view = undefined,
-                },
-            };
-            vc.vkd.updateDescriptorSets(vc.dev, descriptor_writes.len, &descriptor_writes, 0, undefined);
-        }
+        const set_layouts = [_]vk.DescriptorSetLayout{
+            ubo_set_layout,
+            descriptor_set_layout, // for the atlas texture
+        };
 
         // Pipeline layout
         const pipeline_layout = try vc.vkd.createPipelineLayout(vc.dev, &.{
             .flags = .{},
-            .set_layout_count = 1,
-            .p_set_layouts = @ptrCast([*]const vk.DescriptorSetLayout, &descriptor_set_layout),
+            .set_layout_count = set_layouts.len,
+            .p_set_layouts = &set_layouts,
             .push_constant_range_count = 0,
             .p_push_constant_ranges = undefined,
         }, null);
@@ -352,74 +324,8 @@ pub const TexturedQuad = struct {
 pub const CursorPipeline = struct {
     layout: vk.PipelineLayout,
     handle: vk.Pipeline,
-    descriptor_pool: vk.DescriptorPool,
-    descriptor_set: vk.DescriptorSet,
-    descriptor_set_layout: vk.DescriptorSetLayout,
 
-    pub fn init(vc: *const VulkanContext, render_pass: vk.RenderPass, uniform_buffer: vu.UniformBuffer) !CursorPipeline {
-        const descriptor_pool = x: {
-            const pool_sizes = [_]vk.DescriptorPoolSize{
-                .{
-                    .@"type" = .uniform_buffer,
-                    .descriptor_count = 1,
-                },
-            };
-            break :x try vc.vkd.createDescriptorPool(vc.dev, &.{
-                .flags = .{},
-                .max_sets = 1,
-                .pool_size_count = pool_sizes.len,
-                .p_pool_sizes = &pool_sizes,
-            }, null);
-        };
-        errdefer vc.vkd.destroyDescriptorPool(vc.dev, descriptor_pool, null);
-
-        // Descriptor set layout
-        const descriptor_set_layout_bindings = [_]vk.DescriptorSetLayoutBinding{
-            .{
-                .binding = 0,
-                .descriptor_type = .uniform_buffer,
-                .descriptor_count = 1,
-                .stage_flags = .{ .vertex_bit = true },
-                .p_immutable_samplers = null,
-            },
-        };
-        const descriptor_set_layout = try vc.vkd.createDescriptorSetLayout(vc.dev, &.{
-            .flags = .{},
-            .binding_count = descriptor_set_layout_bindings.len,
-            .p_bindings = &descriptor_set_layout_bindings,
-        }, null);
-        errdefer vc.vkd.destroyDescriptorSetLayout(vc.dev, descriptor_set_layout, null);
-
-        // Allocate descriptor sets
-        var descriptor_set: vk.DescriptorSet = undefined;
-        try vc.vkd.allocateDescriptorSets(vc.dev, &.{
-            .descriptor_pool = descriptor_pool,
-            .descriptor_set_count = 1,
-            .p_set_layouts = @ptrCast([*]const vk.DescriptorSetLayout, &descriptor_set_layout),
-        }, @ptrCast([*]vk.DescriptorSet, &descriptor_set));
-
-        // Set the uniform buffer to the appropriate descriptor
-        {
-            const buffer_info = vk.DescriptorBufferInfo{
-                .buffer = uniform_buffer.buffer,
-                .offset = 0,
-                .range = @sizeOf(@TypeOf(uniform_buffer.data)), // Can probably use vk.WHOLE_SIZE?
-            };
-            const descriptor_writes = [_]vk.WriteDescriptorSet{
-                .{
-                    .dst_set = descriptor_set,
-                    .dst_binding = 0,
-                    .dst_array_element = 0,
-                    .descriptor_count = 1,
-                    .descriptor_type = .uniform_buffer,
-                    .p_image_info = undefined,
-                    .p_buffer_info = @ptrCast([*]const vk.DescriptorBufferInfo, &buffer_info),
-                    .p_texel_buffer_view = undefined,
-                },
-            };
-            vc.vkd.updateDescriptorSets(vc.dev, descriptor_writes.len, &descriptor_writes, 0, undefined);
-        }
-
+    pub fn init(vc: *const VulkanContext, render_pass: vk.RenderPass, ubo_set_layout: vk.DescriptorSetLayout) !CursorPipeline {
         const push_constant_ranges = [_]vk.PushConstantRange{.{
             .stage_flags = .{ .vertex_bit = true },
             .offset = 0,
@@ -430,7 +336,7 @@ pub const CursorPipeline = struct {
         const pipeline_layout = try vc.vkd.createPipelineLayout(vc.dev, &.{
             .flags = .{},
             .set_layout_count = 1,
-            .p_set_layouts = @ptrCast([*]const vk.DescriptorSetLayout, &descriptor_set_layout),
+            .p_set_layouts = @ptrCast([*]const vk.DescriptorSetLayout, &ubo_set_layout),
             .push_constant_range_count = push_constant_ranges.len,
             .p_push_constant_ranges = &push_constant_ranges,
         }, null);

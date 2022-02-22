@@ -114,12 +114,12 @@ pub fn main() !void {
     try uniform_buffer.sendToGPU(&vc);
 
     // Pipeline for rendering text
-    var text_pipeline = try TextPipeline.init(&vc, render_pass, uniform_buffer);
+    var text_pipeline = try TextPipeline.init(&vc, render_pass, uniform_buffer.descriptor_set_layout);
     text_pipeline.updateFontTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
     defer text_pipeline.deinit(&vc);
 
     // Pipeline for colored quads (such as cursor or panels)
-    var cursor_pipeline = try CursorPipeline.init(&vc, render_pass, uniform_buffer);
+    var cursor_pipeline = try CursorPipeline.init(&vc, render_pass, uniform_buffer.descriptor_set_layout);
     defer cursor_pipeline.deinit(&vc);
 
     var framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
@@ -279,13 +279,17 @@ pub fn main() !void {
             vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, text_pipeline.handle);
             const offset = [_]vk.DeviceSize{0};
             vc.vkd.cmdBindVertexBuffers(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Buffer, &text_vertex_buffer), &offset);
+            const text_descriptors = [_]vk.DescriptorSet{
+                uniform_buffer.descriptor_set, // 0 = uniform buffer
+                text_pipeline.descriptor_set, // 1 = atlas texture
+            };
             vc.vkd.cmdBindDescriptorSets(
                 main_cmd_buf,
                 .graphics,
                 text_pipeline.layout,
                 0,
-                1,
-                @ptrCast([*]const vk.DescriptorSet, &text_pipeline.descriptor_set),
+                text_descriptors.len,
+                &text_descriptors,
                 0,
                 undefined,
             );
@@ -304,7 +308,7 @@ pub fn main() !void {
                 cursor_pipeline.layout,
                 0,
                 1,
-                @ptrCast([*]const vk.DescriptorSet, &cursor_pipeline.descriptor_set),
+                @ptrCast([*]const vk.DescriptorSet, &uniform_buffer.descriptor_set),
                 0,
                 undefined,
             );

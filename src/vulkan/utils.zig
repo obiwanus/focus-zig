@@ -169,8 +169,12 @@ pub fn copyBuffer(vc: *const VulkanContext, pool: vk.CommandPool, dst: vk.Buffer
 
 pub const UniformBuffer = struct {
     data: Data,
+
     buffer: vk.Buffer,
     memory: vk.DeviceMemory,
+    descriptor_pool: vk.DescriptorPool,
+    descriptor_set: vk.DescriptorSet,
+    descriptor_set_layout: vk.DescriptorSetLayout,
 
     const Data = extern struct {
         screen_size: Vec2,
@@ -198,6 +202,71 @@ pub const UniformBuffer = struct {
             .y = @intToFloat(f32, extent.height),
         };
 
+        // This descriptor pool will be used just for the uniform buffer descriptor
+        // TODO: most likely this is not how it's intended to be used, but should do for our case
+        const descriptor_pool = x: {
+            const pool_sizes = [_]vk.DescriptorPoolSize{
+                .{
+                    .@"type" = .uniform_buffer,
+                    .descriptor_count = 1,
+                },
+            };
+            break :x try vc.vkd.createDescriptorPool(vc.dev, &.{
+                .flags = .{},
+                .max_sets = 1,
+                .pool_size_count = pool_sizes.len,
+                .p_pool_sizes = &pool_sizes,
+            }, null);
+        };
+        errdefer vc.vkd.destroyDescriptorPool(vc.dev, descriptor_pool, null);
+
+        // Descriptor set layout
+        const descriptor_set_layout_bindings = [_]vk.DescriptorSetLayoutBinding{
+            .{
+                .binding = 0,
+                .descriptor_type = .uniform_buffer,
+                .descriptor_count = 1,
+                .stage_flags = .{ .vertex_bit = true },
+                .p_immutable_samplers = null,
+            },
+        };
+        const descriptor_set_layout = try vc.vkd.createDescriptorSetLayout(vc.dev, &.{
+            .flags = .{},
+            .binding_count = descriptor_set_layout_bindings.len,
+            .p_bindings = &descriptor_set_layout_bindings,
+        }, null);
+        errdefer vc.vkd.destroyDescriptorSetLayout(vc.dev, descriptor_set_layout, null);
+
+        // Allocate descriptor sets
+        var descriptor_set: vk.DescriptorSet = undefined;
+        try vc.vkd.allocateDescriptorSets(vc.dev, &.{
+            .descriptor_pool = descriptor_pool,
+            .descriptor_set_count = 1,
+            .p_set_layouts = @ptrCast([*]const vk.DescriptorSetLayout, &descriptor_set_layout),
+        }, @ptrCast([*]vk.DescriptorSet, &descriptor_set));
+
+        // Set the uniform buffer to the appropriate descriptor
+        {
+            const buffer_info = vk.DescriptorBufferInfo{
+                .buffer = buffer,
+                .offset = 0,
+                .range = @sizeOf(Data), // Can probably use vk.WHOLE_SIZE?
+            };
+            const descriptor_writes = [_]vk.WriteDescriptorSet{
+                .{
+                    .dst_set = descriptor_set,
+                    .dst_binding = 0,
+                    .dst_array_element = 0,
+                    .descriptor_count = 1,
+                    .descriptor_type = .uniform_buffer,
+                    .p_image_info = undefined,
+                    .p_buffer_info = @ptrCast([*]const vk.DescriptorBufferInfo, &buffer_info),
+                    .p_texel_buffer_view = undefined,
+                },
+            };
+            vc.vkd.updateDescriptorSets(vc.dev, descriptor_writes.len, &descriptor_writes, 0, undefined);
+        }
+
         return UniformBuffer{
             .data = Data{
                 .screen_size = screen_size,
@@ -207,6 +276,9 @@ pub const UniformBuffer = struct {
             },
             .buffer = buffer,
             .memory = memory,
+            .descriptor_pool = descriptor_pool,
+            .descriptor_set = descriptor_set,
+            .descriptor_set_layout = descriptor_set_layout,
         };
     }
 
@@ -220,5 +292,7 @@ pub const UniformBuffer = struct {
     pub fn deinit(self: UniformBuffer, vc: *const VulkanContext) void {
         vc.vkd.destroyBuffer(vc.dev, self.buffer, null);
         vc.vkd.freeMemory(vc.dev, self.memory, null);
+        vc.vkd.destroyDescriptorSetLayout(vc.dev, self.descriptor_set_layout, null);
+        vc.vkd.destroyDescriptorPool(vc.dev, self.descriptor_pool, null);
     }
 };
