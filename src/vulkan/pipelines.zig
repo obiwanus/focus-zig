@@ -550,7 +550,7 @@ pub const SolidPipeline = struct {
             };
 
             const pcbas = vk.PipelineColorBlendAttachmentState{
-                .blend_enable = vk.TRUE,
+                .blend_enable = vk.FALSE,
                 .src_color_blend_factor = .one,
                 .dst_color_blend_factor = .one,
                 .color_blend_op = .subtract,
@@ -693,11 +693,12 @@ pub const SolidQuad = struct {
         };
     };
 
-    pub fn getVertices(self: TexturedQuad) [6]Vertex {
-        const v0 = Vertex{ .pos = .{ self.p0.x, self.p0.y }, .color = self.color };
-        const v1 = Vertex{ .pos = .{ self.p1.x, self.p0.y }, .color = self.color };
-        const v2 = Vertex{ .pos = .{ self.p1.x, self.p1.y }, .color = self.color };
-        const v3 = Vertex{ .pos = .{ self.p0.x, self.p1.y }, .color = self.color };
+    pub fn getVertices(self: SolidQuad) [6]Vertex {
+        const color = .{ self.color.r, self.color.g, self.color.b, self.color.a };
+        const v0 = Vertex{ .pos = .{ self.p0.x, self.p0.y }, .color = color };
+        const v1 = Vertex{ .pos = .{ self.p1.x, self.p0.y }, .color = color };
+        const v2 = Vertex{ .pos = .{ self.p1.x, self.p1.y }, .color = color };
+        const v3 = Vertex{ .pos = .{ self.p0.x, self.p1.y }, .color = color };
         return .{ v0, v1, v2, v0, v2, v3 };
     }
 };

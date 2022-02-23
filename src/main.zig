@@ -7,15 +7,17 @@ const stbi = @import("stbi");
 
 const u = @import("utils.zig");
 const vu = @import("vulkan/utils.zig");
+const pipelines = @import("vulkan/pipelines.zig");
 
 const Allocator = std.mem.Allocator;
 const VulkanContext = @import("vulkan/context.zig").VulkanContext;
 const Font = @import("fonts.zig").Font;
 const Swapchain = @import("vulkan/swapchain.zig").Swapchain;
-const TextPipeline = @import("vulkan/pipeline.zig").TextPipeline;
-const TexturedQuad = @import("vulkan/pipeline.zig").TexturedQuad;
-const CursorPipeline = @import("vulkan/pipeline.zig").CursorPipeline;
-const SolidPipeline = @import("vulkan/pipeline.zig").SolidPipeline;
+const TextPipeline = pipelines.TextPipeline;
+const CursorPipeline = pipelines.CursorPipeline;
+const SolidPipeline = pipelines.SolidPipeline;
+const TexturedQuad = pipelines.TexturedQuad;
+const SolidQuad = pipelines.SolidQuad;
 const Vec2 = u.Vec2;
 
 const print = std.debug.print;
@@ -140,9 +142,24 @@ pub fn main() !void {
     }, null);
     defer vc.vkd.destroyBuffer(vc.dev, text_vertex_buffer, null);
     const mem_reqs = vc.vkd.getBufferMemoryRequirements(vc.dev, text_vertex_buffer);
-    const memory = try vc.allocate(mem_reqs, .{ .device_local_bit = true });
-    defer vc.vkd.freeMemory(vc.dev, memory, null);
-    try vc.vkd.bindBufferMemory(vc.dev, text_vertex_buffer, memory, 0);
+    const text_vertex_memory = try vc.allocate(mem_reqs, .{ .device_local_bit = true });
+    defer vc.vkd.freeMemory(vc.dev, text_vertex_memory, null);
+    try vc.vkd.bindBufferMemory(vc.dev, text_vertex_buffer, text_vertex_memory, 0);
+
+    // TEMPORARY
+    const popup_buffer = try vc.vkd.createBuffer(vc.dev, &.{
+        .flags = .{},
+        .size = @sizeOf(SolidQuad.Vertex) * 6,
+        .usage = .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
+        .sharing_mode = .exclusive,
+        .queue_family_index_count = 0,
+        .p_queue_family_indices = undefined,
+    }, null);
+    defer vc.vkd.destroyBuffer(vc.dev, popup_buffer, null);
+    const popup_mem_reqs = vc.vkd.getBufferMemoryRequirements(vc.dev, popup_buffer);
+    const popup_memory = try vc.allocate(popup_mem_reqs, .{ .device_local_bit = true });
+    defer vc.vkd.freeMemory(vc.dev, popup_memory, null);
+    try vc.vkd.bindBufferMemory(vc.dev, popup_buffer, popup_memory, 0);
 
     // This is the only command buffer we'll use for drawing.
     // It will be reset and re-recorded every frame
@@ -197,6 +214,20 @@ pub fn main() !void {
         // Wait for input
         try glfw.waitEvents();
 
+        // TEMPORARY
+        const popup_quad = x: {
+            const popup_width = 400;
+            const popup_height = 300;
+            const top: f32 = 50;
+            const left = @intToFloat(f32, (g_screen.size.width - popup_width) / 2);
+            break :x SolidQuad{
+                .p0 = .{ .x = left, .y = top },
+                .p1 = .{ .x = left + popup_width, .y = top + popup_height },
+                .color = .{ .r = 0.7, .g = 0.7, .b = 0.7, .a = 1.0 },
+            };
+        };
+        try uploadVertices(&vc, SolidQuad.Vertex, &popup_quad.getVertices(), main_cmd_pool, popup_buffer);
+
         // Update view or text
         if (g_buf.view_changed or g_buf.text_changed) {
             g_buf.view_changed = false;
@@ -207,7 +238,7 @@ pub fn main() !void {
             }
             g_buf.updateCursorAndViewport();
             try g_buf.updateVisibleVertices(g_screen.font);
-            try uploadVertices(&vc, g_buf.text_vertices.items, main_cmd_pool, text_vertex_buffer);
+            try uploadVertices(&vc, TexturedQuad.Vertex, g_buf.text_vertices.items, main_cmd_pool, text_vertex_buffer);
 
             // Update uniform buffer
             {
@@ -318,6 +349,21 @@ pub fn main() !void {
                 undefined,
             );
             vc.vkd.cmdDraw(main_cmd_buf, 4, 1, 0, 0);
+
+            // Draw popup
+            vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, solid_pipeline.handle);
+            vc.vkd.cmdBindVertexBuffers(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Buffer, &popup_buffer), &offset);
+            vc.vkd.cmdBindDescriptorSets(
+                main_cmd_buf,
+                .graphics,
+                solid_pipeline.layout,
+                0,
+                1,
+                @ptrCast([*]const vk.DescriptorSet, &uniform_buffer.descriptor_set),
+                0,
+                undefined,
+            );
+            vc.vkd.cmdDraw(main_cmd_buf, 6, 1, 0, 0);
 
             vc.vkd.cmdEndRenderPass(main_cmd_buf);
             try vc.vkd.endCommandBuffer(main_cmd_buf);
@@ -735,11 +781,11 @@ fn destroyFramebuffers(vc: *const VulkanContext, allocator: Allocator, framebuff
     allocator.free(framebuffers);
 }
 
-fn uploadVertices(vc: *const VulkanContext, vertices: []const TexturedQuad.Vertex, pool: vk.CommandPool, buffer: vk.Buffer) !void {
+fn uploadVertices(vc: *const VulkanContext, comptime Vertex: type, vertices: []const Vertex, pool: vk.CommandPool, buffer: vk.Buffer) !void {
     if (vertices.len == 0) {
         return;
     }
-    const buffer_size = @sizeOf(TexturedQuad.Vertex) * vertices.len;
+    const buffer_size = @sizeOf(Vertex) * vertices.len;
     const staging_buffer = try vc.vkd.createBuffer(vc.dev, &.{
         .flags = .{},
         .size = buffer_size,
@@ -758,8 +804,8 @@ fn uploadVertices(vc: *const VulkanContext, vertices: []const TexturedQuad.Verte
         const data = try vc.vkd.mapMemory(vc.dev, staging_memory, 0, vk.WHOLE_SIZE, .{});
         defer vc.vkd.unmapMemory(vc.dev, staging_memory);
 
-        const gpu_vertices = @ptrCast([*]TexturedQuad.Vertex, @alignCast(@alignOf(TexturedQuad.Vertex), data));
-        std.mem.copy(TexturedQuad.Vertex, gpu_vertices[0..vertices.len], vertices);
+        const gpu_vertices = @ptrCast([*]Vertex, @alignCast(@alignOf(Vertex), data));
+        std.mem.copy(Vertex, gpu_vertices[0..vertices.len], vertices);
     }
 
     try vu.copyBuffer(vc, pool, buffer, staging_buffer, buffer_size);
