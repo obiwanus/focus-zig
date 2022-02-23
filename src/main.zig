@@ -43,6 +43,9 @@ const TEXT_MARGIN = Margin{
 var g_buf: TextBuffer = undefined;
 var g_screen: Screen = undefined;
 
+// TEMPORARY
+var g_show_popup: bool = false;
+
 pub fn main() !void {
     // Static arena lives until the end of the program
     var static_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -353,19 +356,21 @@ pub fn main() !void {
             vc.vkd.cmdDraw(main_cmd_buf, 4, 1, 0, 0);
 
             // Draw popup
-            vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, solid_pipeline.handle);
-            vc.vkd.cmdBindVertexBuffers(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Buffer, &popup_buffer), &offset);
-            vc.vkd.cmdBindDescriptorSets(
-                main_cmd_buf,
-                .graphics,
-                solid_pipeline.layout,
-                0,
-                1,
-                @ptrCast([*]const vk.DescriptorSet, &uniform_buffer.descriptor_set),
-                0,
-                undefined,
-            );
-            vc.vkd.cmdDraw(main_cmd_buf, 6, 1, 0, 0);
+            if (g_show_popup) {
+                vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, solid_pipeline.handle);
+                vc.vkd.cmdBindVertexBuffers(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Buffer, &popup_buffer), &offset);
+                vc.vkd.cmdBindDescriptorSets(
+                    main_cmd_buf,
+                    .graphics,
+                    solid_pipeline.layout,
+                    0,
+                    1,
+                    @ptrCast([*]const vk.DescriptorSet, &uniform_buffer.descriptor_set),
+                    0,
+                    undefined,
+                );
+                vc.vkd.cmdDraw(main_cmd_buf, 6, 1, 0, 0);
+            }
 
             vc.vkd.cmdEndRenderPass(main_cmd_buf);
             try vc.vkd.endCommandBuffer(main_cmd_buf);
@@ -698,6 +703,12 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
                 _ = g_buf.chars.orderedRemove(g_buf.cursor.pos);
                 g_buf.cursor.col_wanted = null;
                 g_buf.text_changed = true;
+            },
+            .p => if (mods.control) {
+                g_show_popup = !g_show_popup;
+            },
+            .escape => {
+                g_show_popup = false;
             },
             else => {},
         }

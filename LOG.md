@@ -1,12 +1,13 @@
 # TODO
 - Make an open file dialog like in VSCode
-    - Make it not crash with small windows
-    - Make it scale when scale changes
+    + Show and hide the dialog
     - Type something into the quad
     - Then refactor input
 - Fix editing near the end of the buffer (can't get cursor close enough)
 
 # DONE
++ Make it not crash with small windows
++ Make it scale when scale changes
 + Draw a rectangle where the dialog would go
     + Create a solid color pipeline
     + Send some vertices to the new pipeline
