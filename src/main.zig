@@ -15,7 +15,8 @@ const Swapchain = @import("vulkan/swapchain.zig").Swapchain;
 const TextPipeline = @import("vulkan/pipeline.zig").TextPipeline;
 const TexturedQuad = @import("vulkan/pipeline.zig").TexturedQuad;
 const CursorPipeline = @import("vulkan/pipeline.zig").CursorPipeline;
-const Vec2 = @import("math.zig").Vec2;
+const SolidPipeline = @import("vulkan/pipeline.zig").SolidPipeline;
+const Vec2 = u.Vec2;
 
 const print = std.debug.print;
 const assert = std.debug.assert;
@@ -118,9 +119,13 @@ pub fn main() !void {
     text_pipeline.updateFontTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
     defer text_pipeline.deinit(&vc);
 
-    // Pipeline for colored quads (such as cursor or panels)
+    // Pipeline for cursors
     var cursor_pipeline = try CursorPipeline.init(&vc, render_pass, uniform_buffer.descriptor_set_layout);
     defer cursor_pipeline.deinit(&vc);
+
+    // Pipeline for solid quads
+    var solid_pipeline = try SolidPipeline.init(&vc, render_pass, uniform_buffer.descriptor_set_layout);
+    defer solid_pipeline.deinit(&vc);
 
     var framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
     defer destroyFramebuffers(&vc, gpa, framebuffers);

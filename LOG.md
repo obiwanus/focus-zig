@@ -1,6 +1,7 @@
 # TODO
 - Make an open file dialog like in VSCode
     - Draw a rectangle where the dialog would go
+        + Create a solid color pipeline
 - Fix editing near the end of the buffer (can't get cursor close enough)
 
 # DONE

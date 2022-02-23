@@ -1,8 +1,9 @@
 const std = @import("std");
 const vk = @import("vulkan");
+const u = @import("../utils.zig");
 
-const Vec2 = @import("../math.zig").Vec2;
 const VulkanContext = @import("context.zig").VulkanContext;
+const Vec2 = u.Vec2;
 
 pub const SingleTimeCommandBuffer = struct {
     vc: *const VulkanContext,
