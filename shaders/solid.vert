@@ -17,7 +17,6 @@ vec4 screen_to_canonical(vec2 vertex) {
 }
 
 void main() {
-    vec2 vertex = a_pos + g.panel_topleft;
-    gl_Position = screen_to_canonical(vertex);
+    gl_Position = screen_to_canonical(a_pos);
     v_color = a_color;
 }

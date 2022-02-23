@@ -1,11 +1,15 @@
 # TODO
 - Make an open file dialog like in VSCode
-    + Draw a rectangle where the dialog would go
-        + Create a solid color pipeline
-        + Send some vertices to the new pipeline
+    - Make it not crash with small windows
+    - Make it scale when scale changes
+    - Type something into the quad
+    - Then refactor input
 - Fix editing near the end of the buffer (can't get cursor close enough)
 
 # DONE
++ Draw a rectangle where the dialog would go
+    + Create a solid color pipeline
+    + Send some vertices to the new pipeline
 + Try to use a single descriptor set for the uniform buffer
 + Support UTF-8
     + Use unicode codepoints instead of u8 everywhere

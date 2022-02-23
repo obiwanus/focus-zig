@@ -82,7 +82,9 @@ pub fn main() !void {
             .height = size.height,
         };
     };
-    g_screen.scale = try window.getContentScale();
+    const content_scale = try window.getContentScale();
+    assert(content_scale.x_scale == content_scale.y_scale);
+    g_screen.scale = content_scale.x_scale;
     g_screen.font = try Font.init(&vc, gpa, FONT_NAME, FONT_SIZE, main_cmd_pool);
     defer g_screen.font.deinit(&vc);
 
@@ -194,7 +196,7 @@ pub fn main() !void {
             // Make sure the font is updated
             const new_scale = try window.getContentScale();
             if (g_screen.scaleChanged(new_scale)) {
-                g_screen.scale = new_scale;
+                g_screen.scale = new_scale.x_scale;
                 g_screen.font.deinit(&vc);
                 g_screen.font = try Font.init(&vc, gpa, FONT_NAME, FONT_SIZE * new_scale.x_scale, main_cmd_pool);
                 text_pipeline.updateFontTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
@@ -216,10 +218,10 @@ pub fn main() !void {
 
         // TEMPORARY
         const popup_quad = x: {
-            const popup_width = 400;
-            const popup_height = 300;
+            const popup_width = 400 * g_screen.scale;
+            const popup_height = 300 * g_screen.scale;
             const top: f32 = 50;
-            const left = @intToFloat(f32, (g_screen.size.width - popup_width) / 2);
+            const left = (@intToFloat(f32, g_screen.size.width) - popup_width) / 2;
             break :x SolidQuad{
                 .p0 = .{ .x = left, .y = top },
                 .p1 = .{ .x = left + popup_width, .y = top + popup_height },
@@ -408,14 +410,14 @@ const Margin = struct {
 
 const Screen = struct {
     size: vk.Extent2D,
-    scale: glfw.Window.ContentScale,
+    scale: f32,
     font: Font,
     total_lines: usize,
     total_cols: usize,
 
     pub fn scaleChanged(self: Screen, new_scale: glfw.Window.ContentScale) bool {
         assert(new_scale.x_scale == new_scale.y_scale);
-        return self.scale.x_scale != new_scale.x_scale;
+        return self.scale != new_scale.x_scale;
     }
 };
 
