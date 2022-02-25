@@ -1,4 +1,6 @@
 # TODO
+- Highlight zig syntax
+    - Be able to specify color in the text shader
 - Make an open file dialog like in VSCode
     + Show and hide the dialog
     - Type something into the quad
