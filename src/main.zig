@@ -240,6 +240,8 @@ pub fn main() !void {
                 g_buf.text_changed = false;
                 // TODO: do it from cursor? - only applicable if the change was made by the cursor
                 try g_buf.recalculateLines();
+                try g_buf.recalculateBytes();
+                try g_buf.highlightCode();
             }
             g_buf.updateCursorAndViewport();
             try g_buf.updateVisibleVertices(g_screen.font);
@@ -429,6 +431,7 @@ const Screen = struct {
 const TextBuffer = struct {
     bytes: std.ArrayList(u8),
     chars: std.ArrayList(u.Codepoint), // unicode codepoints
+    colors: std.ArrayList(u.TextColor), // color for every char
     lines: std.ArrayList(usize),
     cursor: Cursor,
     viewport: Viewport,
@@ -466,6 +469,9 @@ const TextBuffer = struct {
             try chars.append(codepoint);
         }
 
+        var colors = std.ArrayList(u.TextColor).init(allocator);
+        try colors.ensureTotalCapacity(chars.items.len);
+
         var lines = std.ArrayList(usize).init(allocator);
         try lines.append(0); // first line is always at the buffer start
 
@@ -475,6 +481,7 @@ const TextBuffer = struct {
         return TextBuffer{
             .bytes = bytes,
             .chars = chars,
+            .colors = colors,
             .lines = lines,
             .cursor = Cursor{},
             .viewport = Viewport{},
@@ -497,6 +504,45 @@ const TextBuffer = struct {
             }
         }
         try self.lines.append(self.chars.items.len);
+    }
+
+    pub fn recalculateBytes(self: *TextBuffer) !void {
+        try self.bytes.ensureTotalCapacity(self.chars.items.len * 4); // enough to store 4-byte chars
+        self.bytes.expandToCapacity();
+        var cursor: usize = 0;
+        for (self.chars.items) |char| {
+            const num_bytes = try std.unicode.utf8Encode(char, self.bytes.items[cursor..]);
+            cursor += @intCast(usize, num_bytes);
+        }
+        self.bytes.shrinkRetainingCapacity(cursor);
+        try self.bytes.append(0); // so we can pass it to tokenizer
+    }
+
+    pub fn highlightCode(self: *TextBuffer) !void {
+        // Have the color array ready
+        try self.colors.ensureTotalCapacity(self.chars.items.len);
+        self.colors.expandToCapacity();
+        var colors = self.colors.items;
+        std.mem.set(u.TextColor, colors, .default);
+
+        // NOTE: we're tokenizing the whole source file. At least for zig this can be optimised,
+        // but we're not doing it just yet
+        const source_bytes = self.bytes.items[0 .. self.bytes.items.len - 1 :0]; // has to be null-terminated
+        var tokenizer = std.zig.Tokenizer.init(source_bytes);
+        while (true) {
+            var token = tokenizer.next();
+            const token_color: u.TextColor = switch (token.tag) {
+                .eof => break,
+                .string_literal, .multiline_string_literal_line, .char_literal => .string,
+                .builtin => .function,
+                .identifier => .default, // TODO: distinguish functions and types
+                .integer_literal, .float_literal => .number,
+                .doc_comment, .container_doc_comment => .comment,
+                .keyword_addrspace, .keyword_align, .keyword_allowzero, .keyword_and, .keyword_anyframe, .keyword_anytype, .keyword_asm, .keyword_async, .keyword_await, .keyword_break, .keyword_callconv, .keyword_catch, .keyword_comptime, .keyword_const, .keyword_continue, .keyword_defer, .keyword_else, .keyword_enum, .keyword_errdefer, .keyword_error, .keyword_export, .keyword_extern, .keyword_fn, .keyword_for, .keyword_if, .keyword_inline, .keyword_noalias, .keyword_noinline, .keyword_nosuspend, .keyword_opaque, .keyword_or, .keyword_orelse, .keyword_packed, .keyword_pub, .keyword_resume, .keyword_return, .keyword_linksection, .keyword_struct, .keyword_suspend, .keyword_switch, .keyword_test, .keyword_threadlocal, .keyword_try, .keyword_union, .keyword_unreachable, .keyword_usingnamespace, .keyword_var, .keyword_volatile, .keyword_while => .keyword,
+                else => .punctuation,
+            };
+            std.mem.set(u.TextColor, colors[token.loc.start..token.loc.end], token_color);
+        }
     }
 
     /// Recalculates cursor line/column coordinates from buffer position
@@ -548,17 +594,15 @@ const TextBuffer = struct {
             self.text_vertices.shrinkRetainingCapacity(0);
             self.text_quads.shrinkRetainingCapacity(0);
 
-            const visible_chars = x: {
-                const start_pos = self.lines.items[self.viewport.top];
-                const end_pos = self.lines.items[bottom_line];
-                break :x self.chars.items[start_pos..end_pos];
-            };
+            const start_char = self.lines.items[self.viewport.top];
+            const end_char = self.lines.items[bottom_line];
+            const visible_chars = self.chars.items[start_char..end_char];
 
             const start = Vec2{ .x = 0, .y = font.baseline }; // will be repositioned by the shader
             var col: usize = 0;
             var pos = Vec2{ .x = start.x, .y = start.y }; // in pixels
             // Get quads
-            for (visible_chars) |char| {
+            for (visible_chars) |char, i| {
                 if (char != ' ' and char != '\n' and col_min <= col and col <= col_max) {
                     const q = font.getQuad(char, pos.x, pos.y);
                     try self.text_quads.append(TexturedQuad{
@@ -566,6 +610,7 @@ const TextBuffer = struct {
                         .p1 = .{ .x = q.x1, .y = q.y1 },
                         .st0 = .{ .x = q.s0, .y = q.t0 },
                         .st1 = .{ .x = q.s1, .y = q.t1 },
+                        .color = self.colors.items[start_char + i],
                     });
                 }
                 pos.x += font.xadvance;

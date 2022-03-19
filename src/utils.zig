@@ -5,6 +5,17 @@ pub const Vec2 = extern struct {
     y: f32 = 0,
 };
 
+pub const TextColor = enum(u8) {
+    default = 0,
+    comment,
+    @"type",
+    function,
+    punctuation,
+    string,
+    number,
+    keyword,
+};
+
 pub const Color = extern struct {
     r: f32 = 0,
     g: f32 = 0,

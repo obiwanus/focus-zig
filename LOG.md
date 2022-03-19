@@ -1,14 +1,23 @@
 # TODO
-- Highlight zig syntax
-    + Be able to specify color in the text shader
 - Fix color blending (outline)
 - Make an open file dialog like in VSCode
     + Show and hide the dialog
     - Type something into the quad
     - Then refactor input
+
+# OPTIMISATION
+- Highlighting syntax
+    - Implement a few languages, not just Zig
+    - Measure how expensive it is to rehighlight everything
+
+# BUGS
 - Fix editing near the end of the buffer (can't get cursor close enough)
 
 # DONE
++ Highlight zig syntax
+    + Be able to specify color in the text shader
+    + Have a palette in the vertex shader (start with 2 colors)
+    + On every edit, highlight the whole code in its entirety
 + Make it not crash with small windows
 + Make it scale when scale changes
 + Draw a rectangle where the dialog would go

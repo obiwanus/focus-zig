@@ -7,6 +7,7 @@ const vu = @import("utils.zig");
 
 const VulkanContext = @import("context.zig").VulkanContext;
 const Vec2 = u.Vec2;
+const TextColor = u.TextColor;
 const Color = u.Color;
 
 const assert = std.debug.assert;
@@ -626,10 +627,12 @@ pub const TexturedQuad = struct {
     p1: Vec2,
     st0: Vec2,
     st1: Vec2,
+    color: TextColor,
 
     pub const Vertex = extern struct {
         pos: [2]f32,
         tex_coord: [2]f32,
+        color: TextColor,
 
         const binding_description = vk.VertexInputBindingDescription{
             .binding = 0,
@@ -650,14 +653,20 @@ pub const TexturedQuad = struct {
                 .format = .r32g32_sfloat,
                 .offset = @offsetOf(Vertex, "tex_coord"),
             },
+            .{
+                .binding = 0,
+                .location = 2,
+                .format = .r8_uint,
+                .offset = @offsetOf(Vertex, "color"),
+            },
         };
     };
 
     pub fn getVertices(self: TexturedQuad) [6]Vertex {
-        const v0 = Vertex{ .pos = .{ self.p0.x, self.p0.y }, .tex_coord = .{ self.st0.x, self.st0.y } };
-        const v1 = Vertex{ .pos = .{ self.p1.x, self.p0.y }, .tex_coord = .{ self.st1.x, self.st0.y } };
-        const v2 = Vertex{ .pos = .{ self.p1.x, self.p1.y }, .tex_coord = .{ self.st1.x, self.st1.y } };
-        const v3 = Vertex{ .pos = .{ self.p0.x, self.p1.y }, .tex_coord = .{ self.st0.x, self.st1.y } };
+        const v0 = Vertex{ .pos = .{ self.p0.x, self.p0.y }, .tex_coord = .{ self.st0.x, self.st0.y }, .color = self.color };
+        const v1 = Vertex{ .pos = .{ self.p1.x, self.p0.y }, .tex_coord = .{ self.st1.x, self.st0.y }, .color = self.color };
+        const v2 = Vertex{ .pos = .{ self.p1.x, self.p1.y }, .tex_coord = .{ self.st1.x, self.st1.y }, .color = self.color };
+        const v3 = Vertex{ .pos = .{ self.p0.x, self.p1.y }, .tex_coord = .{ self.st0.x, self.st1.y }, .color = self.color };
         return .{ v0, v1, v2, v0, v2, v3 };
     }
 };
