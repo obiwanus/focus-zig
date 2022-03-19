@@ -14,6 +14,7 @@
 - Fix editing near the end of the buffer (can't get cursor close enough)
 
 # DONE
++ Properly highlight comments
 + Highlight zig syntax
     + Be able to specify color in the text shader
     + Have a palette in the vertex shader (start with 2 colors)
