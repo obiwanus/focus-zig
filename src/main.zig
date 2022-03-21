@@ -26,8 +26,8 @@ const assert = std.debug.assert;
 var GPA = std.heap.GeneralPurposeAllocator(.{ .never_unmap = false }){};
 
 const APP_NAME = "Focus";
-const FONT_NAME = "fonts/consola.ttf";
-const FONT_SIZE = 16; // for scale = 1.0
+const FONT_NAME = "fonts/FiraCode-Regular.ttf";
+const FONT_SIZE = 18; // for scale = 1.0
 const TAB_SIZE = 4;
 const MAX_VERTEX_COUNT = 100000;
 

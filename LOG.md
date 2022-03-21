@@ -4,14 +4,10 @@
     + Show and hide the dialog
     - Type something into the quad
     - Then refactor input
-
-# OPTIMISATION
-- Highlighting syntax
+- Fix editing near the end of the buffer (can't get cursor close enough)
+- [optimisation] Highlighting syntax
     - Implement a few languages, not just Zig
     - Measure how expensive it is to rehighlight everything
-
-# BUGS
-- Fix editing near the end of the buffer (can't get cursor close enough)
 
 # DONE
 + Properly highlight comments
