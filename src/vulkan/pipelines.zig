@@ -179,8 +179,8 @@ pub const TextPipeline = struct {
 
             const pcbas = vk.PipelineColorBlendAttachmentState{
                 .blend_enable = vk.TRUE,
-                .src_color_blend_factor = .src_alpha,
-                .dst_color_blend_factor = .one_minus_src_alpha,
+                .src_color_blend_factor = .one,
+                .dst_color_blend_factor = .one,
                 .color_blend_op = .add,
                 .src_alpha_blend_factor = .one,
                 .dst_alpha_blend_factor = .zero,
@@ -348,7 +348,7 @@ pub const CursorPipeline = struct {
 
             const piasci = vk.PipelineInputAssemblyStateCreateInfo{
                 .flags = .{},
-                .topology = .triangle_list,
+                .topology = .triangle_fan,
                 .primitive_restart_enable = vk.FALSE,
             };
 
@@ -514,7 +514,7 @@ pub const SolidPipeline = struct {
 
             const piasci = vk.PipelineInputAssemblyStateCreateInfo{
                 .flags = .{},
-                .topology = .triangle_list,
+                .topology = .triangle_fan,
                 .primitive_restart_enable = vk.FALSE,
             };
 

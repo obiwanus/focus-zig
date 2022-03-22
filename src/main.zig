@@ -3,7 +3,6 @@ const builtin = @import("builtin");
 
 const glfw = @import("glfw");
 const vk = @import("vulkan");
-const stbi = @import("stbi");
 
 const u = @import("utils.zig");
 const vu = @import("vulkan/utils.zig");

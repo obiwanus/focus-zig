@@ -1,15 +1,28 @@
 # TODO
-- Fix color blending (outline?)
-    + try a different snipping tool
-
+- Only process keyboard events
 - Make an open file dialog like in VSCode
     + Show and hide the dialog
     - Type something into the quad
     - Then refactor input
 - Fix editing near the end of the buffer (can't get cursor close enough)
+- Multiple cursors
+- Start on the biggest monitor
+
 - [optimisation] Highlighting syntax
     - Implement a few languages, not just Zig
     - Measure how expensive it is to rehighlight everything
+- [on-hold]Fix color blending (outline?)
+    + try a different snipping tool
+
+# WHAT NEEDS TO WORK BEFORE I CAN START USING IT
+- Cursor tab management
+- Open files
+- Save files
+- Create new files
+- Switch between open files
+- Undo/redo
+- Select text, copy/cut/paste/duplicate
+- Search within buffer
 
 # DONE
 + Fix colors
