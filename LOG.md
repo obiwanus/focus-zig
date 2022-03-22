@@ -1,5 +1,7 @@
 # TODO
-- Fix color blending (outline)
+- Fix color blending (outline?)
+    + try a different snipping tool
+
 - Make an open file dialog like in VSCode
     + Show and hide the dialog
     - Type something into the quad
@@ -10,6 +12,7 @@
     - Measure how expensive it is to rehighlight everything
 
 # DONE
++ Fix colors
 + Properly highlight comments
 + Highlight zig syntax
     + Be able to specify color in the text shader

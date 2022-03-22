@@ -56,9 +56,7 @@ pub const SingleTimeCommandBuffer = struct {
     }
 };
 
-pub fn transitionImageLayout(vc: *const VulkanContext, pool: vk.CommandPool, image: vk.Image, format: vk.Format, old: vk.ImageLayout, new: vk.ImageLayout) !void {
-    _ = format; // ignoring for now
-
+pub fn transitionImageLayout(vc: *const VulkanContext, pool: vk.CommandPool, image: vk.Image, old: vk.ImageLayout, new: vk.ImageLayout) !void {
     const subresource_range = vk.ImageSubresourceRange{
         .aspect_mask = .{ .color_bit = true },
         .base_mip_level = 0,

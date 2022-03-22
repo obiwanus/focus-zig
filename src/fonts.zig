@@ -168,7 +168,7 @@ fn createFontTexture(vc: *const VulkanContext, pixels: []u8, width: u32, height:
     const texture_image = try vc.vkd.createImage(vc.dev, &.{
         .flags = .{},
         .image_type = .@"2d",
-        .format = .r8_srgb,
+        .format = .r8_unorm,
         .extent = image_extent,
         .mip_levels = 1,
         .array_layers = 1,
@@ -188,11 +188,11 @@ fn createFontTexture(vc: *const VulkanContext, pixels: []u8, width: u32, height:
     try vc.vkd.bindImageMemory(vc.dev, texture_image, memory, 0);
 
     // Copy buffer data to image
-    try vu.transitionImageLayout(vc, pool, texture_image, .r8_srgb, .@"undefined", .transfer_dst_optimal);
+    try vu.transitionImageLayout(vc, pool, texture_image, .@"undefined", .transfer_dst_optimal);
     try vu.copyBufferToImage(vc, pool, staging_buffer, texture_image, width, height);
-    try vu.transitionImageLayout(vc, pool, texture_image, .r8_srgb, .transfer_dst_optimal, .shader_read_only_optimal);
+    try vu.transitionImageLayout(vc, pool, texture_image, .transfer_dst_optimal, .shader_read_only_optimal);
 
-    const image_view = try createImageView(vc, texture_image, .r8_srgb);
+    const image_view = try createImageView(vc, texture_image, .r8_unorm);
 
     return FontTexture{
         .image = texture_image,

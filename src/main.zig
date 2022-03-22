@@ -26,8 +26,10 @@ const assert = std.debug.assert;
 var GPA = std.heap.GeneralPurposeAllocator(.{ .never_unmap = false }){};
 
 const APP_NAME = "Focus";
-const FONT_NAME = "fonts/FiraCode-Regular.ttf";
-const FONT_SIZE = 18; // for scale = 1.0
+// const FONT_NAME = "fonts/consola.ttf";
+// const FONT_SIZE = 16; // for scale = 1.0
+const FONT_NAME = "fonts/FiraCode-Retina.ttf";
+const FONT_SIZE = 19; // for scale = 1.0
 const TAB_SIZE = 4;
 const MAX_VERTEX_COUNT = 100000;
 
@@ -304,7 +306,7 @@ pub fn main() !void {
             vc.vkd.cmdSetScissor(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Rect2D, &scissor));
 
             const clear = vk.ClearValue{
-                .color = .{ .float_32 = .{ 2.0 / 255.0, 4.0 / 255.0, 6.0 / 255.0, 1 } },
+                .color = .{ .float_32 = .{ 0.086, 0.133, 0.165, 1 } },
             };
             const render_area = vk.Rect2D{
                 .offset = .{ .x = 0, .y = 0 },

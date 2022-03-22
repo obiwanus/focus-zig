@@ -192,7 +192,7 @@ fn findActualExtent(caps: vk.SurfaceCapabilitiesKHR, extent: vk.Extent2D) vk.Ext
 
 fn findSurfaceFormat(vc: *const VulkanContext, allocator: Allocator) !vk.SurfaceFormatKHR {
     const preferred = vk.SurfaceFormatKHR{
-        .format = .b8g8r8a8_srgb,
+        .format = .b8g8r8a8_unorm,
         .color_space = .srgb_nonlinear_khr,
     };
 
