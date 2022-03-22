@@ -348,7 +348,7 @@ pub const CursorPipeline = struct {
 
             const piasci = vk.PipelineInputAssemblyStateCreateInfo{
                 .flags = .{},
-                .topology = .triangle_fan,
+                .topology = .triangle_list,
                 .primitive_restart_enable = vk.FALSE,
             };
 
@@ -514,7 +514,7 @@ pub const SolidPipeline = struct {
 
             const piasci = vk.PipelineInputAssemblyStateCreateInfo{
                 .flags = .{},
-                .topology = .triangle_fan,
+                .topology = .triangle_list,
                 .primitive_restart_enable = vk.FALSE,
             };
 

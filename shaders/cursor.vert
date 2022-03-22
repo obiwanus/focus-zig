@@ -29,7 +29,7 @@ void main() {
     const vec2 V3 = vec2(g.cursor_size.x + PADDING.x, g.cursor_size.y + PADDING.y);
     const vec2 V4 = vec2(-PADDING.x, g.cursor_size.y + PADDING.y);
 
-    const vec2 VERTICES[] = vec2[](V1, V2, V3, V4);
+    const vec2 VERTICES[] = vec2[](V1, V2, V3, V1, V3, V4);
 
     vec2 vertex = VERTICES[gl_VertexIndex] + g.panel_topleft + PushConstants.offset * g.cursor_advance;
     gl_Position = screen_to_canonical(vertex);

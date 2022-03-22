@@ -357,7 +357,8 @@ pub fn main() !void {
                 0,
                 undefined,
             );
-            vc.vkd.cmdDraw(main_cmd_buf, 4, 1, 0, 0);
+
+            vc.vkd.cmdDraw(main_cmd_buf, 6, 1, 0, 0);
 
             // Draw popup
             if (g_show_popup) {
