@@ -46,6 +46,7 @@ var g_screen: Screen = undefined;
 
 // TEMPORARY
 var g_show_popup: bool = false;
+var g_new_events: bool = true;
 
 pub fn main() !void {
     // Static arena lives until the end of the program
@@ -182,6 +183,7 @@ pub fn main() !void {
 
     window.setKeyCallback(processKeyEvent);
     window.setCharCallback(processCharEvent);
+    window.setSizeCallback(processWindowSizeEvent);
 
     while (!window.shouldClose()) {
         // Ask the swapchain for the next image
@@ -218,7 +220,12 @@ pub fn main() !void {
         }
 
         // Wait for input
-        try glfw.waitEvents();
+        // TODO: do not process events we don't care about
+        while (true or !g_new_events) {
+            // We ignore events we don't handle
+            try glfw.waitEvents();
+        }
+        g_new_events = false;
 
         // TEMPORARY
         const popup_quad = x: {
@@ -659,6 +666,7 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
     _ = mods;
 
     if (action == .press or action == .repeat) {
+        g_new_events = true;
         switch (key) {
             .left => if (g_buf.cursor.pos > 0) {
                 g_buf.cursor.pos -= 1;
@@ -770,6 +778,13 @@ fn processCharEvent(window: glfw.Window, codepoint: u.Codepoint) void {
     g_buf.cursor.pos += 1;
     g_buf.cursor.col_wanted = null;
     g_buf.text_changed = true;
+}
+
+fn processWindowSizeEvent(window: glfw.Window, width: i32, height: i32) void {
+    _ = window;
+    _ = width;
+    _ = height;
+    g_new_events = true;
 }
 
 fn createRenderPass(vc: *const VulkanContext, attachment_format: vk.Format) !vk.RenderPass {

@@ -1,5 +1,4 @@
 # TODO
-- Only process keyboard events
 - Make an open file dialog like in VSCode
     + Show and hide the dialog
     - Type something into the quad
@@ -13,6 +12,7 @@
     - Measure how expensive it is to rehighlight everything
 - [on-hold]Fix color blending (outline?)
     + try a different snipping tool
+- [on-hold]Only process events we care about
 
 # WHAT NEEDS TO WORK BEFORE I CAN START USING IT
 - Cursor tab management
