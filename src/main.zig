@@ -28,7 +28,7 @@ const APP_NAME = "Focus";
 // const FONT_NAME = "fonts/consola.ttf";
 // const FONT_SIZE = 16; // for scale = 1.0
 const FONT_NAME = "fonts/FiraCode-Retina.ttf";
-const FONT_SIZE = 19; // for scale = 1.0
+const FONT_SIZE = 18; // for scale = 1.0
 const TAB_SIZE = 4;
 const MAX_VERTEX_COUNT = 100000;
 
@@ -221,11 +221,7 @@ pub fn main() !void {
 
         // Wait for input
         // TODO: do not process events we don't care about
-        while (true or !g_new_events) {
-            // We ignore events we don't handle
-            try glfw.waitEvents();
-        }
-        g_new_events = false;
+        try glfw.waitEvents();
 
         // TEMPORARY
         const popup_quad = x: {
@@ -641,6 +637,16 @@ const TextBuffer = struct {
             assert(self.text_vertices.items.len < MAX_VERTEX_COUNT);
         }
     }
+
+    pub fn getCurrentLineIndent(self: TextBuffer) usize {
+        var indent: usize = 0;
+        var cursor: usize = self.lines.items[self.cursor.line];
+        while (self.chars.items[cursor] == ' ') {
+            indent += 1;
+            cursor += 1;
+        }
+        return indent;
+    }
 };
 
 // Directly modifies globals (tmp)
@@ -703,26 +709,36 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
                 g_buf.view_changed = true;
             },
             .tab => {
+                const SPACES = [1]u.Codepoint{' '} ** TAB_SIZE;
                 const to_next_tabstop = TAB_SIZE - g_buf.cursor.col % TAB_SIZE;
-                const SPACES = [_]u.Codepoint{ ' ', ' ', ' ', ' ' };
                 g_buf.chars.insertSlice(g_buf.cursor.pos, SPACES[0..to_next_tabstop]) catch unreachable;
                 g_buf.cursor.pos += to_next_tabstop;
                 g_buf.cursor.col_wanted = null;
                 g_buf.text_changed = true;
             },
             .enter => {
+                var indent = g_buf.getCurrentLineIndent();
+                var buf: [1024]u.Codepoint = undefined;
                 if (mods.control and mods.shift) {
                     // Insert line above
+                    std.mem.set(u.Codepoint, buf[0..indent], ' ');
+                    buf[indent] = '\n';
                     g_buf.cursor.pos = g_buf.lines.items[g_buf.cursor.line];
-                    g_buf.chars.insert(g_buf.cursor.pos, '\n') catch unreachable;
+                    g_buf.chars.insertSlice(g_buf.cursor.pos, buf[0 .. indent + 1]) catch unreachable;
+                    g_buf.cursor.pos += indent;
                 } else if (mods.control) {
                     // Insert line below
+                    std.mem.set(u.Codepoint, buf[0..indent], ' ');
+                    buf[indent] = '\n';
                     g_buf.cursor.pos = g_buf.lines.items[g_buf.cursor.line + 1];
-                    g_buf.chars.insert(g_buf.cursor.pos, '\n') catch unreachable;
+                    g_buf.chars.insertSlice(g_buf.cursor.pos, buf[0 .. indent + 1]) catch unreachable;
+                    g_buf.cursor.pos += indent;
                 } else {
                     // Break the line normally
-                    g_buf.chars.insert(g_buf.cursor.pos, '\n') catch unreachable;
-                    g_buf.cursor.pos += 1;
+                    buf[0] = '\n';
+                    std.mem.set(u.Codepoint, buf[1 .. indent + 1], ' ');
+                    g_buf.chars.insertSlice(g_buf.cursor.pos, buf[0 .. indent + 1]) catch unreachable;
+                    g_buf.cursor.pos += 1 + indent;
                 }
                 g_buf.cursor.col_wanted = null;
                 g_buf.text_changed = true;

@@ -1,4 +1,5 @@
 # TODO
+- Highlight types differently
 - Make an open file dialog like in VSCode
     + Show and hide the dialog
     - Type something into the quad
@@ -15,7 +16,6 @@
 - [on-hold]Only process events we care about
 
 # WHAT NEEDS TO WORK BEFORE I CAN START USING IT
-- Cursor tab management
 - Open files
 - Save files
 - Create new files
@@ -25,6 +25,7 @@
 - Search within buffer
 
 # DONE
++ Cursor indentation management
 + Fix colors
 + Properly highlight comments
 + Highlight zig syntax
