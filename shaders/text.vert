@@ -20,7 +20,9 @@ const vec3[] COLOR_PALETTE = vec3[](
     vec3(0.67, 0.74, 0.49), // function
     vec3(0.65, 0.69, 0.76), // punctuation
     vec3(0.85, 0.68, 0.33), // string
-    vec3(0.84, 0.60, 0.71), // number
+    vec3(0.84, 0.60, 0.71), // value
+    vec3(0.85, 0.61, 0.46), // highlight
+    vec3(1.00, 0.00, 0.00), // error
     vec3(0.902, 0.493, 0.457)); // keyword
 
 vec4 screen_to_canonical(vec2 vertex) {

@@ -25,8 +25,6 @@ const assert = std.debug.assert;
 var GPA = std.heap.GeneralPurposeAllocator(.{ .never_unmap = false }){};
 
 const APP_NAME = "Focus";
-// const FONT_NAME = "fonts/consola.ttf";
-// const FONT_SIZE = 16; // for scale = 1.0
 const FONT_NAME = "fonts/FiraCode-Retina.ttf";
 const FONT_SIZE = 18; // for scale = 1.0
 const TAB_SIZE = 4;
@@ -538,10 +536,11 @@ const TextBuffer = struct {
             var token = tokenizer.next();
             const token_color: u.TextColor = switch (token.tag) {
                 .eof => break,
+                .invalid => .@"error",
                 .string_literal, .multiline_string_literal_line, .char_literal => .string,
                 .builtin => .function,
-                .identifier => u.TextColor.getForIdentifier(self.chars.items[token.loc.start .. token.loc.end + 1]),
-                .integer_literal, .float_literal => .number,
+                .identifier => u.TextColor.getForIdentifier(self.chars.items[token.loc.start..token.loc.end], self.chars.items[token.loc.end]),
+                .integer_literal, .float_literal => .value,
                 .doc_comment, .container_doc_comment => .comment,
                 .keyword_addrspace, .keyword_align, .keyword_allowzero, .keyword_and, .keyword_anyframe, .keyword_anytype, .keyword_asm, .keyword_async, .keyword_await, .keyword_break, .keyword_callconv, .keyword_catch, .keyword_comptime, .keyword_const, .keyword_continue, .keyword_defer, .keyword_else, .keyword_enum, .keyword_errdefer, .keyword_error, .keyword_export, .keyword_extern, .keyword_fn, .keyword_for, .keyword_if, .keyword_inline, .keyword_noalias, .keyword_noinline, .keyword_nosuspend, .keyword_opaque, .keyword_or, .keyword_orelse, .keyword_packed, .keyword_pub, .keyword_resume, .keyword_return, .keyword_linksection, .keyword_struct, .keyword_suspend, .keyword_switch, .keyword_test, .keyword_threadlocal, .keyword_try, .keyword_union, .keyword_unreachable, .keyword_usingnamespace, .keyword_var, .keyword_volatile, .keyword_while => .keyword,
                 .bang, .pipe, .pipe_pipe, .pipe_equal, .equal, .equal_equal, .equal_angle_bracket_right, .bang_equal, .l_paren, .r_paren, .semicolon, .percent, .percent_equal, .l_brace, .r_brace, .l_bracket, .r_bracket, .period, .period_asterisk, .ellipsis2, .ellipsis3, .caret, .caret_equal, .plus, .plus_plus, .plus_equal, .plus_percent, .plus_percent_equal, .plus_pipe, .plus_pipe_equal, .minus, .minus_equal, .minus_percent, .minus_percent_equal, .minus_pipe, .minus_pipe_equal, .asterisk, .asterisk_equal, .asterisk_asterisk, .asterisk_percent, .asterisk_percent_equal, .asterisk_pipe, .asterisk_pipe_equal, .arrow, .colon, .slash, .slash_equal, .comma, .ampersand, .ampersand_equal, .question_mark, .angle_bracket_left, .angle_bracket_left_equal, .angle_bracket_angle_bracket_left, .angle_bracket_angle_bracket_left_equal, .angle_bracket_angle_bracket_left_pipe, .angle_bracket_angle_bracket_left_pipe_equal, .angle_bracket_right, .angle_bracket_right_equal, .angle_bracket_angle_bracket_right, .angle_bracket_angle_bracket_right_equal, .tilde => .punctuation,
