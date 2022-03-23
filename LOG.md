@@ -1,5 +1,4 @@
 # TODO
-- Highlight types differently
 - Make an open file dialog like in VSCode
     + Show and hide the dialog
     - Type something into the quad
@@ -8,11 +7,11 @@
 - Multiple cursors
 - Start on the biggest monitor
 
-- [optimisation] Highlighting syntax
+- [optimisation] Highlighting syntax:
     - Implement a few languages, not just Zig
     - Measure how expensive it is to rehighlight everything
+- [bug] Colors are off when non-ascii bytes are present (tokenizer doesn't support utf-8)
 - [on-hold]Fix color blending (outline?)
-    + try a different snipping tool
 - [on-hold]Only process events we care about
 
 # WHAT NEEDS TO WORK BEFORE I CAN START USING IT
@@ -25,6 +24,7 @@
 - Search within buffer
 
 # DONE
++ Highlight types and functions
 + Cursor indentation management
 + Fix colors
 + Properly highlight comments

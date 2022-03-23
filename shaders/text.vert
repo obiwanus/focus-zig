@@ -16,7 +16,7 @@ layout(set = 0, binding = 0) uniform Global {
 const vec3[] COLOR_PALETTE = vec3[](
     vec3(0.81, 0.77, 0.66), // default
     vec3(0.52, 0.56, 0.54), // comment
-    vec3(0.41, 0.67, 0.70), // type
+    vec3(0.51, 0.67, 0.64), // type
     vec3(0.67, 0.74, 0.49), // function
     vec3(0.65, 0.69, 0.76), // punctuation
     vec3(0.85, 0.68, 0.33), // string
