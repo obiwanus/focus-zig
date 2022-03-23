@@ -734,10 +734,21 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
                     g_buf.cursor.pos += indent;
                 } else {
                     // Break the line normally
+                    const prev_char = g_buf.chars.items[g_buf.cursor.pos -| 1];
+                    const next_char = g_buf.chars.items[g_buf.cursor.pos]; // TODO: fix when near the end
+                    if (prev_char == '{' and next_char == '\n') {
+                        indent += TAB_SIZE;
+                    }
                     buf[0] = '\n';
                     std.mem.set(u.Codepoint, buf[1 .. indent + 1], ' ');
                     g_buf.chars.insertSlice(g_buf.cursor.pos, buf[0 .. indent + 1]) catch unreachable;
                     g_buf.cursor.pos += 1 + indent;
+                    if (prev_char == '{' and next_char == '\n') {
+                        // Insert a closing brace
+                        indent -= TAB_SIZE;
+                        g_buf.chars.insertSlice(g_buf.cursor.pos, buf[0 .. indent + 1]) catch unreachable;
+                        g_buf.chars.insert(g_buf.cursor.pos + indent + 1, '}') catch unreachable;
+                    }
                 }
                 g_buf.cursor.col_wanted = null;
                 g_buf.text_changed = true;
