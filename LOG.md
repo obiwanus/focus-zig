@@ -5,7 +5,6 @@
     - Then refactor input
 - Fix editing near the end of the buffer (can't get cursor close enough)
 - Multiple cursors
-- Start on the biggest monitor
 
 - [optimisation] Highlighting syntax:
     - Implement a few languages, not just Zig
@@ -24,6 +23,7 @@
 - Search within buffer
 
 # DONE
++ Start on the biggest monitor
 + Highlight types and functions
 + Cursor indentation management
 + Fix colors

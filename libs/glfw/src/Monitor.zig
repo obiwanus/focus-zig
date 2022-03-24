@@ -45,6 +45,24 @@ pub inline fn getPos(self: Monitor) error{PlatformError}!Pos {
     return Pos{ .x = @intCast(u32, xpos), .y = @intCast(u32, ypos) };
 }
 
+const PosInt = struct {
+    x: c_int,
+    y: c_int,
+};
+
+pub inline fn getPosInt(self: Monitor) error{PlatformError}!PosInt {
+    internal_debug.assertInitialized();
+    var xpos: c_int = 0;
+    var ypos: c_int = 0;
+    c.glfwGetMonitorPos(self.handle, &xpos, &ypos);
+    getError() catch |err| return switch (err) {
+        Error.NotInitialized => unreachable,
+        Error.PlatformError => @errSetCast(error{PlatformError}, err),
+        else => unreachable,
+    };
+    return PosInt{ .x = xpos, .y = ypos };
+}
+
 /// The monitor workarea, in screen coordinates.
 ///
 /// This is the position of the upper-left corner of the work area of the monitor, along with the

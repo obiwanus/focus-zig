@@ -646,6 +646,16 @@ pub inline fn setPos(self: Window, pos: Pos) error{PlatformError}!void {
     };
 }
 
+pub inline fn setPosInt(self: Window, x: c_int, y: c_int) error{PlatformError}!void {
+    internal_debug.assertInitialized();
+    c.glfwSetWindowPos(self.handle, x, y);
+    getError() catch |err| return switch (err) {
+        Error.NotInitialized => unreachable,
+        Error.PlatformError => @errSetCast(error{PlatformError}, err),
+        else => unreachable,
+    };
+}
+
 pub const Size = struct {
     width: u32,
     height: u32,
@@ -1406,9 +1416,9 @@ fn setPosCallbackWrapper(handle: ?*c.GLFWwindow, xpos: c_int, ypos: c_int) callc
 ///
 /// @callback_param `window` the window that moved.
 /// @callback_param `xpos` the new x-coordinate, in screen coordinates, of the upper-left corner of
-/// the content area of the window. 
+/// the content area of the window.
 /// @callback_param `ypos` the new y-coordinate, in screen coordinates, of the upper-left corner of
-/// the content area of the window. 
+/// the content area of the window.
 ///
 /// wayland: This callback will never be called, as there is no way for an application to know its
 /// global position.

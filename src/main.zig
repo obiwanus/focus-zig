@@ -59,13 +59,33 @@ pub fn main() !void {
     try glfw.init(.{});
     defer glfw.terminate();
 
+    // Choose the biggest monitor
+    const monitors = try glfw.Monitor.getAll(gpa);
+    const monitor: glfw.Monitor = x: {
+        var biggest: ?glfw.Monitor = null;
+        var max_pixels: u32 = 0;
+        for (monitors) |m| {
+            const video_mode = try m.getVideoMode();
+            const num_pixels = video_mode.getWidth() * video_mode.getHeight();
+            if (num_pixels > max_pixels) {
+                max_pixels = num_pixels;
+                biggest = m;
+            }
+        }
+        break :x biggest.?;
+    };
+
     const window = try glfw.Window.create(1000, 1000, APP_NAME, null, null, .{
         .client_api = .no_api,
         .focused = true,
-        .maximized = true,
+        .maximized = false,
         // .decorated = false,
         .scale_to_monitor = true,
+        .srgb_capable = true,
     });
+    const monitor_pos = try monitor.getPosInt();
+    try window.setPosInt(monitor_pos.x, monitor_pos.y);
+    try window.maximize();
     defer window.destroy();
 
     const vc = try VulkanContext.init(static_allocator, APP_NAME, window);
@@ -88,7 +108,7 @@ pub fn main() !void {
     const content_scale = try window.getContentScale();
     assert(content_scale.x_scale == content_scale.y_scale);
     g_screen.scale = content_scale.x_scale;
-    g_screen.font = try Font.init(&vc, gpa, FONT_NAME, FONT_SIZE, main_cmd_pool);
+    g_screen.font = try Font.init(&vc, gpa, FONT_NAME, FONT_SIZE * g_screen.scale, main_cmd_pool);
     defer g_screen.font.deinit(&vc);
 
     {
