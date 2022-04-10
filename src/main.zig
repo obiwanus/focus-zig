@@ -14,9 +14,7 @@ const Font = @import("fonts.zig").Font;
 const Swapchain = @import("vulkan/swapchain.zig").Swapchain;
 const TextPipeline = pipeline.TextPipeline;
 const CursorPipeline = pipeline.CursorPipeline;
-const SolidPipeline = pipeline.SolidPipeline;
 const TexturedQuad = pipeline.TexturedQuad;
-const SolidQuad = pipeline.SolidQuad;
 const Vec2 = u.Vec2;
 
 const print = std.debug.print;
@@ -41,10 +39,6 @@ const TEXT_MARGIN = Margin{
 // NOTE: this buffer is global temporary. We don't want it to be global eventually
 var g_buf: TextBuffer = undefined;
 var g_screen: Screen = undefined;
-
-// TEMPORARY
-var g_show_popup: bool = false;
-var g_new_events: bool = true;
 
 pub fn main() !void {
     // Static arena lives until the end of the program
@@ -158,10 +152,6 @@ pub fn main() !void {
     var cursor_pipeline = try CursorPipeline.init(&vc, render_pass, uniform_buffer.descriptor_set_layout);
     defer cursor_pipeline.deinit(&vc);
 
-    // Pipeline for solid quads
-    var solid_pipeline = try SolidPipeline.init(&vc, render_pass, uniform_buffer.descriptor_set_layout);
-    defer solid_pipeline.deinit(&vc);
-
     var framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
     defer destroyFramebuffers(&vc, gpa, framebuffers);
 
@@ -178,21 +168,6 @@ pub fn main() !void {
     const text_vertex_memory = try vc.allocate(mem_reqs, .{ .device_local_bit = true });
     defer vc.vkd.freeMemory(vc.dev, text_vertex_memory, null);
     try vc.vkd.bindBufferMemory(vc.dev, text_vertex_buffer, text_vertex_memory, 0);
-
-    // TEMPORARY
-    const popup_buffer = try vc.vkd.createBuffer(vc.dev, &.{
-        .flags = .{},
-        .size = @sizeOf(SolidQuad.Vertex) * 6,
-        .usage = .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
-        .sharing_mode = .exclusive,
-        .queue_family_index_count = 0,
-        .p_queue_family_indices = undefined,
-    }, null);
-    defer vc.vkd.destroyBuffer(vc.dev, popup_buffer, null);
-    const popup_mem_reqs = vc.vkd.getBufferMemoryRequirements(vc.dev, popup_buffer);
-    const popup_memory = try vc.allocate(popup_mem_reqs, .{ .device_local_bit = true });
-    defer vc.vkd.freeMemory(vc.dev, popup_memory, null);
-    try vc.vkd.bindBufferMemory(vc.dev, popup_buffer, popup_memory, 0);
 
     // This is the only command buffer we'll use for drawing.
     // It will be reset and re-recorded every frame
@@ -248,20 +223,6 @@ pub fn main() !void {
         // Wait for input
         // TODO: do not process events we don't care about
         try glfw.waitEvents();
-
-        // TEMPORARY
-        const popup_quad = x: {
-            const popup_width = 400 * g_screen.scale;
-            const popup_height = 300 * g_screen.scale;
-            const top: f32 = 50;
-            const left = (@intToFloat(f32, g_screen.size.width) - popup_width) / 2;
-            break :x SolidQuad{
-                .p0 = .{ .x = left, .y = top },
-                .p1 = .{ .x = left + popup_width, .y = top + popup_height },
-                .color = .{ .r = 0.7, .g = 0.7, .b = 0.7, .a = 1.0 },
-            };
-        };
-        try uploadVertices(&vc, SolidQuad.Vertex, &popup_quad.getVertices(), main_cmd_pool, popup_buffer);
 
         // Update view or text
         if (g_buf.view_changed or g_buf.text_changed) {
@@ -387,23 +348,6 @@ pub fn main() !void {
             );
 
             vc.vkd.cmdDraw(main_cmd_buf, 6, 1, 0, 0);
-
-            // Draw popup
-            if (g_show_popup) {
-                vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, solid_pipeline.handle);
-                vc.vkd.cmdBindVertexBuffers(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Buffer, &popup_buffer), &offset);
-                vc.vkd.cmdBindDescriptorSets(
-                    main_cmd_buf,
-                    .graphics,
-                    solid_pipeline.layout,
-                    0,
-                    1,
-                    @ptrCast([*]const vk.DescriptorSet, &uniform_buffer.descriptor_set),
-                    0,
-                    undefined,
-                );
-                vc.vkd.cmdDraw(main_cmd_buf, 6, 1, 0, 0);
-            }
 
             vc.vkd.cmdEndRenderPass(main_cmd_buf);
             try vc.vkd.endCommandBuffer(main_cmd_buf);
@@ -699,7 +643,6 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
     _ = mods;
 
     if (action == .press or action == .repeat) {
-        g_new_events = true;
         switch (key) {
             .left => if (g_buf.cursor.pos > 0) {
                 g_buf.cursor.pos -= 1;
@@ -814,12 +757,6 @@ fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: gl
                 g_buf.cursor.col_wanted = null;
                 g_buf.text_changed = true;
             },
-            .p => if (mods.control) {
-                g_show_popup = !g_show_popup;
-            },
-            .escape => {
-                g_show_popup = false;
-            },
             else => {},
         }
         g_buf.viewport.top = std.math.clamp(g_buf.viewport.top, 0, g_buf.lines.items.len -| 2);
@@ -838,7 +775,6 @@ fn processWindowSizeEvent(window: glfw.Window, width: i32, height: i32) void {
     _ = window;
     _ = width;
     _ = height;
-    g_new_events = true;
 }
 
 fn createRenderPass(vc: *const VulkanContext, attachment_format: vk.Format) !vk.RenderPass {
