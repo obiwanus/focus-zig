@@ -12,9 +12,10 @@ pub fn build(b: *std.build.Builder) void {
     exe.setTarget(target);
     exe.setBuildMode(mode);
 
-    // stb_image
-    exe.addCSourceFile("libs/stb_image/stb_image.c", &.{});
-    exe.addPackagePath("stbi", "libs/stb_image/stbi.zig");
+    // NOTE: temporarily removed because unused
+    // // stb_image
+    // exe.addCSourceFile("libs/stb_image/stb_image.c", &.{});
+    // exe.addPackagePath("stbi", "libs/stb_image/stbi.zig");
 
     // stb_truetype
     exe.addCSourceFile("libs/stb_truetype/stb_truetype.c", &.{});
@@ -25,7 +26,7 @@ pub fn build(b: *std.build.Builder) void {
     exe.addPackagePath("glfw", "libs/glfw/src/main.zig");
     glfw.link(b, exe, .{});
 
-    // NOTE: Removed vk.zig generation because it takes a long time
+    // // NOTE: Removed vk.zig generation because it takes a long time
     // const gen = vkgen.VkGenerateStep.init(b, "libs/vulkan/vk.xml", "vk.zig");
     // exe.addPackage(gen.package);
 

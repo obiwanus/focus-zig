@@ -1,16 +1,17 @@
 # TODO
+- Try to move everything into a single pipeline
+    - Open all source files and read the code line by line
+    - Write down what I'm trying to achieve
 - Make an open file dialog like in VSCode
-    + Show and hide the dialog
-    - Type something into the quad
-    - Then refactor input
 - Fix editing near the end of the buffer (can't get cursor close enough)
 - Multiple cursors
+- Fix color blending (outline?)
+    - Compare device settings on different hardware
 
 - [optimisation] Highlighting syntax:
     - Implement a few languages, not just Zig
     - Measure how expensive it is to rehighlight everything
 - [bug] Colors are off when non-ascii bytes are present (tokenizer doesn't support utf-8)
-- [on-hold]Fix color blending (outline?)
 - [on-hold]Only process events we care about
 
 # WHAT NEEDS TO WORK BEFORE I CAN START USING IT

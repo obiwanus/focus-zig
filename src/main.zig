@@ -78,11 +78,19 @@ pub fn main() !void {
     const window = try glfw.Window.create(1000, 1000, APP_NAME, null, null, .{
         .client_api = .no_api,
         .focused = true,
-        .maximized = false,
-        // .decorated = false,
+        // .maximized = false,
+        // .decorated = false,  // NOTE: there's a bug which causes the window to be bigger than the monitor
+        //                      // (or causes it to report a bigger size than it actually is)
         .scale_to_monitor = true,
         .srgb_capable = true,
     });
+    // // An attempt to remove window title on windows (didn't work)
+    // if (builtin.os.tag == .windows) {
+    //     // Remove window decorations
+    //     const native = glfw.Native(.{ .win32 = true });
+    //     const hwnd = native.getWin32Window(window);
+    //     _ = try std.os.windows.user32.setWindowLongA(hwnd, std.os.windows.user32.GWL_STYLE, 0);
+    // }
     const monitor_pos = try monitor.getPosInt();
     try window.setPosInt(monitor_pos.x, monitor_pos.y);
     try window.maximize();
@@ -139,7 +147,7 @@ pub fn main() !void {
         .{ .x = g_screen.font.xadvance, .y = g_screen.font.line_height },
     );
     defer uniform_buffer.deinit(&vc);
-    try uniform_buffer.sendToGPU(&vc);
+    try uniform_buffer.copyToGPU(&vc);
 
     // Pipeline for rendering text
     var text_pipeline = try TextPipeline.init(&vc, render_pass, uniform_buffer.descriptor_set_layout);
@@ -287,7 +295,7 @@ pub fn main() !void {
                     .x = g_screen.font.xadvance,
                     .y = g_screen.font.line_height,
                 };
-                try uniform_buffer.sendToGPU(&vc);
+                try uniform_buffer.copyToGPU(&vc);
             }
         }
 

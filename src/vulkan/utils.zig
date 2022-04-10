@@ -37,9 +37,7 @@ pub const SingleTimeCommandBuffer = struct {
         self.vc.vkd.freeCommandBuffers(self.vc.dev, self.pool, 1, @ptrCast([*]const vk.CommandBuffer, &self.buf));
     }
 
-    pub fn submit_and_free(self: SingleTimeCommandBuffer) !void {
-        // TODO: should we accept the queue as a parameter?
-        const queue = self.vc.graphics_queue.handle;
+    pub fn submit_and_free(self: SingleTimeCommandBuffer, queue: vk.Queue) !void {
         try self.vc.vkd.endCommandBuffer(self.buf);
         const si = vk.SubmitInfo{
             .wait_semaphore_count = 0,
@@ -108,7 +106,7 @@ pub fn transitionImageLayout(vc: *const VulkanContext, pool: vk.CommandPool, ima
         @ptrCast([*]const vk.ImageMemoryBarrier, &image_barrier),
     );
 
-    try cmdbuf.submit_and_free();
+    try cmdbuf.submit_and_free(vc.graphics_queue.handle);
 }
 
 pub fn copyBufferToImage(vc: *const VulkanContext, pool: vk.CommandPool, buffer: vk.Buffer, image: vk.Image, width: u32, height: u32) !void {
@@ -150,7 +148,7 @@ pub fn copyBufferToImage(vc: *const VulkanContext, pool: vk.CommandPool, buffer:
         @ptrCast([*]const vk.BufferImageCopy, &region),
     );
 
-    try cmdbuf.submit_and_free();
+    try cmdbuf.submit_and_free(vc.graphics_queue.handle);
 }
 
 pub fn copyBuffer(vc: *const VulkanContext, pool: vk.CommandPool, dst: vk.Buffer, src: vk.Buffer, size: vk.DeviceSize) !void {
@@ -163,7 +161,7 @@ pub fn copyBuffer(vc: *const VulkanContext, pool: vk.CommandPool, dst: vk.Buffer
     };
     vc.vkd.cmdCopyBuffer(cmdbuf.buf, src, dst, 1, @ptrCast([*]const vk.BufferCopy, &region));
 
-    try cmdbuf.submit_and_free();
+    try cmdbuf.submit_and_free(vc.graphics_queue.handle);
 }
 
 pub const UniformBuffer = struct {
@@ -281,7 +279,7 @@ pub const UniformBuffer = struct {
         };
     }
 
-    pub fn sendToGPU(self: UniformBuffer, vc: *const VulkanContext) !void {
+    pub fn copyToGPU(self: UniformBuffer, vc: *const VulkanContext) !void {
         const mapped_data = try vc.vkd.mapMemory(vc.dev, self.memory, 0, vk.WHOLE_SIZE, .{});
         defer vc.vkd.unmapMemory(vc.dev, self.memory);
         const data = @ptrCast(*Data, @alignCast(@alignOf(Data), mapped_data));
