@@ -6,17 +6,17 @@ const vk = @import("vulkan");
 
 const u = @import("utils.zig");
 const vu = @import("vulkan/utils.zig");
-const pipelines = @import("vulkan/pipelines.zig");
+const pipeline = @import("vulkan/pipeline.zig");
 
 const Allocator = std.mem.Allocator;
 const VulkanContext = @import("vulkan/context.zig").VulkanContext;
 const Font = @import("fonts.zig").Font;
 const Swapchain = @import("vulkan/swapchain.zig").Swapchain;
-const TextPipeline = pipelines.TextPipeline;
-const CursorPipeline = pipelines.CursorPipeline;
-const SolidPipeline = pipelines.SolidPipeline;
-const TexturedQuad = pipelines.TexturedQuad;
-const SolidQuad = pipelines.SolidQuad;
+const TextPipeline = pipeline.TextPipeline;
+const CursorPipeline = pipeline.CursorPipeline;
+const SolidPipeline = pipeline.SolidPipeline;
+const TexturedQuad = pipeline.TexturedQuad;
+const SolidQuad = pipeline.SolidQuad;
 const Vec2 = u.Vec2;
 
 const print = std.debug.print;

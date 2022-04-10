@@ -1,7 +1,5 @@
 # TODO
-- Try to move everything into a single pipeline
-    - Open all source files and read the code line by line
-    - Write down what I'm trying to achieve
+- Create a single pipeline and render cursor and text there
 - Make an open file dialog like in VSCode
 - Fix editing near the end of the buffer (can't get cursor close enough)
 - Multiple cursors
