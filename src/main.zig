@@ -272,8 +272,8 @@ pub fn main() !void {
         // Draw UI
         {
             ui.start_frame();
-            ui.drawRect(100, 100, 300, 300, u.Color{ .r = 1, .g = 1, .b = 0, .a = 1 });
-            ui.drawRect(400, 100, 200, 500, u.Color{ .r = 0, .g = 1, .b = 1, .a = 1 });
+            ui.drawSolidRect(100, 100, 300, 300, u.Color{ .r = 1, .g = 1, .b = 0, .a = 1 });
+            ui.drawSolidRect(400, 100, 200, 500, u.Color{ .r = 0, .g = 1, .b = 1, .a = 1 });
             try ui.end_frame(&vc, main_cmd_pool);
         }
 

@@ -1,5 +1,6 @@
 # TODO
 - Create a single pipeline and render cursor and text there
+    - Render text and solid blocks in a single pipeline
 - Make an open file dialog like in VSCode
 - Fix editing near the end of the buffer (can't get cursor close enough)
 - Multiple cursors

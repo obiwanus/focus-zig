@@ -3,13 +3,15 @@ const vk = @import("vulkan");
 const u = @import("utils.zig");
 const vu = @import("vulkan/utils.zig");
 
+const assert = std.debug.assert;
+
 const Allocator = std.mem.Allocator;
 const VulkanContext = @import("vulkan/context.zig").VulkanContext;
 
 const MAX_VERTEX_COUNT = 100000;
 
 pub const Ui = struct {
-    vertices: std.ArrayList(Vertex), // TODO: use a primitive buffer instead
+    vertices: std.ArrayList(Vertex),
     indices: std.ArrayList(u32),
 
     vertex_buffer: vk.Buffer,
@@ -17,9 +19,18 @@ pub const Ui = struct {
     index_buffer: vk.Buffer,
     index_buffer_memory: vk.DeviceMemory,
 
+    const VertexType = enum(u32) {
+        solid = 0,
+        textured = 1,
+        // yeah, the waste!
+    };
+
+    // #MEMORY: fat vertex. TODO: use a primitive buffer instead
     pub const Vertex = extern struct {
-        pos: u.Vec2,
         color: u.Color,
+        pos: u.Vec2,
+        texcoord: u.Vec2,
+        vertex_type: VertexType,
 
         pub const binding_description = vk.VertexInputBindingDescription{
             .binding = 0,
@@ -27,20 +38,27 @@ pub const Ui = struct {
             .input_rate = .vertex,
         };
 
-        pub const attribute_description = [_]vk.VertexInputAttributeDescription{
-            .{
-                .binding = 0,
-                .location = 0,
-                .format = .r32g32_sfloat,
-                .offset = @offsetOf(Vertex, "pos"),
-            },
-            .{
-                .binding = 0,
-                .location = 1,
-                .format = .r32g32b32a32_sfloat,
-                .offset = @offsetOf(Vertex, "color"),
-            },
-        };
+        pub const attribute_description = [_]vk.VertexInputAttributeDescription{ .{
+            .binding = 0,
+            .location = 0,
+            .format = .r32g32b32a32_sfloat,
+            .offset = @offsetOf(Vertex, "color"),
+        }, .{
+            .binding = 0,
+            .location = 1,
+            .format = .r32g32_sfloat,
+            .offset = @offsetOf(Vertex, "pos"),
+        }, .{
+            .binding = 0,
+            .location = 2,
+            .format = .r32g32_sfloat,
+            .offset = @offsetOf(Vertex, "texcoord"),
+        }, .{
+            .binding = 0,
+            .location = 3,
+            .format = .r8_uint,
+            .offset = @offsetOf(Vertex, "vertex_type"),
+        } };
     };
 
     pub fn init(allocator: Allocator, vc: *const VulkanContext) !Ui {
@@ -98,6 +116,8 @@ pub const Ui = struct {
     }
 
     pub fn end_frame(self: Ui, vc: *const VulkanContext, pool: vk.CommandPool) !void {
+        assert(self.vertices.items.len < MAX_VERTEX_COUNT);
+        assert(self.indices.items.len < MAX_VERTEX_COUNT * 2);
         // Copy drawing data to GPU buffers
         try vu.uploadDataToBuffer(vc, Vertex, self.vertices.items, pool, self.vertex_buffer);
         try vu.uploadDataToBuffer(vc, u32, self.indices.items, pool, self.index_buffer);
@@ -107,7 +127,7 @@ pub const Ui = struct {
         return @intCast(u32, self.indices.items.len);
     }
 
-    pub fn drawRect(self: *Ui, x: usize, y: usize, width: usize, height: usize, color: u.Color) void {
+    pub fn drawSolidRect(self: *Ui, x: usize, y: usize, width: usize, height: usize, color: u.Color) void {
         // Current vertex index
         const v = @intCast(u32, self.vertices.items.len);
 
@@ -118,10 +138,10 @@ pub const Ui = struct {
 
         // Rect vertices in clockwise order, starting from top left
         const vertices = [_]Vertex{
-            Vertex{ .pos = u.Vec2{ .x = l, .y = t }, .color = color },
-            Vertex{ .pos = u.Vec2{ .x = l + w, .y = t }, .color = color },
-            Vertex{ .pos = u.Vec2{ .x = l + w, .y = t + h }, .color = color },
-            Vertex{ .pos = u.Vec2{ .x = l, .y = t + h }, .color = color },
+            Vertex{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = u.Vec2{ .x = l, .y = t } },
+            Vertex{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = u.Vec2{ .x = l + w, .y = t } },
+            Vertex{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = u.Vec2{ .x = l + w, .y = t + h } },
+            Vertex{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = u.Vec2{ .x = l, .y = t + h } },
         };
         self.vertices.appendSlice(&vertices) catch u.oom();
 
