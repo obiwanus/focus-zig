@@ -5,12 +5,179 @@ const resources = @import("resources");
 const u = @import("../utils.zig");
 const vu = @import("utils.zig");
 
+const Ui = @import("../ui.zig").Ui;
 const VulkanContext = @import("context.zig").VulkanContext;
 const Vec2 = u.Vec2;
 const TextColor = u.TextColor;
 const Color = u.Color;
 
 const assert = std.debug.assert;
+
+pub const UiPipeline = struct {
+    layout: vk.PipelineLayout,
+    handle: vk.Pipeline,
+
+    pub fn init(vc: *const VulkanContext, render_pass: vk.RenderPass, ubo_set_layout: vk.DescriptorSetLayout) !UiPipeline {
+        // Pipeline layout
+        const pipeline_layout = try vc.vkd.createPipelineLayout(vc.dev, &.{
+            .flags = .{},
+            .set_layout_count = 1,
+            .p_set_layouts = @ptrCast([*]const vk.DescriptorSetLayout, &ubo_set_layout),
+            .push_constant_range_count = 0,
+            .p_push_constant_ranges = undefined,
+        }, null);
+        errdefer vc.vkd.destroyPipelineLayout(vc.dev, pipeline_layout, null);
+
+        // Create the pipeline itself
+        const pipeline_handle = x: {
+            const vert_module = try vc.vkd.createShaderModule(vc.dev, &.{
+                .flags = .{},
+                .code_size = resources.ui_vert.len,
+                .p_code = @ptrCast([*]const u32, resources.ui_vert),
+            }, null);
+            defer vc.vkd.destroyShaderModule(vc.dev, vert_module, null);
+
+            const frag_module = try vc.vkd.createShaderModule(vc.dev, &.{
+                .flags = .{},
+                .code_size = resources.ui_frag.len,
+                .p_code = @ptrCast([*]const u32, resources.ui_frag),
+            }, null);
+            defer vc.vkd.destroyShaderModule(vc.dev, frag_module, null);
+
+            const pssci = [_]vk.PipelineShaderStageCreateInfo{
+                .{
+                    .flags = .{},
+                    .stage = .{ .vertex_bit = true },
+                    .module = vert_module,
+                    .p_name = "main",
+                    .p_specialization_info = null,
+                },
+                .{
+                    .flags = .{},
+                    .stage = .{ .fragment_bit = true },
+                    .module = frag_module,
+                    .p_name = "main",
+                    .p_specialization_info = null,
+                },
+            };
+
+            const pvisci = vk.PipelineVertexInputStateCreateInfo{
+                .flags = .{},
+                .vertex_binding_description_count = 1,
+                .p_vertex_binding_descriptions = @ptrCast([*]const vk.VertexInputBindingDescription, &Ui.Vertex.binding_description),
+                .vertex_attribute_description_count = Ui.Vertex.attribute_description.len,
+                .p_vertex_attribute_descriptions = &Ui.Vertex.attribute_description,
+            };
+
+            const piasci = vk.PipelineInputAssemblyStateCreateInfo{
+                .flags = .{},
+                .topology = .triangle_list,
+                .primitive_restart_enable = vk.FALSE,
+            };
+
+            const pvsci = vk.PipelineViewportStateCreateInfo{
+                .flags = .{},
+                .viewport_count = 1,
+                .p_viewports = undefined, // set when recording command buffer with cmdSetViewport
+                .scissor_count = 1,
+                .p_scissors = undefined, // set when recording command buffer with cmdSetScissor
+            };
+
+            const prsci = vk.PipelineRasterizationStateCreateInfo{
+                .flags = .{},
+                .depth_clamp_enable = vk.FALSE,
+                .rasterizer_discard_enable = vk.FALSE,
+                .polygon_mode = .fill,
+                .cull_mode = .{ .back_bit = true },
+                .front_face = .clockwise,
+                .depth_bias_enable = vk.FALSE,
+                .depth_bias_constant_factor = 0,
+                .depth_bias_clamp = 0,
+                .depth_bias_slope_factor = 0,
+                .line_width = 1,
+            };
+
+            const pmsci = vk.PipelineMultisampleStateCreateInfo{
+                .flags = .{},
+                .rasterization_samples = .{ .@"1_bit" = true },
+                .sample_shading_enable = vk.FALSE,
+                .min_sample_shading = 1,
+                .p_sample_mask = null,
+                .alpha_to_coverage_enable = vk.FALSE,
+                .alpha_to_one_enable = vk.FALSE,
+            };
+
+            const pcbas = vk.PipelineColorBlendAttachmentState{
+                .blend_enable = vk.TRUE,
+                .src_color_blend_factor = .src_alpha,
+                .dst_color_blend_factor = .one_minus_src_alpha,
+                .color_blend_op = .add,
+                .src_alpha_blend_factor = .one,
+                .dst_alpha_blend_factor = .zero,
+                .alpha_blend_op = .add,
+                .color_write_mask = .{ .r_bit = true, .g_bit = true, .b_bit = true, .a_bit = true },
+            };
+
+            const pcbsci = vk.PipelineColorBlendStateCreateInfo{
+                .flags = .{},
+                .logic_op_enable = vk.FALSE,
+                .logic_op = .copy,
+                .attachment_count = 1,
+                .p_attachments = @ptrCast([*]const vk.PipelineColorBlendAttachmentState, &pcbas),
+                .blend_constants = [_]f32{ 0, 0, 0, 0 },
+            };
+
+            const dynstate = [_]vk.DynamicState{ .viewport, .scissor };
+            const pdsci = vk.PipelineDynamicStateCreateInfo{
+                .flags = .{},
+                .dynamic_state_count = dynstate.len,
+                .p_dynamic_states = &dynstate,
+            };
+
+            const gpci = vk.GraphicsPipelineCreateInfo{
+                .flags = .{},
+                .stage_count = 2,
+                .p_stages = &pssci,
+                .p_vertex_input_state = &pvisci,
+                .p_input_assembly_state = &piasci,
+                .p_tessellation_state = null,
+                .p_viewport_state = &pvsci,
+                .p_rasterization_state = &prsci,
+                .p_multisample_state = &pmsci,
+                .p_depth_stencil_state = null,
+                .p_color_blend_state = &pcbsci,
+                .p_dynamic_state = &pdsci,
+                .layout = pipeline_layout,
+                .render_pass = render_pass,
+                .subpass = 0,
+                .base_pipeline_handle = .null_handle,
+                .base_pipeline_index = -1,
+            };
+
+            var pipeline: vk.Pipeline = undefined;
+            _ = try vc.vkd.createGraphicsPipelines(
+                vc.dev,
+                .null_handle,
+                1,
+                @ptrCast([*]const vk.GraphicsPipelineCreateInfo, &gpci),
+                null,
+                @ptrCast([*]vk.Pipeline, &pipeline),
+            );
+
+            break :x pipeline;
+        };
+
+        return UiPipeline{
+            .layout = pipeline_layout,
+            .handle = pipeline_handle,
+        };
+    }
+
+    pub fn deinit(self: UiPipeline, vc: *const VulkanContext) void {
+        vc.vkd.destroyPipelineLayout(vc.dev, self.layout, null);
+        vc.vkd.destroyPipeline(vc.dev, self.handle, null);
+    }
+};
 
 pub const TextPipeline = struct {
     texture_sampler: vk.Sampler,

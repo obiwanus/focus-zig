@@ -70,3 +70,7 @@ pub const Color = extern struct {
     b: f32 = 0,
     a: f32 = 0,
 };
+
+pub fn oom() noreturn {
+    @panic("Out of memory");
+}

@@ -15,7 +15,9 @@ const Swapchain = @import("vulkan/swapchain.zig").Swapchain;
 const TextPipeline = pipeline.TextPipeline;
 const CursorPipeline = pipeline.CursorPipeline;
 const TexturedQuad = pipeline.TexturedQuad;
+const UiPipeline = pipeline.UiPipeline;
 const Vec2 = u.Vec2;
+const Ui = @import("ui.zig").Ui;
 
 const print = std.debug.print;
 const assert = std.debug.assert;
@@ -152,6 +154,10 @@ pub fn main() !void {
     var cursor_pipeline = try CursorPipeline.init(&vc, render_pass, uniform_buffer.descriptor_set_layout);
     defer cursor_pipeline.deinit(&vc);
 
+    // UI pipeline
+    var ui_pipeline = try UiPipeline.init(&vc, render_pass, uniform_buffer.descriptor_set_layout);
+    defer ui_pipeline.deinit(&vc);
+
     var framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
     defer destroyFramebuffers(&vc, gpa, framebuffers);
 
@@ -185,6 +191,9 @@ pub fn main() !void {
     window.setKeyCallback(processKeyEvent);
     window.setCharCallback(processCharEvent);
     window.setSizeCallback(processWindowSizeEvent);
+
+    var ui = try Ui.init(gpa, &vc);
+    defer ui.deinit(&vc);
 
     while (!window.shouldClose()) {
         // Ask the swapchain for the next image
@@ -260,6 +269,13 @@ pub fn main() !void {
             }
         }
 
+        // Draw UI
+        {
+            ui.reset();
+            ui.drawRect(100, 100, 300, 300, u.Color{ .r = 1, .g = 1, .b = 0, .a = 1 });
+            ui.drawRect(400, 100, 200, 500, u.Color{ .r = 0, .g = 1, .b = 1, .a = 1 });
+        }
+
         // Record the main command buffer
         {
             // Framebuffers were created to match swapchain images,
@@ -311,8 +327,7 @@ pub fn main() !void {
 
             // Draw text
             vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, text_pipeline.handle);
-            const offset = [_]vk.DeviceSize{0};
-            vc.vkd.cmdBindVertexBuffers(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Buffer, &text_vertex_buffer), &offset);
+            vc.vkd.cmdBindVertexBuffers(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Buffer, &text_vertex_buffer), &[_]vk.DeviceSize{0});
             const text_descriptors = [_]vk.DescriptorSet{
                 uniform_buffer.descriptor_set, // 0 = uniform buffer
                 text_pipeline.descriptor_set, // 1 = atlas texture
@@ -346,8 +361,23 @@ pub fn main() !void {
                 0,
                 undefined,
             );
-
             vc.vkd.cmdDraw(main_cmd_buf, 6, 1, 0, 0);
+
+            // Draw UI
+            vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, ui_pipeline.handle);
+            vc.vkd.cmdBindDescriptorSets(
+                main_cmd_buf,
+                .graphics,
+                ui_pipeline.layout,
+                0,
+                1,
+                @ptrCast([*]const vk.DescriptorSet, &uniform_buffer.descriptor_set),
+                0,
+                undefined,
+            );
+            vc.vkd.cmdBindVertexBuffers(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Buffer, &ui.vertex_buffer), &[_]vk.DeviceSize{0});
+            vc.vkd.cmdBindIndexBuffer(main_cmd_buf, ui.index_buffer, 0, .uint32);
+            vc.vkd.cmdDrawIndexed(main_cmd_buf, ui.indexCount(), 1, 0, 0, 0);
 
             vc.vkd.cmdEndRenderPass(main_cmd_buf);
             try vc.vkd.endCommandBuffer(main_cmd_buf);

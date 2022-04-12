@@ -39,8 +39,8 @@ pub fn build(b: *std.build.Builder) void {
     resources.addShader("text_frag", "shaders/text.frag");
     resources.addShader("cursor_vert", "shaders/cursor.vert");
     resources.addShader("cursor_frag", "shaders/cursor.frag");
-    resources.addShader("solid_vert", "shaders/solid.vert");
-    resources.addShader("solid_frag", "shaders/solid.frag");
+    resources.addShader("ui_vert", "shaders/ui.vert");
+    resources.addShader("ui_frag", "shaders/ui.frag");
     exe.addPackage(resources.package);
 
     const run_cmd = exe.run();
