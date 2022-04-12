@@ -2,6 +2,7 @@ const std = @import("std");
 const vk = @import("vulkan");
 const u = @import("../utils.zig");
 
+const Allocator = std.mem.Allocator;
 const VulkanContext = @import("context.zig").VulkanContext;
 const Vec2 = u.Vec2;
 
@@ -293,3 +294,38 @@ pub const UniformBuffer = struct {
         vc.vkd.destroyDescriptorPool(vc.dev, self.descriptor_pool, null);
     }
 };
+
+pub fn destroyFramebuffers(vc: *const VulkanContext, allocator: Allocator, framebuffers: []const vk.Framebuffer) void {
+    for (framebuffers) |fb| vc.vkd.destroyFramebuffer(vc.dev, fb, null);
+    allocator.free(framebuffers);
+}
+
+pub fn uploadDataToBuffer(vc: *const VulkanContext, comptime Data: type, src_array: []const Data, pool: vk.CommandPool, buffer: vk.Buffer) !void {
+    if (src_array.len == 0) {
+        return;
+    }
+    const buffer_size = @sizeOf(Data) * src_array.len;
+    const staging_buffer = try vc.vkd.createBuffer(vc.dev, &.{
+        .flags = .{},
+        .size = buffer_size,
+        .usage = .{ .transfer_src_bit = true },
+        .sharing_mode = .exclusive,
+        .queue_family_index_count = 0,
+        .p_queue_family_indices = undefined,
+    }, null);
+    defer vc.vkd.destroyBuffer(vc.dev, staging_buffer, null);
+    const mem_reqs = vc.vkd.getBufferMemoryRequirements(vc.dev, staging_buffer);
+    const staging_memory = try vc.allocate(mem_reqs, .{ .host_visible_bit = true, .host_coherent_bit = true });
+    defer vc.vkd.freeMemory(vc.dev, staging_memory, null);
+    try vc.vkd.bindBufferMemory(vc.dev, staging_buffer, staging_memory, 0);
+
+    {
+        const data = try vc.vkd.mapMemory(vc.dev, staging_memory, 0, vk.WHOLE_SIZE, .{});
+        defer vc.vkd.unmapMemory(vc.dev, staging_memory);
+
+        const gpu_vertices = @ptrCast([*]Data, @alignCast(@alignOf(Data), data));
+        std.mem.copy(Data, gpu_vertices[0..src_array.len], src_array);
+    }
+
+    try copyBuffer(vc, pool, buffer, staging_buffer, buffer_size);
+}

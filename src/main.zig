@@ -159,7 +159,7 @@ pub fn main() !void {
     defer ui_pipeline.deinit(&vc);
 
     var framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
-    defer destroyFramebuffers(&vc, gpa, framebuffers);
+    defer vu.destroyFramebuffers(&vc, gpa, framebuffers);
 
     const text_vertex_buffer = try vc.vkd.createBuffer(vc.dev, &.{
         .flags = .{},
@@ -223,7 +223,7 @@ pub fn main() !void {
             g_screen.total_cols = @floatToInt(usize, @intToFloat(f32, working_area_width) / g_screen.font.xadvance);
             g_screen.total_lines = @floatToInt(usize, @intToFloat(f32, working_area_height) / g_screen.font.line_height);
 
-            destroyFramebuffers(&vc, gpa, framebuffers);
+            vu.destroyFramebuffers(&vc, gpa, framebuffers);
             framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
 
             g_buf.view_changed = true;
@@ -245,7 +245,7 @@ pub fn main() !void {
             }
             g_buf.updateCursorAndViewport();
             try g_buf.updateVisibleVertices(g_screen.font);
-            try uploadVertices(&vc, TexturedQuad.Vertex, g_buf.text_vertices.items, main_cmd_pool, text_vertex_buffer);
+            try vu.uploadDataToBuffer(&vc, TexturedQuad.Vertex, g_buf.text_vertices.items, main_cmd_pool, text_vertex_buffer);
 
             // Update uniform buffer
             {
@@ -271,9 +271,10 @@ pub fn main() !void {
 
         // Draw UI
         {
-            ui.reset();
+            ui.start_frame();
             ui.drawRect(100, 100, 300, 300, u.Color{ .r = 1, .g = 1, .b = 0, .a = 1 });
             ui.drawRect(400, 100, 200, 500, u.Color{ .r = 0, .g = 1, .b = 1, .a = 1 });
+            try ui.end_frame(&vc, main_cmd_pool);
         }
 
         // Record the main command buffer
@@ -870,39 +871,4 @@ fn createFramebuffers(vc: *const VulkanContext, allocator: Allocator, render_pas
     }
 
     return framebuffers;
-}
-
-fn destroyFramebuffers(vc: *const VulkanContext, allocator: Allocator, framebuffers: []const vk.Framebuffer) void {
-    for (framebuffers) |fb| vc.vkd.destroyFramebuffer(vc.dev, fb, null);
-    allocator.free(framebuffers);
-}
-
-fn uploadVertices(vc: *const VulkanContext, comptime Vertex: type, vertices: []const Vertex, pool: vk.CommandPool, buffer: vk.Buffer) !void {
-    if (vertices.len == 0) {
-        return;
-    }
-    const buffer_size = @sizeOf(Vertex) * vertices.len;
-    const staging_buffer = try vc.vkd.createBuffer(vc.dev, &.{
-        .flags = .{},
-        .size = buffer_size,
-        .usage = .{ .transfer_src_bit = true },
-        .sharing_mode = .exclusive,
-        .queue_family_index_count = 0,
-        .p_queue_family_indices = undefined,
-    }, null);
-    defer vc.vkd.destroyBuffer(vc.dev, staging_buffer, null);
-    const mem_reqs = vc.vkd.getBufferMemoryRequirements(vc.dev, staging_buffer);
-    const staging_memory = try vc.allocate(mem_reqs, .{ .host_visible_bit = true, .host_coherent_bit = true });
-    defer vc.vkd.freeMemory(vc.dev, staging_memory, null);
-    try vc.vkd.bindBufferMemory(vc.dev, staging_buffer, staging_memory, 0);
-
-    {
-        const data = try vc.vkd.mapMemory(vc.dev, staging_memory, 0, vk.WHOLE_SIZE, .{});
-        defer vc.vkd.unmapMemory(vc.dev, staging_memory);
-
-        const gpu_vertices = @ptrCast([*]Vertex, @alignCast(@alignOf(Vertex), data));
-        std.mem.copy(Vertex, gpu_vertices[0..vertices.len], vertices);
-    }
-
-    try vu.copyBuffer(vc, pool, buffer, staging_buffer, buffer_size);
 }

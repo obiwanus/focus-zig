@@ -1,10 +1,5 @@
 # TODO
 - Create a single pipeline and render cursor and text there
-    - Render a rectangle of some color
-        + Write simple shaders
-        + Make a pipeline
-        + Setup pipeline vertex input (copy from solid pipeline)
-        - Fill in vertex and index buffers
 - Make an open file dialog like in VSCode
 - Fix editing near the end of the buffer (can't get cursor close enough)
 - Multiple cursors
@@ -27,6 +22,11 @@
 - Search within buffer
 
 # DONE
++ Render a rectangle of some color
+    + Write simple shaders
+    + Make a pipeline
+    + Setup pipeline vertex input (copy from solid pipeline)
+    + Fill in vertex and index buffers
 + Start on the biggest monitor
 + Highlight types and functions
 + Cursor indentation management

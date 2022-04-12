@@ -1,6 +1,7 @@
 const std = @import("std");
 const vk = @import("vulkan");
 const u = @import("utils.zig");
+const vu = @import("vulkan/utils.zig");
 
 const Allocator = std.mem.Allocator;
 const VulkanContext = @import("vulkan/context.zig").VulkanContext;
@@ -90,9 +91,16 @@ pub const Ui = struct {
         vc.vkd.destroyBuffer(vc.dev, self.index_buffer, null);
     }
 
-    pub fn reset(self: *Ui) void {
+    pub fn start_frame(self: *Ui) void {
+        // Reset drawing data
         self.vertices.shrinkRetainingCapacity(0);
         self.indices.shrinkRetainingCapacity(0);
+    }
+
+    pub fn end_frame(self: Ui, vc: *const VulkanContext, pool: vk.CommandPool) !void {
+        // Copy drawing data to GPU buffers
+        try vu.uploadDataToBuffer(vc, Vertex, self.vertices.items, pool, self.vertex_buffer);
+        try vu.uploadDataToBuffer(vc, u32, self.indices.items, pool, self.index_buffer);
     }
 
     pub fn indexCount(self: Ui) u32 {
@@ -117,8 +125,8 @@ pub const Ui = struct {
         };
         self.vertices.appendSlice(&vertices) catch u.oom();
 
-        // Indices: 0, 2, 1, 0, 1, 2
-        const indices = [_]u32{ v, v + 2, v + 1, v, v + 1, v + 2 };
+        // Indices: 0, 2, 3, 0, 1, 2
+        const indices = [_]u32{ v, v + 2, v + 3, v, v + 1, v + 2 };
         self.indices.appendSlice(&indices) catch u.oom();
     }
 };
