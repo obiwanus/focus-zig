@@ -12,8 +12,6 @@ const Allocator = std.mem.Allocator;
 const VulkanContext = @import("vulkan/context.zig").VulkanContext;
 const Font = @import("fonts.zig").Font;
 const Swapchain = @import("vulkan/swapchain.zig").Swapchain;
-const TextPipeline = pipeline.TextPipeline;
-const TexturedQuad = pipeline.TexturedQuad;
 const UiPipeline = pipeline.UiPipeline;
 const Vec2 = u.Vec2;
 const Ui = @import("ui.zig").Ui;
@@ -124,7 +122,6 @@ pub fn main() !void {
     g_buf = try TextBuffer.init(gpa, "main.zig");
     defer g_buf.deinit();
     g_buf.text_changed = true; // trigger initial update
-    g_buf.text_vertices = std.ArrayList(TexturedQuad.Vertex).init(gpa);
 
     var swapchain = try Swapchain.init(&vc, static_allocator, g_screen.size);
     defer swapchain.deinit();
@@ -138,11 +135,6 @@ pub fn main() !void {
     defer uniform_buffer.deinit(&vc);
     try uniform_buffer.copyToGPU(&vc);
 
-    // Pipeline for rendering text
-    var text_pipeline = try TextPipeline.init(&vc, render_pass, uniform_buffer.descriptor_set_layout);
-    text_pipeline.updateFontTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
-    defer text_pipeline.deinit(&vc);
-
     // UI pipeline
     var ui_pipeline = try UiPipeline.init(&vc, render_pass, uniform_buffer.descriptor_set_layout);
     ui_pipeline.updateFontTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
@@ -150,20 +142,6 @@ pub fn main() !void {
 
     var framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
     defer vu.destroyFramebuffers(&vc, gpa, framebuffers);
-
-    const text_vertex_buffer = try vc.vkd.createBuffer(vc.dev, &.{
-        .flags = .{},
-        .size = @sizeOf(TexturedQuad.Vertex) * MAX_VERTEX_COUNT,
-        .usage = .{ .transfer_dst_bit = true, .vertex_buffer_bit = true },
-        .sharing_mode = .exclusive,
-        .queue_family_index_count = 0,
-        .p_queue_family_indices = undefined,
-    }, null);
-    defer vc.vkd.destroyBuffer(vc.dev, text_vertex_buffer, null);
-    const mem_reqs = vc.vkd.getBufferMemoryRequirements(vc.dev, text_vertex_buffer);
-    const text_vertex_memory = try vc.allocate(mem_reqs, .{ .device_local_bit = true });
-    defer vc.vkd.freeMemory(vc.dev, text_vertex_memory, null);
-    try vc.vkd.bindBufferMemory(vc.dev, text_vertex_buffer, text_vertex_memory, 0);
 
     // This is the only command buffer we'll use for drawing.
     // It will be reset and re-recorded every frame
@@ -205,7 +183,6 @@ pub fn main() !void {
                 g_screen.scale = new_scale.x_scale;
                 g_screen.font.deinit(&vc);
                 g_screen.font = try Font.init(&vc, gpa, FONT_NAME, FONT_SIZE * new_scale.x_scale, main_cmd_pool);
-                text_pipeline.updateFontTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
                 ui_pipeline.updateFontTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
             }
 
@@ -235,41 +212,56 @@ pub fn main() !void {
                 try g_buf.highlightCode();
             }
             g_buf.updateCursorAndViewport();
-            try g_buf.updateVisibleVertices(g_screen.font);
-            try vu.uploadDataToBuffer(&vc, TexturedQuad.Vertex, g_buf.text_vertices.items, main_cmd_pool, text_vertex_buffer);
 
             // Update uniform buffer
-            {
-                uniform_buffer.data.screen_size = Vec2{
-                    .x = @intToFloat(f32, g_screen.size.width),
-                    .y = @intToFloat(f32, g_screen.size.height),
-                };
-                try uniform_buffer.copyToGPU(&vc);
-            }
-        }
+            uniform_buffer.data.screen_size = Vec2{
+                .x = @intToFloat(f32, g_screen.size.width),
+                .y = @intToFloat(f32, g_screen.size.height),
+            };
+            try uniform_buffer.copyToGPU(&vc);
 
-        // Draw UI
-        {
+            // Draw UI
             ui.start_frame();
             // ui.drawSolidRect(100, 100, 300, 300, u.Color{ .r = 1, .g = 1, .b = 0, .a = 0.5 });
             // ui.drawSolidRect(400, 100, 200, 500, u.Color{ .r = 0, .g = 1, .b = 1, .a = 1 });
             // ui.drawLetter('a', g_screen.font, 600, 200, 1000, 600, u.Color{ .r = 1, .g = 1, .b = 0, .a = 1 });
 
+            // Draw text
+            {
+                // Get visible char range
+                var bottom_line = g_buf.viewport.top + g_screen.total_lines;
+                if (bottom_line > g_buf.lines.items.len - 1) {
+                    bottom_line = g_buf.lines.items.len - 1;
+                }
+                const start_char = g_buf.lines.items[g_buf.viewport.top];
+                const end_char = g_buf.lines.items[bottom_line];
+
+                const chars = g_buf.chars.items[start_char..end_char];
+                const colors = g_buf.colors.items[start_char..end_char];
+                const col_min = g_buf.viewport.left;
+                const col_max = g_buf.viewport.left + g_screen.total_cols;
+                const top_left = Vec2{ .x = TEXT_MARGIN.left, .y = TEXT_MARGIN.top };
+
+                ui.drawText(chars, colors, g_screen.font, top_left, col_min, col_max);
+            }
+
             // Draw cursor
-            const offset = Vec2{
-                .x = @intToFloat(f32, g_buf.cursor.col),
-                .y = @intToFloat(f32, g_buf.cursor.line - g_buf.viewport.top),
-            };
-            const size = Vec2{ .x = g_screen.font.xadvance, .y = g_screen.font.letter_height };
-            const advance = Vec2{ .x = g_screen.font.xadvance, .y = g_screen.font.line_height };
-            const padding = Vec2{ .x = 0, .y = 4.0 };
+            {
+                const offset = Vec2{
+                    .x = @intToFloat(f32, g_buf.cursor.col),
+                    .y = @intToFloat(f32, g_buf.cursor.line - g_buf.viewport.top),
+                };
+                const size = Vec2{ .x = g_screen.font.xadvance, .y = g_screen.font.letter_height };
+                const advance = Vec2{ .x = g_screen.font.xadvance, .y = g_screen.font.line_height };
+                const padding = Vec2{ .x = 0, .y = 4.0 };
 
-            const x = offset.x * advance.x - padding.x;
-            const y = offset.y * advance.y - padding.y;
-            const w = size.x + 2.0 * padding.x;
-            const h = size.y + 2.0 * padding.y;
+                const x = offset.x * advance.x - padding.x;
+                const y = offset.y * advance.y - padding.y;
+                const w = size.x + 2.0 * padding.x;
+                const h = size.y + 2.0 * padding.y;
 
-            ui.drawSolidRect(x, y, w, h, u.Color{ .r = 1, .g = 1, .b = 0.2, .a = 0.8 });
+                ui.drawSolidRect(x, y, w, h, u.Color{ .r = 1, .g = 1, .b = 0.2, .a = 0.8 });
+            }
 
             try ui.end_frame(&vc, main_cmd_pool);
         }
@@ -296,14 +288,24 @@ pub fn main() !void {
             };
             vc.vkd.cmdSetViewport(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Viewport, &viewport));
 
+            // const scissor = vk.Rect2D{
+            //     .offset = .{
+            //         .x = TEXT_MARGIN.left,
+            //         .y = 5, // we don't want to cut the cursor off
+            //     },
+            //     .extent = .{
+            //         .width = g_screen.size.width -| (TEXT_MARGIN.left + TEXT_MARGIN.right),
+            //         .height = g_screen.size.height -| 10,
+            //     },
+            // };
             const scissor = vk.Rect2D{
                 .offset = .{
-                    .x = TEXT_MARGIN.left,
-                    .y = 5, // we don't want to cut the cursor off
+                    .x = 0,
+                    .y = 0,
                 },
                 .extent = .{
-                    .width = g_screen.size.width -| (TEXT_MARGIN.left + TEXT_MARGIN.right),
-                    .height = g_screen.size.height -| 10,
+                    .width = g_screen.size.width,
+                    .height = g_screen.size.height,
                 },
             };
             vc.vkd.cmdSetScissor(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Rect2D, &scissor));
@@ -322,25 +324,6 @@ pub fn main() !void {
                 .clear_value_count = 1,
                 .p_clear_values = @ptrCast([*]const vk.ClearValue, &clear),
             }, .@"inline");
-
-            // Draw text
-            vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, text_pipeline.handle);
-            vc.vkd.cmdBindVertexBuffers(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Buffer, &text_vertex_buffer), &[_]vk.DeviceSize{0});
-            const text_descriptors = [_]vk.DescriptorSet{
-                uniform_buffer.descriptor_set, // 0 = uniform buffer
-                text_pipeline.descriptor_set, // 1 = atlas texture
-            };
-            vc.vkd.cmdBindDescriptorSets(
-                main_cmd_buf,
-                .graphics,
-                text_pipeline.layout,
-                0,
-                text_descriptors.len,
-                &text_descriptors,
-                0,
-                undefined,
-            );
-            vc.vkd.cmdDraw(main_cmd_buf, @intCast(u32, g_buf.text_vertices.items.len), 1, 0, 0);
 
             // Draw UI
             vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, ui_pipeline.handle);
@@ -424,9 +407,6 @@ const TextBuffer = struct {
     cursor: Cursor,
     viewport: Viewport,
 
-    text_vertices: std.ArrayList(TexturedQuad.Vertex),
-    text_quads: std.ArrayList(TexturedQuad),
-
     text_changed: bool = false,
     view_changed: bool = false,
 
@@ -463,9 +443,6 @@ const TextBuffer = struct {
         var lines = std.ArrayList(usize).init(allocator);
         try lines.append(0); // first line is always at the buffer start
 
-        var text_vertices = std.ArrayList(TexturedQuad.Vertex).init(allocator);
-        var text_quads = std.ArrayList(TexturedQuad).init(allocator);
-
         return TextBuffer{
             .bytes = bytes,
             .chars = chars,
@@ -473,8 +450,6 @@ const TextBuffer = struct {
             .lines = lines,
             .cursor = Cursor{},
             .viewport = Viewport{},
-            .text_vertices = text_vertices,
-            .text_quads = text_quads,
         };
     }
 
@@ -565,60 +540,6 @@ const TextBuffer = struct {
             self.viewport.left -|= (col_min - self.cursor.col);
         } else if (self.cursor.col > col_max) {
             self.viewport.left += (self.cursor.col - col_max);
-        }
-    }
-
-    /// Updates the inner vertex array based on current viewport and buffer contents
-    pub fn updateVisibleVertices(self: *TextBuffer, font: Font) !void {
-        var bottom_line = self.viewport.top + g_screen.total_lines;
-        if (bottom_line > self.lines.items.len - 1) {
-            bottom_line = self.lines.items.len - 1;
-        }
-
-        // If char is outside these boundaries we don't have to draw it
-        const col_min = self.viewport.left;
-        const col_max = self.viewport.left + g_screen.total_cols;
-
-        // Rebuild text vertices
-        {
-            self.text_vertices.shrinkRetainingCapacity(0);
-            self.text_quads.shrinkRetainingCapacity(0);
-
-            const start_char = self.lines.items[self.viewport.top];
-            const end_char = self.lines.items[bottom_line];
-            const visible_chars = self.chars.items[start_char..end_char];
-
-            const start = Vec2{ .x = 0, .y = font.baseline }; // will be repositioned by the shader
-            var col: usize = 0;
-            var pos = Vec2{ .x = start.x, .y = start.y }; // in pixels
-            // Get quads
-            for (visible_chars) |char, i| {
-                if (char != ' ' and char != '\n' and col_min <= col and col <= col_max) {
-                    const q = font.getQuad(char, pos.x, pos.y);
-                    try self.text_quads.append(TexturedQuad{
-                        .p0 = .{ .x = q.x0, .y = q.y0 },
-                        .p1 = .{ .x = q.x1, .y = q.y1 },
-                        .st0 = .{ .x = q.s0, .y = q.t0 },
-                        .st1 = .{ .x = q.s1, .y = q.t1 },
-                        .color = self.colors.items[start_char + i],
-                    });
-                }
-                pos.x += font.xadvance;
-                col += 1;
-                if (char == '\n') {
-                    pos.x = start.x;
-                    pos.y += font.line_height;
-                    col = 0;
-                }
-            }
-            // Get vertices from quads
-            for (self.text_quads.items) |quad| {
-                for (quad.getVertices()) |vertex| {
-                    try self.text_vertices.append(vertex);
-                }
-            }
-
-            assert(self.text_vertices.items.len < MAX_VERTEX_COUNT);
         }
     }
 

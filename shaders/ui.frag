@@ -15,7 +15,7 @@ void main() {
     if (v_vertex_type == TYPE_SOLID) {
         f_color = v_color;
     } else if (v_vertex_type == TYPE_TEXTURED) {
-        f_color = v_color * texture(texSampler, v_tex_coord).a;
+        f_color = vec4(vec3(v_color), texture(texSampler, v_tex_coord).a);
     } else {
         // Invalid vertex type
         f_color = vec4(1.0, 0.0, 1.0, 1.0);

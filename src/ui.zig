@@ -176,4 +176,55 @@ pub const Ui = struct {
         const indices = [_]u32{ v, v + 2, v + 3, v, v + 1, v + 2 };
         self.indices.appendSlice(&indices) catch u.oom();
     }
+
+    pub fn drawText(self: *Ui, chars: []u.Codepoint, colors: []u.TextColor, font: Font, top_left: u.Vec2, col_min: usize, col_max: usize) void {
+        const PALETTE = [_]u.Color{
+            .{ .r = 0.81, .g = 0.77, .b = 0.66, .a = 1.0 }, // default
+            .{ .r = 0.52, .g = 0.56, .b = 0.54, .a = 1.0 }, // comment
+            .{ .r = 0.51, .g = 0.67, .b = 0.64, .a = 1.0 }, // type
+            .{ .r = 0.67, .g = 0.74, .b = 0.49, .a = 1.0 }, // function
+            .{ .r = 0.65, .g = 0.69, .b = 0.76, .a = 1.0 }, // punctuation
+            .{ .r = 0.85, .g = 0.68, .b = 0.33, .a = 1.0 }, // string
+            .{ .r = 0.84, .g = 0.60, .b = 0.71, .a = 1.0 }, // value
+            .{ .r = 0.85, .g = 0.61, .b = 0.46, .a = 1.0 }, // highlight
+            .{ .r = 1.00, .g = 0.00, .b = 0.00, .a = 1.0 }, // error
+            .{ .r = 0.902, .g = 0.493, .b = 0.457, .a = 1.0 }, // keyword
+        };
+        var pos = u.Vec2{ .x = top_left.x, .y = top_left.y + font.baseline };
+        var col: usize = 0;
+
+        // Current vertex index
+        var v = @intCast(u32, self.vertices.items.len);
+
+        for (chars) |char, i| {
+            if (char != ' ' and char != '\n' and col_min <= col and col <= col_max) {
+                const q = font.getQuad(char, pos.x, pos.y);
+                const color = PALETTE[@intCast(usize, @enumToInt(colors[i]))];
+
+                // Quad vertices in clockwise order, starting from top left
+                const vertices = [_]Vertex{
+                    Vertex{ .color = color, .vertex_type = .textured, .texcoord = u.Vec2{ .x = q.s0, .y = q.t0 }, .pos = u.Vec2{ .x = q.x0, .y = q.y0 } },
+                    Vertex{ .color = color, .vertex_type = .textured, .texcoord = u.Vec2{ .x = q.s1, .y = q.t0 }, .pos = u.Vec2{ .x = q.x1, .y = q.y0 } },
+                    Vertex{ .color = color, .vertex_type = .textured, .texcoord = u.Vec2{ .x = q.s1, .y = q.t1 }, .pos = u.Vec2{ .x = q.x1, .y = q.y1 } },
+                    Vertex{ .color = color, .vertex_type = .textured, .texcoord = u.Vec2{ .x = q.s0, .y = q.t1 }, .pos = u.Vec2{ .x = q.x0, .y = q.y1 } },
+                };
+                self.vertices.appendSlice(&vertices) catch u.oom();
+
+                // Indices: 0, 2, 3, 0, 1, 2
+                const indices = [_]u32{ v, v + 2, v + 3, v, v + 1, v + 2 };
+                self.indices.appendSlice(&indices) catch u.oom();
+
+                v += 4;
+            }
+            if (col_min <= col and col <= col_max) {
+                pos.x += font.xadvance;
+            }
+            col += 1;
+            if (char == '\n') {
+                pos.x = top_left.x;
+                pos.y += font.line_height;
+                col = 0;
+            }
+        }
+    }
 };
