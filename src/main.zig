@@ -255,8 +255,8 @@ pub fn main() !void {
                 const advance = Vec2{ .x = g_screen.font.xadvance, .y = g_screen.font.line_height };
                 const padding = Vec2{ .x = 0, .y = 4.0 };
 
-                const x = offset.x * advance.x - padding.x;
-                const y = offset.y * advance.y - padding.y;
+                const x = @intToFloat(f32, TEXT_MARGIN.left) + offset.x * advance.x - padding.x;
+                const y = @intToFloat(f32, TEXT_MARGIN.top) + offset.y * advance.y - padding.y;
                 const w = size.x + 2.0 * padding.x;
                 const h = size.y + 2.0 * padding.y;
 

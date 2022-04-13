@@ -1,10 +1,5 @@
 # TODO
-- Create a single pipeline and render cursor and text there
-    + Use the new pipeline for cursor
-    + Remove scissors and margins temporarily
-    + Replace the existing text pipeline
-    - Fix cursor positioning
-    - Implement two buffers
+- Implement two buffers
 - Make an open file dialog like in VSCode
 - Fix editing near the end of the buffer (can't get cursor close enough)
 - Multiple cursors
@@ -25,6 +20,11 @@
 - Search within buffer
 
 # DONE
++ Create a single pipeline and render cursor and text there
+    + Use the new pipeline for cursor
+    + Remove scissors and margins temporarily
+    + Replace the existing text pipeline
+    + Fix cursor positioning
 + Fix color blending (outline?)
     + Disable blending, try to "blend" manually in the shader
 + Render text and solid blocks in a single pipeline
