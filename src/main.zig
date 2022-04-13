@@ -156,6 +156,7 @@ pub fn main() !void {
 
     // UI pipeline
     var ui_pipeline = try UiPipeline.init(&vc, render_pass, uniform_buffer.descriptor_set_layout);
+    ui_pipeline.updateFontTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
     defer ui_pipeline.deinit(&vc);
 
     var framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
@@ -216,6 +217,7 @@ pub fn main() !void {
                 g_screen.font.deinit(&vc);
                 g_screen.font = try Font.init(&vc, gpa, FONT_NAME, FONT_SIZE * new_scale.x_scale, main_cmd_pool);
                 text_pipeline.updateFontTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
+                ui_pipeline.updateFontTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
             }
 
             const working_area_width = g_screen.size.width - TEXT_MARGIN.left - TEXT_MARGIN.right;
@@ -272,8 +274,9 @@ pub fn main() !void {
         // Draw UI
         {
             ui.start_frame();
-            ui.drawSolidRect(100, 100, 300, 300, u.Color{ .r = 1, .g = 1, .b = 0, .a = 1 });
+            ui.drawSolidRect(100, 100, 300, 300, u.Color{ .r = 1, .g = 1, .b = 0, .a = 0.5 });
             ui.drawSolidRect(400, 100, 200, 500, u.Color{ .r = 0, .g = 1, .b = 1, .a = 1 });
+            ui.drawLetter('a', g_screen.font, 600, 200, 1000, 600, u.Color{ .r = 1, .g = 1, .b = 0, .a = 1 });
             try ui.end_frame(&vc, main_cmd_pool);
         }
 
@@ -366,13 +369,17 @@ pub fn main() !void {
 
             // Draw UI
             vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, ui_pipeline.handle);
+            const ui_descriptors = [_]vk.DescriptorSet{
+                uniform_buffer.descriptor_set, // 0 = uniform buffer
+                ui_pipeline.descriptor_set, // 1 = atlas texture
+            };
             vc.vkd.cmdBindDescriptorSets(
                 main_cmd_buf,
                 .graphics,
                 ui_pipeline.layout,
                 0,
-                1,
-                @ptrCast([*]const vk.DescriptorSet, &uniform_buffer.descriptor_set),
+                ui_descriptors.len,
+                &ui_descriptors,
                 0,
                 undefined,
             );

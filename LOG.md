@@ -1,6 +1,5 @@
 # TODO
 - Create a single pipeline and render cursor and text there
-    - Render text and solid blocks in a single pipeline
 - Make an open file dialog like in VSCode
 - Fix editing near the end of the buffer (can't get cursor close enough)
 - Multiple cursors
@@ -23,6 +22,10 @@
 - Search within buffer
 
 # DONE
++ Render text and solid blocks in a single pipeline
+    + Modify pipeline layout to support texture sampler
+    + Update texture descriptor to use the font atlas
+    + Write a draw letter function
 + Render a rectangle of some color
     + Write simple shaders
     + Make a pipeline

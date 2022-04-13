@@ -6,6 +6,7 @@ const vu = @import("vulkan/utils.zig");
 const assert = std.debug.assert;
 
 const Allocator = std.mem.Allocator;
+const Font = @import("fonts.zig").Font;
 const VulkanContext = @import("vulkan/context.zig").VulkanContext;
 
 const MAX_VERTEX_COUNT = 100000;
@@ -142,6 +143,37 @@ pub const Ui = struct {
             Vertex{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = u.Vec2{ .x = l + w, .y = t } },
             Vertex{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = u.Vec2{ .x = l + w, .y = t + h } },
             Vertex{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = u.Vec2{ .x = l, .y = t + h } },
+        };
+        self.vertices.appendSlice(&vertices) catch u.oom();
+
+        // Indices: 0, 2, 3, 0, 1, 2
+        const indices = [_]u32{ v, v + 2, v + 3, v, v + 1, v + 2 };
+        self.indices.appendSlice(&indices) catch u.oom();
+    }
+
+    pub fn drawLetter(self: *Ui, char: u.Codepoint, font: Font, x: usize, y: usize, width: usize, height: usize, color: u.Color) void {
+        // Current vertex index
+        const v = @intCast(u32, self.vertices.items.len);
+
+        const l = @intToFloat(f32, x);
+        const t = @intToFloat(f32, y);
+
+        const q = font.getQuad(char, l, t);
+        const scale = 1.0; // @intToFloat(f32, width) / font.xadvance;
+        const w = (q.x1 - q.x0) * scale;
+        const h = (q.y1 - q.y0) * scale;
+        _ = width;
+        _ = height;
+
+        // const w = @intToFloat(f32, width);
+        // const h = @intToFloat(f32, height);
+
+        // Rect vertices in clockwise order, starting from top left
+        const vertices = [_]Vertex{
+            Vertex{ .color = color, .vertex_type = .textured, .texcoord = u.Vec2{ .x = q.s0, .y = q.t0 }, .pos = u.Vec2{ .x = l, .y = t } },
+            Vertex{ .color = color, .vertex_type = .textured, .texcoord = u.Vec2{ .x = q.s1, .y = q.t0 }, .pos = u.Vec2{ .x = l + w, .y = t } },
+            Vertex{ .color = color, .vertex_type = .textured, .texcoord = u.Vec2{ .x = q.s1, .y = q.t1 }, .pos = u.Vec2{ .x = l + w, .y = t + h } },
+            Vertex{ .color = color, .vertex_type = .textured, .texcoord = u.Vec2{ .x = q.s0, .y = q.t1 }, .pos = u.Vec2{ .x = l, .y = t + h } },
         };
         self.vertices.appendSlice(&vertices) catch u.oom();
 

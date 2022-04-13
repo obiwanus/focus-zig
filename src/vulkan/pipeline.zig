@@ -14,15 +14,85 @@ const Color = u.Color;
 const assert = std.debug.assert;
 
 pub const UiPipeline = struct {
+    font_sampler: vk.Sampler,
+    descriptor_pool: vk.DescriptorPool,
+    descriptor_set_layout: vk.DescriptorSetLayout,
+    descriptor_set: vk.DescriptorSet,
     layout: vk.PipelineLayout,
     handle: vk.Pipeline,
 
     pub fn init(vc: *const VulkanContext, render_pass: vk.RenderPass, ubo_set_layout: vk.DescriptorSetLayout) !UiPipeline {
+        const font_sampler = try vc.vkd.createSampler(vc.dev, &.{
+            .flags = .{},
+            .mag_filter = .nearest,
+            .min_filter = .nearest,
+            .mipmap_mode = .nearest,
+            .address_mode_u = .repeat,
+            .address_mode_v = .repeat,
+            .address_mode_w = .repeat,
+            .mip_lod_bias = 0,
+            .anisotropy_enable = vk.FALSE,
+            .max_anisotropy = 1,
+            .compare_enable = vk.FALSE,
+            .compare_op = .always,
+            .min_lod = 0,
+            .max_lod = 0,
+            .border_color = .int_opaque_black,
+            .unnormalized_coordinates = vk.FALSE,
+        }, null);
+        errdefer vc.vkd.destroySampler(vc.dev, font_sampler, null);
+
+        const descriptor_pool = x: {
+            const pool_sizes = [_]vk.DescriptorPoolSize{
+                .{
+                    .@"type" = .combined_image_sampler,
+                    .descriptor_count = 1,
+                },
+            };
+            break :x try vc.vkd.createDescriptorPool(vc.dev, &.{
+                .flags = .{},
+                .max_sets = 1,
+                .pool_size_count = pool_sizes.len,
+                .p_pool_sizes = &pool_sizes,
+            }, null);
+        };
+        errdefer vc.vkd.destroyDescriptorPool(vc.dev, descriptor_pool, null);
+
+        // Descriptor set layout
+        const descriptor_set_layout_bindings = [_]vk.DescriptorSetLayoutBinding{
+            .{
+                .binding = 0,
+                .descriptor_type = .combined_image_sampler,
+                .descriptor_count = 1,
+                .stage_flags = .{ .fragment_bit = true },
+                .p_immutable_samplers = null,
+            },
+        };
+        const descriptor_set_layout = try vc.vkd.createDescriptorSetLayout(vc.dev, &.{
+            .flags = .{},
+            .binding_count = descriptor_set_layout_bindings.len,
+            .p_bindings = &descriptor_set_layout_bindings,
+        }, null);
+        errdefer vc.vkd.destroyDescriptorSetLayout(vc.dev, descriptor_set_layout, null);
+
+        // Allocate descriptor sets
+        var descriptor_set: vk.DescriptorSet = undefined;
+        try vc.vkd.allocateDescriptorSets(vc.dev, &.{
+            .descriptor_pool = descriptor_pool,
+            .descriptor_set_count = 1,
+            .p_set_layouts = @ptrCast([*]const vk.DescriptorSetLayout, &descriptor_set_layout),
+        }, @ptrCast([*]vk.DescriptorSet, &descriptor_set));
+
+        const set_layouts = [_]vk.DescriptorSetLayout{
+            ubo_set_layout,
+            descriptor_set_layout, // for the atlas texture
+        };
+
         // Pipeline layout
         const pipeline_layout = try vc.vkd.createPipelineLayout(vc.dev, &.{
             .flags = .{},
-            .set_layout_count = 1,
-            .p_set_layouts = @ptrCast([*]const vk.DescriptorSetLayout, &ubo_set_layout),
+            .set_layout_count = set_layouts.len,
+            .p_set_layouts = &set_layouts,
             .push_constant_range_count = 0,
             .p_push_constant_ranges = undefined,
         }, null);
@@ -168,14 +238,48 @@ pub const UiPipeline = struct {
         };
 
         return UiPipeline{
+            .font_sampler = font_sampler,
+            .descriptor_pool = descriptor_pool,
+            .descriptor_set_layout = descriptor_set_layout,
+            .descriptor_set = descriptor_set,
             .layout = pipeline_layout,
             .handle = pipeline_handle,
         };
     }
 
     pub fn deinit(self: UiPipeline, vc: *const VulkanContext) void {
+        vc.vkd.destroySampler(vc.dev, self.font_sampler, null);
+        vc.vkd.destroyDescriptorSetLayout(vc.dev, self.descriptor_set_layout, null);
+        vc.vkd.destroyDescriptorPool(vc.dev, self.descriptor_pool, null);
         vc.vkd.destroyPipelineLayout(vc.dev, self.layout, null);
         vc.vkd.destroyPipeline(vc.dev, self.handle, null);
+    }
+
+    pub fn updateFontTextureDescriptor(self: UiPipeline, vc: *const VulkanContext, image_view: vk.ImageView) void {
+        // NOTE: not sure if this is the intended way to pass textures to pipelines
+        // Maybe it would make sense to create all descriptors beforehand and then
+        // copy them around somehow?
+        // Still, even if so, we don't have a texture image until we generate one for the font anyway.
+        const image_info = [_]vk.DescriptorImageInfo{
+            .{
+                .sampler = self.font_sampler,
+                .image_view = image_view,
+                .image_layout = .shader_read_only_optimal,
+            },
+        };
+        const descriptor_writes = [_]vk.WriteDescriptorSet{
+            .{
+                .dst_set = self.descriptor_set,
+                .dst_binding = 0,
+                .dst_array_element = 0,
+                .descriptor_count = 1,
+                .descriptor_type = .combined_image_sampler,
+                .p_image_info = &image_info,
+                .p_buffer_info = undefined,
+                .p_texel_buffer_view = undefined,
+            },
+        };
+        vc.vkd.updateDescriptorSets(vc.dev, descriptor_writes.len, &descriptor_writes, 0, undefined);
     }
 };
 
