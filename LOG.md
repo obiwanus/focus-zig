@@ -1,10 +1,11 @@
 # TODO
 - Create a single pipeline and render cursor and text there
+    + Use the new pipeline for cursor
+    - Remove scissors and margins temporarily
+    - Replace the existing text pipeline
 - Make an open file dialog like in VSCode
 - Fix editing near the end of the buffer (can't get cursor close enough)
 - Multiple cursors
-- Fix color blending (outline?)
-    - Compare device settings on different hardware
 
 - [optimisation] Highlighting syntax:
     - Implement a few languages, not just Zig
@@ -22,6 +23,8 @@
 - Search within buffer
 
 # DONE
++ Fix color blending (outline?)
+    + Disable blending, try to "blend" manually in the shader
 + Render text and solid blocks in a single pipeline
     + Modify pipeline layout to support texture sampler
     + Update texture descriptor to use the font atlas

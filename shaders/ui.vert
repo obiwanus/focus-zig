@@ -11,8 +11,6 @@ layout(location = 2) out uint v_vertex_type;
 
 layout(set = 0, binding = 0) uniform Global {
     vec2 screen_size;
-    vec2 panel_topleft;
-    vec2 cursor_size;
 } g;
 
 vec4 screen_to_canonical(vec2 vertex) {

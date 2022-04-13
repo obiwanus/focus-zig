@@ -9,8 +9,6 @@ layout(location = 1) out vec3 v_color;
 
 layout(set = 0, binding = 0) uniform Global {
     vec2 screen_size;
-    vec2 panel_topleft;
-    vec2 cursor_size;
 } g;
 
 const vec3[] COLOR_PALETTE = vec3[](
@@ -31,8 +29,7 @@ vec4 screen_to_canonical(vec2 vertex) {
 }
 
 void main() {
-    vec2 vertex = a_pos + g.panel_topleft;
-    gl_Position = screen_to_canonical(vertex);
+    gl_Position = screen_to_canonical(a_pos);
     v_tex_coord = a_tex_coord;
     v_color = COLOR_PALETTE[a_color];
 }

@@ -128,21 +128,16 @@ pub const Ui = struct {
         return @intCast(u32, self.indices.items.len);
     }
 
-    pub fn drawSolidRect(self: *Ui, x: usize, y: usize, width: usize, height: usize, color: u.Color) void {
+    pub fn drawSolidRect(self: *Ui, x: f32, y: f32, w: f32, h: f32, color: u.Color) void {
         // Current vertex index
         const v = @intCast(u32, self.vertices.items.len);
 
-        const l = @intToFloat(f32, x);
-        const t = @intToFloat(f32, y);
-        const w = @intToFloat(f32, width);
-        const h = @intToFloat(f32, height);
-
         // Rect vertices in clockwise order, starting from top left
         const vertices = [_]Vertex{
-            Vertex{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = u.Vec2{ .x = l, .y = t } },
-            Vertex{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = u.Vec2{ .x = l + w, .y = t } },
-            Vertex{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = u.Vec2{ .x = l + w, .y = t + h } },
-            Vertex{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = u.Vec2{ .x = l, .y = t + h } },
+            Vertex{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = u.Vec2{ .x = x, .y = y } },
+            Vertex{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = u.Vec2{ .x = x + w, .y = y } },
+            Vertex{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = u.Vec2{ .x = x + w, .y = y + h } },
+            Vertex{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = u.Vec2{ .x = x, .y = y + h } },
         };
         self.vertices.appendSlice(&vertices) catch u.oom();
 

@@ -13,7 +13,6 @@ const VulkanContext = @import("vulkan/context.zig").VulkanContext;
 const Font = @import("fonts.zig").Font;
 const Swapchain = @import("vulkan/swapchain.zig").Swapchain;
 const TextPipeline = pipeline.TextPipeline;
-const CursorPipeline = pipeline.CursorPipeline;
 const TexturedQuad = pipeline.TexturedQuad;
 const UiPipeline = pipeline.UiPipeline;
 const Vec2 = u.Vec2;
@@ -135,13 +134,7 @@ pub fn main() !void {
     defer vc.vkd.destroyRenderPass(vc.dev, render_pass, null);
 
     // Uniform buffer - shared between pipelines
-    var uniform_buffer = try vu.UniformBuffer.init(
-        &vc,
-        g_screen.size,
-        .{ .x = @intToFloat(f32, TEXT_MARGIN.left) - @intToFloat(f32, g_buf.viewport.left) * g_screen.font.xadvance, .y = TEXT_MARGIN.top },
-        .{ .x = g_screen.font.xadvance, .y = g_screen.font.letter_height },
-        .{ .x = g_screen.font.xadvance, .y = g_screen.font.line_height },
-    );
+    var uniform_buffer = try vu.UniformBuffer.init(&vc, g_screen.size);
     defer uniform_buffer.deinit(&vc);
     try uniform_buffer.copyToGPU(&vc);
 
@@ -149,10 +142,6 @@ pub fn main() !void {
     var text_pipeline = try TextPipeline.init(&vc, render_pass, uniform_buffer.descriptor_set_layout);
     text_pipeline.updateFontTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
     defer text_pipeline.deinit(&vc);
-
-    // Pipeline for cursors
-    var cursor_pipeline = try CursorPipeline.init(&vc, render_pass, uniform_buffer.descriptor_set_layout);
-    defer cursor_pipeline.deinit(&vc);
 
     // UI pipeline
     var ui_pipeline = try UiPipeline.init(&vc, render_pass, uniform_buffer.descriptor_set_layout);
@@ -255,18 +244,6 @@ pub fn main() !void {
                     .x = @intToFloat(f32, g_screen.size.width),
                     .y = @intToFloat(f32, g_screen.size.height),
                 };
-                uniform_buffer.data.panel_topleft = Vec2{
-                    .x = @intToFloat(f32, TEXT_MARGIN.left) - @intToFloat(f32, g_buf.viewport.left) * g_screen.font.xadvance,
-                    .y = TEXT_MARGIN.top,
-                };
-                uniform_buffer.data.cursor_size = Vec2{
-                    .x = g_screen.font.xadvance,
-                    .y = g_screen.font.letter_height,
-                };
-                uniform_buffer.data.cursor_advance = Vec2{
-                    .x = g_screen.font.xadvance,
-                    .y = g_screen.font.line_height,
-                };
                 try uniform_buffer.copyToGPU(&vc);
             }
         }
@@ -274,9 +251,26 @@ pub fn main() !void {
         // Draw UI
         {
             ui.start_frame();
-            ui.drawSolidRect(100, 100, 300, 300, u.Color{ .r = 1, .g = 1, .b = 0, .a = 0.5 });
-            ui.drawSolidRect(400, 100, 200, 500, u.Color{ .r = 0, .g = 1, .b = 1, .a = 1 });
-            ui.drawLetter('a', g_screen.font, 600, 200, 1000, 600, u.Color{ .r = 1, .g = 1, .b = 0, .a = 1 });
+            // ui.drawSolidRect(100, 100, 300, 300, u.Color{ .r = 1, .g = 1, .b = 0, .a = 0.5 });
+            // ui.drawSolidRect(400, 100, 200, 500, u.Color{ .r = 0, .g = 1, .b = 1, .a = 1 });
+            // ui.drawLetter('a', g_screen.font, 600, 200, 1000, 600, u.Color{ .r = 1, .g = 1, .b = 0, .a = 1 });
+
+            // Draw cursor
+            const offset = Vec2{
+                .x = @intToFloat(f32, g_buf.cursor.col),
+                .y = @intToFloat(f32, g_buf.cursor.line - g_buf.viewport.top),
+            };
+            const size = Vec2{ .x = g_screen.font.xadvance, .y = g_screen.font.letter_height };
+            const advance = Vec2{ .x = g_screen.font.xadvance, .y = g_screen.font.line_height };
+            const padding = Vec2{ .x = 0, .y = 4.0 };
+
+            const x = offset.x * advance.x - padding.x;
+            const y = offset.y * advance.y - padding.y;
+            const w = size.x + 2.0 * padding.x;
+            const h = size.y + 2.0 * padding.y;
+
+            ui.drawSolidRect(x, y, w, h, u.Color{ .r = 1, .g = 1, .b = 0.2, .a = 0.8 });
+
             try ui.end_frame(&vc, main_cmd_pool);
         }
 
@@ -347,25 +341,6 @@ pub fn main() !void {
                 undefined,
             );
             vc.vkd.cmdDraw(main_cmd_buf, @intCast(u32, g_buf.text_vertices.items.len), 1, 0, 0);
-
-            // Draw cursor
-            vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, cursor_pipeline.handle);
-            const cursor_offset = Vec2{
-                .x = @intToFloat(f32, g_buf.cursor.col),
-                .y = @intToFloat(f32, g_buf.cursor.line - g_buf.viewport.top),
-            };
-            vc.vkd.cmdPushConstants(main_cmd_buf, cursor_pipeline.layout, .{ .vertex_bit = true }, 0, @sizeOf(Vec2), &cursor_offset);
-            vc.vkd.cmdBindDescriptorSets(
-                main_cmd_buf,
-                .graphics,
-                cursor_pipeline.layout,
-                0,
-                1,
-                @ptrCast([*]const vk.DescriptorSet, &uniform_buffer.descriptor_set),
-                0,
-                undefined,
-            );
-            vc.vkd.cmdDraw(main_cmd_buf, 6, 1, 0, 0);
 
             // Draw UI
             vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, ui_pipeline.handle);
