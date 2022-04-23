@@ -8,10 +8,67 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Font = @import("fonts.zig").Font;
 const VulkanContext = @import("vulkan/context.zig").VulkanContext;
+const Editor = @import("editor.zig").Editor;
 
+// Probably temporary - this is just to preallocate buffers on the GPU
+// and not worry about more sophisticated allocation strategies
 const MAX_VERTEX_COUNT = 100000;
 
+// Margins in pixels for scale = 1.0
+const MARGIN_VERTICAL = 15;
+const MARGIN_HORIZONTAL = 30;
+
+pub const Screen = struct {
+    size: vk.Extent2D,
+    scale: f32,
+    font: Font,
+};
+
+const VertexType = enum(u32) {
+    solid = 0,
+    textured = 1,
+    // yeah, the waste!
+};
+
+// #MEMORY: fat vertex. TODO: use a primitive buffer instead
+pub const Vertex = extern struct {
+    color: u.Color,
+    pos: u.Vec2,
+    texcoord: u.Vec2,
+    vertex_type: VertexType,
+
+    pub const binding_description = vk.VertexInputBindingDescription{
+        .binding = 0,
+        .stride = @sizeOf(Vertex),
+        .input_rate = .vertex,
+    };
+
+    pub const attribute_description = [_]vk.VertexInputAttributeDescription{ .{
+        .binding = 0,
+        .location = 0,
+        .format = .r32g32b32a32_sfloat,
+        .offset = @offsetOf(Vertex, "color"),
+    }, .{
+        .binding = 0,
+        .location = 1,
+        .format = .r32g32_sfloat,
+        .offset = @offsetOf(Vertex, "pos"),
+    }, .{
+        .binding = 0,
+        .location = 2,
+        .format = .r32g32_sfloat,
+        .offset = @offsetOf(Vertex, "texcoord"),
+    }, .{
+        .binding = 0,
+        .location = 3,
+        .format = .r8_uint,
+        .offset = @offsetOf(Vertex, "vertex_type"),
+    } };
+};
+
 pub const Ui = struct {
+    screen: Screen = undefined,
+
     vertices: std.ArrayList(Vertex),
     indices: std.ArrayList(u32),
 
@@ -19,48 +76,6 @@ pub const Ui = struct {
     vertex_buffer_memory: vk.DeviceMemory,
     index_buffer: vk.Buffer,
     index_buffer_memory: vk.DeviceMemory,
-
-    const VertexType = enum(u32) {
-        solid = 0,
-        textured = 1,
-        // yeah, the waste!
-    };
-
-    // #MEMORY: fat vertex. TODO: use a primitive buffer instead
-    pub const Vertex = extern struct {
-        color: u.Color,
-        pos: u.Vec2,
-        texcoord: u.Vec2,
-        vertex_type: VertexType,
-
-        pub const binding_description = vk.VertexInputBindingDescription{
-            .binding = 0,
-            .stride = @sizeOf(Vertex),
-            .input_rate = .vertex,
-        };
-
-        pub const attribute_description = [_]vk.VertexInputAttributeDescription{ .{
-            .binding = 0,
-            .location = 0,
-            .format = .r32g32b32a32_sfloat,
-            .offset = @offsetOf(Vertex, "color"),
-        }, .{
-            .binding = 0,
-            .location = 1,
-            .format = .r32g32_sfloat,
-            .offset = @offsetOf(Vertex, "pos"),
-        }, .{
-            .binding = 0,
-            .location = 2,
-            .format = .r32g32_sfloat,
-            .offset = @offsetOf(Vertex, "texcoord"),
-        }, .{
-            .binding = 0,
-            .location = 3,
-            .format = .r8_uint,
-            .offset = @offsetOf(Vertex, "vertex_type"),
-        } };
-    };
 
     pub fn init(allocator: Allocator, vc: *const VulkanContext) !Ui {
         var self: Ui = undefined;
@@ -110,13 +125,16 @@ pub const Ui = struct {
         vc.vkd.destroyBuffer(vc.dev, self.index_buffer, null);
     }
 
-    pub fn start_frame(self: *Ui) void {
+    pub fn startFrame(self: *Ui, screen: Screen) void {
         // Reset drawing data
         self.vertices.shrinkRetainingCapacity(0);
         self.indices.shrinkRetainingCapacity(0);
+
+        // Remember screen info for drawing
+        self.screen = screen;
     }
 
-    pub fn end_frame(self: Ui, vc: *const VulkanContext, pool: vk.CommandPool) !void {
+    pub fn endFrame(self: Ui, vc: *const VulkanContext, pool: vk.CommandPool) !void {
         assert(self.vertices.items.len < MAX_VERTEX_COUNT);
         assert(self.indices.items.len < MAX_VERTEX_COUNT * 2);
         // Copy drawing data to GPU buffers
@@ -127,6 +145,62 @@ pub const Ui = struct {
     pub fn indexCount(self: Ui) u32 {
         return @intCast(u32, self.indices.items.len);
     }
+
+    pub fn drawEditors(self: *Ui, editor1: Editor, editor2: Editor) void {
+        // Figure out where to draw editors
+        const margin_h = MARGIN_HORIZONTAL * self.screen.scale;
+        const margin_v = MARGIN_VERTICAL * self.screen.scale;
+        const editor_width = (@intToFloat(f32, self.screen.size.width) - 3 * margin_h) / 2;
+        const editor_height = @intToFloat(f32, self.screen.size.height) - 2 * margin_v;
+
+        const rect1 = u.Rect{
+            .left = margin_h,
+            .top = margin_v,
+            .width = editor_width,
+            .height = editor_height,
+        };
+        const rect2 = u.Rect{
+            .left = margin_h + editor_width + margin_h,
+            .top = margin_v,
+            .width = editor_width,
+            .height = editor_height,
+        };
+
+        // Draw editors in the corresponding rects
+        self.drawEditor(editor1, rect1);
+        self.drawEditor(editor2, rect2);
+    }
+
+    pub fn drawEditor(self: *Ui, editor: Editor, rect: u.Rect) void {
+        const font = self.screen.font;
+
+        // How many lines/cols fit inside the rect
+        const total_lines = @floatToInt(usize, rect.height / font.line_height);
+        const total_cols = @floatToInt(usize, rect.width / font.xadvance);
+
+        // First and last visible lines
+        // TODO: check how it behaves when scale changes
+        const top_line = @floatToInt(usize, editor.offset.y / font.line_height);
+        var bottom_line = top_line + total_lines + 1;
+        if (bottom_line >= editor.lines.items.len) {
+            bottom_line = editor.lines.items.len - 1;
+        }
+
+        const start_char = editor.lines.items[top_line];
+        const end_char = editor.lines.items[bottom_line];
+
+        const chars = editor.chars.items[start_char..end_char];
+        const colors = editor.colors.items[start_char..end_char];
+        const col_min = @floatToInt(usize, editor.offset.x / font.xadvance);
+        const col_max = col_min + total_cols;
+        const top_left = u.Vec2{ .x = rect.left, .y = rect.top };
+
+        self.drawText(chars, colors, top_left, col_min, col_max);
+
+        // TODO: draw cursor
+    }
+
+    // ----------------------------------------------------------------------------------------------------------------
 
     pub fn drawSolidRect(self: *Ui, x: f32, y: f32, w: f32, h: f32, color: u.Color) void {
         // Current vertex index
@@ -146,38 +220,8 @@ pub const Ui = struct {
         self.indices.appendSlice(&indices) catch u.oom();
     }
 
-    pub fn drawLetter(self: *Ui, char: u.Codepoint, font: Font, x: usize, y: usize, width: usize, height: usize, color: u.Color) void {
-        // Current vertex index
-        const v = @intCast(u32, self.vertices.items.len);
-
-        const l = @intToFloat(f32, x);
-        const t = @intToFloat(f32, y);
-
-        const q = font.getQuad(char, l, t);
-        const scale = 1.0; // @intToFloat(f32, width) / font.xadvance;
-        const w = (q.x1 - q.x0) * scale;
-        const h = (q.y1 - q.y0) * scale;
-        _ = width;
-        _ = height;
-
-        // const w = @intToFloat(f32, width);
-        // const h = @intToFloat(f32, height);
-
-        // Rect vertices in clockwise order, starting from top left
-        const vertices = [_]Vertex{
-            Vertex{ .color = color, .vertex_type = .textured, .texcoord = u.Vec2{ .x = q.s0, .y = q.t0 }, .pos = u.Vec2{ .x = l, .y = t } },
-            Vertex{ .color = color, .vertex_type = .textured, .texcoord = u.Vec2{ .x = q.s1, .y = q.t0 }, .pos = u.Vec2{ .x = l + w, .y = t } },
-            Vertex{ .color = color, .vertex_type = .textured, .texcoord = u.Vec2{ .x = q.s1, .y = q.t1 }, .pos = u.Vec2{ .x = l + w, .y = t + h } },
-            Vertex{ .color = color, .vertex_type = .textured, .texcoord = u.Vec2{ .x = q.s0, .y = q.t1 }, .pos = u.Vec2{ .x = l, .y = t + h } },
-        };
-        self.vertices.appendSlice(&vertices) catch u.oom();
-
-        // Indices: 0, 2, 3, 0, 1, 2
-        const indices = [_]u32{ v, v + 2, v + 3, v, v + 1, v + 2 };
-        self.indices.appendSlice(&indices) catch u.oom();
-    }
-
-    pub fn drawText(self: *Ui, chars: []u.Codepoint, colors: []u.TextColor, font: Font, top_left: u.Vec2, col_min: usize, col_max: usize) void {
+    fn drawText(self: *Ui, chars: []u.Codepoint, colors: []u.TextColor, top_left: u.Vec2, col_min: usize, col_max: usize) void {
+        const font = self.screen.font;
         const PALETTE = [_]u.Color{
             .{ .r = 0.81, .g = 0.77, .b = 0.66, .a = 1.0 }, // default
             .{ .r = 0.52, .g = 0.56, .b = 0.54, .a = 1.0 }, // comment

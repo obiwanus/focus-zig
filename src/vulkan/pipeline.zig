@@ -5,7 +5,7 @@ const resources = @import("resources");
 const u = @import("../utils.zig");
 const vu = @import("utils.zig");
 
-const Ui = @import("../ui.zig").Ui;
+const Vertex = @import("../ui.zig").Vertex;
 const VulkanContext = @import("context.zig").VulkanContext;
 const Vec2 = u.Vec2;
 const TextColor = u.TextColor;
@@ -134,9 +134,9 @@ pub const UiPipeline = struct {
             const pvisci = vk.PipelineVertexInputStateCreateInfo{
                 .flags = .{},
                 .vertex_binding_description_count = 1,
-                .p_vertex_binding_descriptions = @ptrCast([*]const vk.VertexInputBindingDescription, &Ui.Vertex.binding_description),
-                .vertex_attribute_description_count = Ui.Vertex.attribute_description.len,
-                .p_vertex_attribute_descriptions = &Ui.Vertex.attribute_description,
+                .p_vertex_binding_descriptions = @ptrCast([*]const vk.VertexInputBindingDescription, &Vertex.binding_description),
+                .vertex_attribute_description_count = Vertex.attribute_description.len,
+                .p_vertex_attribute_descriptions = &Vertex.attribute_description,
             };
 
             const piasci = vk.PipelineInputAssemblyStateCreateInfo{

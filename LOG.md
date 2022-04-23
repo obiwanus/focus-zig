@@ -1,5 +1,5 @@
 # TODO
-- Implement two buffers
+- Add cursors to editors and implement editing
 - Make an open file dialog like in VSCode
 - Fix editing near the end of the buffer (can't get cursor close enough)
 - Multiple cursors
@@ -20,6 +20,12 @@
 - Search within buffer
 
 # DONE
++ Position two editors side by side with some margins
++ Have an editor struct, which will have all the associated data:
+    + text buffer
+    + main(active) cursor position (we'll determine the viewport as offsets from the cursor based on current rect)
+    + top-left corner of the viewport (in pixels)
+    + wanted top-left corner of the viewport (calculated based on cursor position)
 + Create a single pipeline and render cursor and text there
     + Use the new pipeline for cursor
     + Remove scissors and margins temporarily

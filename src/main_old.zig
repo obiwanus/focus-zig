@@ -13,9 +13,8 @@ const VulkanContext = @import("vulkan/context.zig").VulkanContext;
 const Font = @import("fonts.zig").Font;
 const Swapchain = @import("vulkan/swapchain.zig").Swapchain;
 const UiPipeline = pipeline.UiPipeline;
+const Vec2 = u.Vec2;
 const Ui = @import("ui.zig").Ui;
-const Screen = @import("ui.zig").Screen;
-const Editor = @import("editor.zig").Editor;
 
 const print = std.debug.print;
 const assert = std.debug.assert;
@@ -26,6 +25,19 @@ const APP_NAME = "Focus";
 const FONT_NAME = "fonts/FiraCode-Retina.ttf";
 const FONT_SIZE = 18; // for scale = 1.0
 const TAB_SIZE = 4;
+const MAX_VERTEX_COUNT = 100000;
+
+// Distance from edges to where text starts
+const TEXT_MARGIN = Margin{
+    .left = 30,
+    .top = 15,
+    .right = 30,
+    .bottom = 15,
+};
+
+// NOTE: this buffer is global temporary. We don't want it to be global eventually
+var g_buf: TextBuffer = undefined;
+var g_screen: Screen = undefined;
 
 pub fn main() !void {
     // Static arena lives until the end of the program
@@ -40,17 +52,7 @@ pub fn main() !void {
     try glfw.init(.{});
     defer glfw.terminate();
 
-    const window = try glfw.Window.create(1000, 1000, APP_NAME, null, null, .{
-        .client_api = .no_api,
-        .focused = true,
-        // .maximized = false,
-        // .decorated = false,  // NOTE: there's a bug which causes the window to be bigger than the monitor
-        //                      // (or causes it to report a bigger size than it actually is)
-        .scale_to_monitor = true,
-        .srgb_capable = true,
-    });
-
-    // Choose the biggest monitor and get its position
+    // Choose the biggest monitor
     const monitors = try glfw.Monitor.getAll(gpa);
     const monitor: glfw.Monitor = x: {
         var biggest: ?glfw.Monitor = null;
@@ -65,9 +67,24 @@ pub fn main() !void {
         }
         break :x biggest.?;
     };
-    const monitor_pos = try monitor.getPosInt();
 
-    // Move window to the biggest monitor and maximise
+    const window = try glfw.Window.create(1000, 1000, APP_NAME, null, null, .{
+        .client_api = .no_api,
+        .focused = true,
+        // .maximized = false,
+        // .decorated = false,  // NOTE: there's a bug which causes the window to be bigger than the monitor
+        //                      // (or causes it to report a bigger size than it actually is)
+        .scale_to_monitor = true,
+        .srgb_capable = true,
+    });
+    // // An attempt to remove window title on windows (didn't work)
+    // if (builtin.os.tag == .windows) {
+    //     // Remove window decorations
+    //     const native = glfw.Native(.{ .win32 = true });
+    //     const hwnd = native.getWin32Window(window);
+    //     _ = try std.os.windows.user32.setWindowLongA(hwnd, std.os.windows.user32.GWL_STYLE, 0);
+    // }
+    const monitor_pos = try monitor.getPosInt();
     try window.setPosInt(monitor_pos.x, monitor_pos.y);
     try window.maximize();
     defer window.destroy();
@@ -81,8 +98,8 @@ pub fn main() !void {
     }, null);
     defer vc.vkd.destroyCommandPool(vc.dev, main_cmd_pool, null);
 
-    var screen: Screen = undefined;
-    screen.size = x: {
+    // Initialise global context
+    g_screen.size = x: {
         const size = try window.getFramebufferSize();
         break :x vk.Extent2D{
             .width = size.width,
@@ -91,30 +108,36 @@ pub fn main() !void {
     };
     const content_scale = try window.getContentScale();
     assert(content_scale.x_scale == content_scale.y_scale);
-    screen.scale = content_scale.x_scale;
-    screen.font = try Font.init(&vc, gpa, FONT_NAME, FONT_SIZE * screen.scale, main_cmd_pool);
-    defer screen.font.deinit(&vc);
+    g_screen.scale = content_scale.x_scale;
+    g_screen.font = try Font.init(&vc, gpa, FONT_NAME, FONT_SIZE * g_screen.scale, main_cmd_pool);
+    defer g_screen.font.deinit(&vc);
 
-    var editor1 = try Editor.init(gpa, "main.zig");
-    defer editor1.deinit();
-    var editor2 = try Editor.init(gpa, "ui.zig");
-    defer editor2.deinit();
+    {
+        const working_area_width = g_screen.size.width - TEXT_MARGIN.left - TEXT_MARGIN.right;
+        const working_area_height = g_screen.size.height - TEXT_MARGIN.top - TEXT_MARGIN.bottom;
+        g_screen.total_cols = @floatToInt(usize, @intToFloat(f32, working_area_width) / g_screen.font.xadvance);
+        g_screen.total_lines = @floatToInt(usize, @intToFloat(f32, working_area_height) / g_screen.font.line_height);
+    }
 
-    var swapchain = try Swapchain.init(&vc, static_allocator, screen.size);
+    g_buf = try TextBuffer.init(gpa, "main.zig");
+    defer g_buf.deinit();
+    g_buf.text_changed = true; // trigger initial update
+
+    var swapchain = try Swapchain.init(&vc, static_allocator, g_screen.size);
     defer swapchain.deinit();
 
     // We have only one render pass
     const render_pass = try createRenderPass(&vc, swapchain.surface_format.format);
     defer vc.vkd.destroyRenderPass(vc.dev, render_pass, null);
 
-    // NOTE: not sure if we can avoid converting from screen to clip coordinates manually in the shaders
-    var uniform_buffer = try vu.UniformBuffer.init(&vc, screen.size);
+    // Uniform buffer - shared between pipelines
+    var uniform_buffer = try vu.UniformBuffer.init(&vc, g_screen.size);
     defer uniform_buffer.deinit(&vc);
     try uniform_buffer.copyToGPU(&vc);
 
     // UI pipeline
     var ui_pipeline = try UiPipeline.init(&vc, render_pass, uniform_buffer.descriptor_set_layout);
-    ui_pipeline.updateFontTextureDescriptor(&vc, screen.font.atlas_texture.view);
+    ui_pipeline.updateFontTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
     defer ui_pipeline.deinit(&vc);
 
     var framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
@@ -140,74 +163,107 @@ pub fn main() !void {
     var ui = try Ui.init(gpa, &vc);
     defer ui.deinit(&vc);
 
-    var text_changed = true;
-    var view_changed = false;
-
     while (!window.shouldClose()) {
         // Ask the swapchain for the next image
         const is_optimal = swapchain.acquire_next_image();
         if (!is_optimal) {
             // Recreate swapchain if necessary
             const new_size = try window.getFramebufferSize();
-            screen.size.width = new_size.width;
-            screen.size.height = new_size.height;
+            g_screen.size.width = new_size.width;
+            g_screen.size.height = new_size.height;
 
-            try swapchain.recreate(screen.size);
+            try swapchain.recreate(g_screen.size);
             if (!swapchain.acquire_next_image()) {
                 return error.SwapchainRecreationFailure;
             }
 
-            // Make sure the font is updated if screen scale has changed
+            // Make sure the font is updated
             const new_scale = try window.getContentScale();
-            assert(new_scale.x_scale == new_scale.y_scale);
-            if (screen.scale != new_scale.x_scale) {
-                screen.scale = new_scale.x_scale;
-                screen.font.deinit(&vc);
-                screen.font = try Font.init(&vc, gpa, FONT_NAME, FONT_SIZE * new_scale.x_scale, main_cmd_pool);
-                ui_pipeline.updateFontTextureDescriptor(&vc, screen.font.atlas_texture.view);
+            if (g_screen.scaleChanged(new_scale)) {
+                g_screen.scale = new_scale.x_scale;
+                g_screen.font.deinit(&vc);
+                g_screen.font = try Font.init(&vc, gpa, FONT_NAME, FONT_SIZE * new_scale.x_scale, main_cmd_pool);
+                ui_pipeline.updateFontTextureDescriptor(&vc, g_screen.font.atlas_texture.view);
             }
+
+            const working_area_width = g_screen.size.width - TEXT_MARGIN.left - TEXT_MARGIN.right;
+            const working_area_height = g_screen.size.height - TEXT_MARGIN.top - TEXT_MARGIN.bottom;
+            g_screen.total_cols = @floatToInt(usize, @intToFloat(f32, working_area_width) / g_screen.font.xadvance);
+            g_screen.total_lines = @floatToInt(usize, @intToFloat(f32, working_area_height) / g_screen.font.line_height);
 
             vu.destroyFramebuffers(&vc, gpa, framebuffers);
             framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
 
-            view_changed = true;
+            g_buf.view_changed = true;
         }
 
         // Wait for input
-        // TODO: do not redraw on events we don't care about (e.g. mousemove)
+        // TODO: do not process events we don't care about
         try glfw.waitEvents();
 
         // Update view or text
-        if (view_changed or text_changed) {
-            view_changed = false;
-            if (text_changed) {
-                text_changed = false;
-
-                try editor1.recalculateLines();
-                try editor1.recalculateBytes();
-                try editor1.highlightCode();
-
-                try editor2.recalculateLines();
-                try editor2.recalculateBytes();
-                try editor2.highlightCode();
+        if (g_buf.view_changed or g_buf.text_changed) {
+            g_buf.view_changed = false;
+            if (g_buf.text_changed) {
+                g_buf.text_changed = false;
+                // TODO: do it from cursor? - only applicable if the change was made by the cursor
+                try g_buf.recalculateLines();
+                try g_buf.recalculateBytes();
+                try g_buf.highlightCode();
             }
+            g_buf.updateCursorAndViewport();
 
             // Update uniform buffer
-            // NOTE: no need to update every frame right now, but we're still doing it
-            // because it'll be easier to add stuff here if we need to
-            uniform_buffer.data.screen_size = u.Vec2{
-                .x = @intToFloat(f32, screen.size.width),
-                .y = @intToFloat(f32, screen.size.height),
+            uniform_buffer.data.screen_size = Vec2{
+                .x = @intToFloat(f32, g_screen.size.width),
+                .y = @intToFloat(f32, g_screen.size.height),
             };
             try uniform_buffer.copyToGPU(&vc);
 
             // Draw UI
-            ui.startFrame(screen);
+            ui.startFrame();
+            // ui.drawSolidRect(100, 100, 300, 300, u.Color{ .r = 1, .g = 1, .b = 0, .a = 0.5 });
+            // ui.drawSolidRect(400, 100, 200, 500, u.Color{ .r = 0, .g = 1, .b = 1, .a = 1 });
+            // ui.drawLetter('a', g_screen.font, 600, 200, 1000, 600, u.Color{ .r = 1, .g = 1, .b = 0, .a = 1 });
 
-            // TODO: support no editor, 1 editor, 2 editors
-            ui.drawEditors(editor1, editor2);
+            // Draw text
+            {
+                // Get visible char range
+                var bottom_line = g_buf.viewport.top + g_screen.total_lines;
+                if (bottom_line > g_buf.lines.items.len - 1) {
+                    bottom_line = g_buf.lines.items.len - 1;
+                }
+                const start_char = g_buf.lines.items[g_buf.viewport.top];
+                const end_char = g_buf.lines.items[bottom_line];
 
-            try ui.endFrame(&vc, main_cmd_pool);
+                const chars = g_buf.chars.items[start_char..end_char];
+                const colors = g_buf.colors.items[start_char..end_char];
+                const col_min = g_buf.viewport.left;
+                const col_max = g_buf.viewport.left + g_screen.total_cols;
+                const top_left = Vec2{ .x = TEXT_MARGIN.left, .y = TEXT_MARGIN.top };
+
+                ui.drawText(chars, colors, g_screen.font, top_left, col_min, col_max);
+            }
+
+            // Draw cursor
+            {
+                const offset = Vec2{
+                    .x = @intToFloat(f32, g_buf.cursor.col),
+                    .y = @intToFloat(f32, g_buf.cursor.line - g_buf.viewport.top),
+                };
+                const size = Vec2{ .x = g_screen.font.xadvance, .y = g_screen.font.letter_height };
+                const advance = Vec2{ .x = g_screen.font.xadvance, .y = g_screen.font.line_height };
+                const padding = Vec2{ .x = 0, .y = 4.0 };
+
+                const x = @intToFloat(f32, TEXT_MARGIN.left) + offset.x * advance.x - padding.x;
+                const y = @intToFloat(f32, TEXT_MARGIN.top) + offset.y * advance.y - padding.y;
+                const w = size.x + 2.0 * padding.x;
+                const h = size.y + 2.0 * padding.y;
+
+                ui.drawSolidRect(x, y, w, h, u.Color{ .r = 1, .g = 1, .b = 0.2, .a = 0.8 });
+            }
+
+            try ui.end_frame(&vc, main_cmd_pool);
         }
 
         // Record the main command buffer
@@ -225,21 +281,31 @@ pub fn main() !void {
             const viewport = vk.Viewport{
                 .x = 0,
                 .y = 0,
-                .width = @intToFloat(f32, screen.size.width),
-                .height = @intToFloat(f32, screen.size.height),
+                .width = @intToFloat(f32, g_screen.size.width),
+                .height = @intToFloat(f32, g_screen.size.height),
                 .min_depth = 0,
                 .max_depth = 1,
             };
             vc.vkd.cmdSetViewport(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Viewport, &viewport));
 
+            // const scissor = vk.Rect2D{
+            //     .offset = .{
+            //         .x = TEXT_MARGIN.left,
+            //         .y = 5, // we don't want to cut the cursor off
+            //     },
+            //     .extent = .{
+            //         .width = g_screen.size.width -| (TEXT_MARGIN.left + TEXT_MARGIN.right),
+            //         .height = g_screen.size.height -| 10,
+            //     },
+            // };
             const scissor = vk.Rect2D{
                 .offset = .{
                     .x = 0,
                     .y = 0,
                 },
                 .extent = .{
-                    .width = screen.size.width,
-                    .height = screen.size.height,
+                    .width = g_screen.size.width,
+                    .height = g_screen.size.height,
                 },
             };
             vc.vkd.cmdSetScissor(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Rect2D, &scissor));
@@ -249,7 +315,7 @@ pub fn main() !void {
             };
             const render_area = vk.Rect2D{
                 .offset = .{ .x = 0, .y = 0 },
-                .extent = screen.size,
+                .extent = g_screen.size,
             };
             vc.vkd.cmdBeginRenderPass(main_cmd_buf, &.{
                 .render_pass = render_pass,
@@ -312,6 +378,26 @@ pub fn main() !void {
     // Wait for GPU to finish all work before cleaning up
     try vc.vkd.queueWaitIdle(vc.graphics_queue.handle);
 }
+
+const Margin = struct {
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+};
+
+const Screen = struct {
+    size: vk.Extent2D,
+    scale: f32,
+    font: Font,
+    total_lines: usize,
+    total_cols: usize,
+
+    pub fn scaleChanged(self: Screen, new_scale: glfw.Window.ContentScale) bool {
+        assert(new_scale.x_scale == new_scale.y_scale);
+        return self.scale != new_scale.x_scale;
+    }
+};
 
 const TextBuffer = struct {
     bytes: std.ArrayList(u8),
@@ -423,23 +509,200 @@ const TextBuffer = struct {
             std.mem.set(u.TextColor, colors[token.loc.start..token.loc.end], token_color);
         }
     }
+
+    /// Recalculates cursor line/column coordinates from buffer position
+    pub fn updateCursorAndViewport(self: *TextBuffer) void {
+        self.cursor.line = for (self.lines.items) |line_start, line| {
+            if (self.cursor.pos < line_start) {
+                break line - 1;
+            } else if (self.cursor.pos == line_start) {
+                break line; // for one-line files
+            }
+        } else self.lines.items.len;
+        self.cursor.col = self.cursor.pos - self.lines.items[self.cursor.line];
+
+        // TODO: make a viewport method
+
+        // Allowed cursor positions within viewport
+        const padding = 4;
+        const line_min = self.viewport.top + padding;
+        const line_max = self.viewport.top + g_screen.total_lines - padding - 1;
+        const col_min = self.viewport.left + padding;
+        const col_max = self.viewport.left + g_screen.total_cols - padding - 1;
+
+        // Detect if cursor is outside viewport
+        if (self.cursor.line < line_min) {
+            self.viewport.top = self.cursor.line -| padding;
+        } else if (self.cursor.line > line_max) {
+            self.viewport.top = self.cursor.line + padding + 1 - g_screen.total_lines;
+        }
+        if (self.cursor.col < col_min) {
+            self.viewport.left -|= (col_min - self.cursor.col);
+        } else if (self.cursor.col > col_max) {
+            self.viewport.left += (self.cursor.col - col_max);
+        }
+    }
+
+    pub fn getCurrentLineIndent(self: TextBuffer) usize {
+        var indent: usize = 0;
+        var cursor: usize = self.lines.items[self.cursor.line];
+        while (self.chars.items[cursor] == ' ') {
+            indent += 1;
+            cursor += 1;
+        }
+        return indent;
+    }
 };
+
+// Directly modifies globals (tmp)
+fn moveCursorToTargetLine(line: usize) void {
+    const target_line = if (line > g_buf.lines.items.len - 2)
+        g_buf.lines.items.len - 2
+    else
+        line;
+    const chars_on_target_line = g_buf.lines.items[target_line + 1] - g_buf.lines.items[target_line] -| 1;
+    const wanted_pos = if (g_buf.cursor.col_wanted) |wanted|
+        wanted
+    else
+        g_buf.cursor.col;
+    const new_line_pos = std.math.min(wanted_pos, chars_on_target_line);
+    g_buf.cursor.col_wanted = if (new_line_pos < wanted_pos) wanted_pos else null; // reset or remember wanted position
+    g_buf.cursor.pos = g_buf.lines.items[target_line] + new_line_pos;
+    g_buf.view_changed = true;
+}
 
 fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: glfw.Action, mods: glfw.Mods) void {
     _ = window;
     _ = scancode;
     _ = mods;
-    _ = key;
-    _ = action;
+
+    if (action == .press or action == .repeat) {
+        switch (key) {
+            .left => if (g_buf.cursor.pos > 0) {
+                g_buf.cursor.pos -= 1;
+                g_buf.cursor.col_wanted = null;
+                g_buf.view_changed = true;
+            },
+            .right => if (g_buf.cursor.pos < g_buf.chars.items.len - 1) {
+                g_buf.cursor.pos += 1;
+                g_buf.cursor.col_wanted = null;
+                g_buf.view_changed = true;
+            },
+            .up => {
+                const offset: usize = if (mods.control) 5 else 1;
+                moveCursorToTargetLine(g_buf.cursor.line -| offset);
+            },
+            .down => {
+                const offset: usize = if (mods.control) 5 else 1;
+                moveCursorToTargetLine(g_buf.cursor.line + offset);
+            },
+            .page_up => {
+                moveCursorToTargetLine(g_buf.cursor.line -| (g_screen.total_lines - 1));
+            },
+            .page_down => {
+                moveCursorToTargetLine(g_buf.cursor.line + (g_screen.total_lines - 1));
+            },
+            .home => {
+                g_buf.cursor.pos = g_buf.lines.items[g_buf.cursor.line];
+                g_buf.cursor.col_wanted = null;
+                g_buf.view_changed = true;
+            },
+            .end => {
+                g_buf.cursor.pos = g_buf.lines.items[g_buf.cursor.line + 1] - 1;
+                g_buf.cursor.col_wanted = std.math.maxInt(usize);
+                g_buf.view_changed = true;
+            },
+            .tab => {
+                const SPACES = [1]u.Codepoint{' '} ** TAB_SIZE;
+                const to_next_tabstop = TAB_SIZE - g_buf.cursor.col % TAB_SIZE;
+                g_buf.chars.insertSlice(g_buf.cursor.pos, SPACES[0..to_next_tabstop]) catch unreachable;
+                g_buf.cursor.pos += to_next_tabstop;
+                g_buf.cursor.col_wanted = null;
+                g_buf.text_changed = true;
+            },
+            .enter => {
+                var indent = g_buf.getCurrentLineIndent();
+                var buf: [1024]u.Codepoint = undefined;
+                if (mods.control and mods.shift) {
+                    // Insert line above
+                    std.mem.set(u.Codepoint, buf[0..indent], ' ');
+                    buf[indent] = '\n';
+                    g_buf.cursor.pos = g_buf.lines.items[g_buf.cursor.line];
+                    g_buf.chars.insertSlice(g_buf.cursor.pos, buf[0 .. indent + 1]) catch unreachable;
+                    g_buf.cursor.pos += indent;
+                } else if (mods.control) {
+                    // Insert line below
+                    std.mem.set(u.Codepoint, buf[0..indent], ' ');
+                    buf[indent] = '\n';
+                    g_buf.cursor.pos = g_buf.lines.items[g_buf.cursor.line + 1];
+                    g_buf.chars.insertSlice(g_buf.cursor.pos, buf[0 .. indent + 1]) catch unreachable;
+                    g_buf.cursor.pos += indent;
+                } else {
+                    // Break the line normally
+                    const prev_char = g_buf.chars.items[g_buf.cursor.pos -| 1];
+                    const next_char = g_buf.chars.items[g_buf.cursor.pos]; // TODO: fix when near the end
+                    if (prev_char == '{' and next_char == '\n') {
+                        indent += TAB_SIZE;
+                    }
+                    buf[0] = '\n';
+                    std.mem.set(u.Codepoint, buf[1 .. indent + 1], ' ');
+                    g_buf.chars.insertSlice(g_buf.cursor.pos, buf[0 .. indent + 1]) catch unreachable;
+                    g_buf.cursor.pos += 1 + indent;
+                    if (prev_char == '{' and next_char == '\n') {
+                        // Insert a closing brace
+                        indent -= TAB_SIZE;
+                        g_buf.chars.insertSlice(g_buf.cursor.pos, buf[0 .. indent + 1]) catch unreachable;
+                        g_buf.chars.insert(g_buf.cursor.pos + indent + 1, '}') catch unreachable;
+                    }
+                }
+                g_buf.cursor.col_wanted = null;
+                g_buf.text_changed = true;
+            },
+            .backspace => if (g_buf.cursor.pos > 0) {
+                const to_prev_tabstop = x: {
+                    var spaces = g_buf.cursor.col % TAB_SIZE;
+                    if (spaces == 0 and g_buf.cursor.col > 0) spaces = 4;
+                    break :x spaces;
+                };
+                // Check if we can delete spaces to the previous tabstop
+                var all_spaces: bool = false;
+                if (to_prev_tabstop > 0) {
+                    const pos = g_buf.cursor.pos;
+                    all_spaces = for (g_buf.chars.items[(pos - to_prev_tabstop)..pos]) |char| {
+                        if (char != ' ') break false;
+                    } else true;
+                    if (all_spaces) {
+                        // Delete all spaces
+                        g_buf.cursor.pos -= to_prev_tabstop;
+                        const EMPTY_ARRAY = [_]u.Codepoint{};
+                        g_buf.chars.replaceRange(g_buf.cursor.pos, to_prev_tabstop, EMPTY_ARRAY[0..]) catch unreachable;
+                    }
+                }
+                if (!all_spaces) {
+                    // Just delete 1 char
+                    g_buf.cursor.pos -= 1;
+                    _ = g_buf.chars.orderedRemove(g_buf.cursor.pos);
+                }
+                g_buf.cursor.col_wanted = null;
+                g_buf.text_changed = true;
+            },
+            .delete => if (g_buf.chars.items.len > 1 and g_buf.cursor.pos < g_buf.chars.items.len - 1) {
+                _ = g_buf.chars.orderedRemove(g_buf.cursor.pos);
+                g_buf.cursor.col_wanted = null;
+                g_buf.text_changed = true;
+            },
+            else => {},
+        }
+        g_buf.viewport.top = std.math.clamp(g_buf.viewport.top, 0, g_buf.lines.items.len -| 2);
+    }
 }
 
 fn processCharEvent(window: glfw.Window, codepoint: u.Codepoint) void {
     _ = window;
-    _ = codepoint;
-    // g_buf.chars.insert(g_buf.cursor.pos, codepoint) catch unreachable;
-    // g_buf.cursor.pos += 1;
-    // g_buf.cursor.col_wanted = null;
-    // g_buf.text_changed = true;
+    g_buf.chars.insert(g_buf.cursor.pos, codepoint) catch unreachable;
+    g_buf.cursor.pos += 1;
+    g_buf.cursor.col_wanted = null;
+    g_buf.text_changed = true;
 }
 
 fn processWindowSizeEvent(window: glfw.Window, width: i32, height: i32) void {

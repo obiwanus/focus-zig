@@ -6,6 +6,13 @@ pub const Vec2 = extern struct {
     y: f32 = 0,
 };
 
+pub const Rect = struct {
+    left: f32,
+    top: f32,
+    width: f32,
+    height: f32,
+};
+
 const TYPE_KEYWORDS = [_][]const u8{ "bool", "usize", "type" };
 const VALUE_KEYWORDS = [_][]const u8{ "true", "false", "undefined", "null" };
 
