@@ -154,16 +154,16 @@ pub const Ui = struct {
         const editor_height = @intToFloat(f32, self.screen.size.height) - 2 * margin_v;
 
         const rect1 = u.Rect{
-            .left = margin_h,
-            .top = margin_v,
-            .width = editor_width,
-            .height = editor_height,
+            .x = margin_h,
+            .y = margin_v,
+            .w = editor_width,
+            .h = editor_height,
         };
         const rect2 = u.Rect{
-            .left = margin_h + editor_width + margin_h,
-            .top = margin_v,
-            .width = editor_width,
-            .height = editor_height,
+            .x = margin_h + editor_width + margin_h,
+            .y = margin_v,
+            .w = editor_width,
+            .h = editor_height,
         };
 
         // Draw editors in the corresponding rects
@@ -175,8 +175,8 @@ pub const Ui = struct {
         const font = self.screen.font;
 
         // How many lines/cols fit inside the rect
-        const total_lines = @floatToInt(usize, rect.height / font.line_height);
-        const total_cols = @floatToInt(usize, rect.width / font.xadvance);
+        const total_lines = @floatToInt(usize, rect.h / font.line_height);
+        const total_cols = @floatToInt(usize, rect.w / font.xadvance);
 
         // First and last visible lines
         // TODO: check how it behaves when scale changes
@@ -193,25 +193,40 @@ pub const Ui = struct {
         const colors = editor.colors.items[start_char..end_char];
         const col_min = @floatToInt(usize, editor.offset.x / font.xadvance);
         const col_max = col_min + total_cols;
-        const top_left = u.Vec2{ .x = rect.left, .y = rect.top };
+        const top_left = u.Vec2{ .x = rect.x, .y = rect.y };
 
         self.drawText(chars, colors, top_left, col_min, col_max);
 
-        // TODO: draw cursor
+        // Draw cursor
+        // TODO: draw differently when inactive
+        const size = u.Vec2{ .x = font.xadvance, .y = font.letter_height };
+        const advance = u.Vec2{ .x = font.xadvance, .y = font.line_height };
+        const padding = u.Vec2{ .x = 0, .y = 4 };
+        const offset = u.Vec2{
+            .x = @intToFloat(f32, editor.cursor.col),
+            .y = @intToFloat(f32, editor.cursor.line - top_line),
+        };
+        const cursor_rect = u.Rect{
+            .x = rect.x + offset.x * advance.x - padding.x,
+            .y = rect.y + offset.y * advance.y - padding.y,
+            .w = size.x + 2 * padding.x,
+            .h = size.y + 2 * padding.y,
+        };
+        self.drawSolidRect(cursor_rect, u.Color{ .r = 1, .g = 1, .b = 0.2, .a = 0.8 });
     }
 
     // ----------------------------------------------------------------------------------------------------------------
 
-    pub fn drawSolidRect(self: *Ui, x: f32, y: f32, w: f32, h: f32, color: u.Color) void {
+    pub fn drawSolidRect(self: *Ui, r: u.Rect, color: u.Color) void {
         // Current vertex index
         const v = @intCast(u32, self.vertices.items.len);
 
         // Rect vertices in clockwise order, starting from top left
         const vertices = [_]Vertex{
-            Vertex{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = u.Vec2{ .x = x, .y = y } },
-            Vertex{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = u.Vec2{ .x = x + w, .y = y } },
-            Vertex{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = u.Vec2{ .x = x + w, .y = y + h } },
-            Vertex{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = u.Vec2{ .x = x, .y = y + h } },
+            .{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = .{ .x = r.x, .y = r.y } },
+            .{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = .{ .x = r.x + r.w, .y = r.y } },
+            .{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = .{ .x = r.x + r.w, .y = r.y + r.h } },
+            .{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = .{ .x = r.x, .y = r.y + r.h } },
         };
         self.vertices.appendSlice(&vertices) catch u.oom();
 
@@ -247,10 +262,10 @@ pub const Ui = struct {
 
                 // Quad vertices in clockwise order, starting from top left
                 const vertices = [_]Vertex{
-                    Vertex{ .color = color, .vertex_type = .textured, .texcoord = u.Vec2{ .x = q.s0, .y = q.t0 }, .pos = u.Vec2{ .x = q.x0, .y = q.y0 } },
-                    Vertex{ .color = color, .vertex_type = .textured, .texcoord = u.Vec2{ .x = q.s1, .y = q.t0 }, .pos = u.Vec2{ .x = q.x1, .y = q.y0 } },
-                    Vertex{ .color = color, .vertex_type = .textured, .texcoord = u.Vec2{ .x = q.s1, .y = q.t1 }, .pos = u.Vec2{ .x = q.x1, .y = q.y1 } },
-                    Vertex{ .color = color, .vertex_type = .textured, .texcoord = u.Vec2{ .x = q.s0, .y = q.t1 }, .pos = u.Vec2{ .x = q.x0, .y = q.y1 } },
+                    .{ .color = color, .vertex_type = .textured, .texcoord = .{ .x = q.s0, .y = q.t0 }, .pos = .{ .x = q.x0, .y = q.y0 } },
+                    .{ .color = color, .vertex_type = .textured, .texcoord = .{ .x = q.s1, .y = q.t0 }, .pos = .{ .x = q.x1, .y = q.y0 } },
+                    .{ .color = color, .vertex_type = .textured, .texcoord = .{ .x = q.s1, .y = q.t1 }, .pos = .{ .x = q.x1, .y = q.y1 } },
+                    .{ .color = color, .vertex_type = .textured, .texcoord = .{ .x = q.s0, .y = q.t1 }, .pos = .{ .x = q.x0, .y = q.y1 } },
                 };
                 self.vertices.appendSlice(&vertices) catch u.oom();
 
