@@ -1,5 +1,4 @@
 # TODO
-- Switch editors by ctrl+alt+arrow
 - Make viewport follow cursor with a smooth scrolling
 - Make an open file dialog like in VSCode
 - Fix editing near the end of the buffer (can't get cursor close enough)
@@ -9,7 +8,6 @@
     - Implement a few languages, not just Zig
     - Measure how expensive it is to rehighlight everything
 - [bug] Colors are off when non-ascii bytes are present (tokenizer doesn't support utf-8)
-- [on-hold]Only process events we care about
 
 # WHAT NEEDS TO WORK BEFORE I CAN START USING IT
 - Open files
@@ -21,6 +19,8 @@
 - Search within buffer
 
 # DONE
++ Switch editors by ctrl+alt+arrow
++ Only process events we care about
 + Add cursors to editors and implement editing
     + Add an event system
 + Position two editors side by side with some margins

@@ -146,7 +146,7 @@ pub const Ui = struct {
         return @intCast(u32, self.indices.items.len);
     }
 
-    pub fn drawEditors(self: *Ui, editor1: Editor, editor2: Editor) void {
+    pub fn drawEditors(self: *Ui, editor1: Editor, editor2: Editor, active_editor: *const Editor) void {
         // Figure out where to draw editors
         const margin_h = MARGIN_HORIZONTAL * self.screen.scale;
         const margin_v = MARGIN_VERTICAL * self.screen.scale;
@@ -167,11 +167,11 @@ pub const Ui = struct {
         };
 
         // Draw editors in the corresponding rects
-        self.drawEditor(editor1, rect1);
-        self.drawEditor(editor2, rect2);
+        self.drawEditor(editor1, rect1, active_editor == &editor1);
+        self.drawEditor(editor2, rect2, active_editor == &editor2);
     }
 
-    pub fn drawEditor(self: *Ui, editor: Editor, rect: u.Rect) void {
+    pub fn drawEditor(self: *Ui, editor: Editor, rect: u.Rect, is_active: bool) void {
         const font = self.screen.font;
 
         // How many lines/cols fit inside the rect
@@ -198,7 +198,6 @@ pub const Ui = struct {
         self.drawText(chars, colors, top_left, col_min, col_max);
 
         // Draw cursor
-        // TODO: draw differently when inactive
         const size = u.Vec2{ .x = font.xadvance, .y = font.letter_height };
         const advance = u.Vec2{ .x = font.xadvance, .y = font.line_height };
         const padding = u.Vec2{ .x = 0, .y = 4 };
@@ -212,7 +211,11 @@ pub const Ui = struct {
             .w = size.x + 2 * padding.x,
             .h = size.y + 2 * padding.y,
         };
-        self.drawSolidRect(cursor_rect, u.Color{ .r = 1, .g = 1, .b = 0.2, .a = 0.8 });
+        const color = if (is_active)
+            u.Color{ .r = 1, .g = 1, .b = 0.2, .a = 0.8 }
+        else
+            u.Color{ .r = 0.2, .g = 0.8, .b = 0.8, .a = 0.4 };
+        self.drawSolidRect(cursor_rect, color);
     }
 
     // ----------------------------------------------------------------------------------------------------------------

@@ -187,7 +187,14 @@ pub fn main() !void {
                         text_changed = true;
                     },
                     .key_pressed => |kp| {
-                        active_editor.keyPress(kp.key, kp.mods);
+                        const editor_event = active_editor.keyPress(kp.key, kp.mods);
+                        if (editor_event) |e| {
+                            switch (e) {
+                                .switch_to_left => active_editor = &editor1,
+                                .switch_to_right => active_editor = &editor2,
+                                else => {},
+                            }
+                        }
                         text_changed = true;
                     },
                     .window_resized, .redraw_requested => {
@@ -222,7 +229,7 @@ pub fn main() !void {
             ui.startFrame(screen);
 
             // TODO: support no editor, 1 editor, 2 editors
-            ui.drawEditors(editor1, editor2);
+            ui.drawEditors(editor1, editor2, active_editor);
 
             try ui.endFrame(&vc, main_cmd_pool);
         }
