@@ -25,7 +25,8 @@ var GPA = std.heap.GeneralPurposeAllocator(.{ .never_unmap = false }){};
 const APP_NAME = "Focus";
 const FONT_NAME = "fonts/FiraCode-Retina.ttf";
 const FONT_SIZE = 18; // for scale = 1.0
-const TAB_SIZE = 4;
+
+var g_events: std.ArrayList(Event) = undefined;
 
 pub fn main() !void {
     // Static arena lives until the end of the program
@@ -133,15 +134,17 @@ pub fn main() !void {
     };
     defer vc.vkd.freeCommandBuffers(vc.dev, main_cmd_pool, 1, @ptrCast([*]const vk.CommandBuffer, &main_cmd_buf));
 
-    window.setKeyCallback(processKeyEvent);
-    window.setCharCallback(processCharEvent);
-    window.setSizeCallback(processWindowSizeEvent);
+    g_events = std.ArrayList(Event).init(gpa);
+    window.setKeyCallback(newKeyEvent);
+    window.setCharCallback(newCharEvent);
+    window.setSizeCallback(newWindowSizeEvent);
 
     var ui = try Ui.init(gpa, &vc);
     defer ui.deinit(&vc);
 
     var text_changed = true;
     var view_changed = false;
+    var active_editor: *Editor = &editor1;
 
     while (!window.shouldClose()) {
         // Ask the swapchain for the next image
@@ -173,24 +176,38 @@ pub fn main() !void {
             view_changed = true;
         }
 
-        // Wait for input
-        // TODO: do not redraw on events we don't care about (e.g. mousemove)
-        try glfw.waitEvents();
+        // Process events
+        while (!view_changed and !text_changed and !window.shouldClose()) {
+            try glfw.waitEvents();
+
+            for (g_events.items) |event| {
+                switch (event) {
+                    .char_entered => |char| {
+                        active_editor.typeChar(char);
+                        text_changed = true;
+                    },
+                    .key_pressed => |kp| {
+                        active_editor.keyPress(kp.key, kp.mods);
+                        text_changed = true;
+                    },
+                    .window_resized, .redraw_requested => {
+                        view_changed = true;
+                    },
+                }
+            }
+
+            g_events.shrinkRetainingCapacity(0);
+        }
 
         // Update view or text
         if (view_changed or text_changed) {
             view_changed = false;
             if (text_changed) {
+                if (editor1.dirty) editor1.syncInternalData();
+                if (editor2.dirty) editor2.syncInternalData();
                 text_changed = false;
-
-                try editor1.recalculateLines();
-                try editor1.recalculateBytes();
-                try editor1.highlightCode();
-
-                try editor2.recalculateLines();
-                try editor2.recalculateBytes();
-                try editor2.highlightCode();
             }
+            active_editor.updateCursor();
 
             // Update uniform buffer
             // NOTE: no need to update every frame right now, but we're still doing it
@@ -313,139 +330,38 @@ pub fn main() !void {
     try vc.vkd.queueWaitIdle(vc.graphics_queue.handle);
 }
 
-const TextBuffer = struct {
-    bytes: std.ArrayList(u8),
-    chars: std.ArrayList(u.Codepoint), // unicode codepoints
-    colors: std.ArrayList(u.TextColor), // color for every char
-    lines: std.ArrayList(usize),
-    cursor: Cursor,
-    viewport: Viewport,
+pub const Event = union(enum) {
+    key_pressed: KeyPress,
+    char_entered: u.Codepoint,
+    window_resized: WindowResize,
+    redraw_requested: void,
 
-    text_changed: bool = false,
-    view_changed: bool = false,
-
-    const Cursor = struct {
-        pos: usize = 0,
-        line: usize = 0, // from the beginning of buffer
-        col: usize = 0, // actual column
-        col_wanted: ?usize = null, // where the cursor wants to be
+    pub const WindowResize = struct {
+        width: i32,
+        height: i32,
     };
-
-    const Viewport = struct {
-        top: usize = 0, // in lines
-        left: usize = 0, // in colums
+    pub const KeyPress = struct {
+        key: glfw.Key,
+        mods: glfw.Mods,
     };
-
-    pub fn init(allocator: Allocator, comptime file_name: []const u8) !TextBuffer {
-        const initial = @embedFile(file_name);
-        var bytes = std.ArrayList(u8).init(allocator);
-        try bytes.appendSlice(initial);
-
-        // For simplicity we assume that a codepoint equals a character (though it's not true).
-        // If we ever encounter multi-codepoint characters, we can revisit this
-        var chars = std.ArrayList(u.Codepoint).init(allocator);
-        try chars.ensureTotalCapacity(bytes.items.len);
-        const utf8_view = try std.unicode.Utf8View.init(bytes.items);
-        var codepoints = utf8_view.iterator();
-        while (codepoints.nextCodepoint()) |codepoint| {
-            try chars.append(codepoint);
-        }
-
-        var colors = std.ArrayList(u.TextColor).init(allocator);
-        try colors.ensureTotalCapacity(chars.items.len);
-
-        var lines = std.ArrayList(usize).init(allocator);
-        try lines.append(0); // first line is always at the buffer start
-
-        return TextBuffer{
-            .bytes = bytes,
-            .chars = chars,
-            .colors = colors,
-            .lines = lines,
-            .cursor = Cursor{},
-            .viewport = Viewport{},
-        };
-    }
-
-    pub fn deinit(self: TextBuffer) void {
-        self.lines.deinit();
-        self.bytes.deinit();
-        self.chars.deinit();
-    }
-
-    pub fn recalculateLines(self: *TextBuffer) !void {
-        self.lines.shrinkRetainingCapacity(1);
-        for (self.chars.items) |char, i| {
-            if (char == '\n') {
-                try self.lines.append(i + 1);
-            }
-        }
-        try self.lines.append(self.chars.items.len);
-    }
-
-    pub fn recalculateBytes(self: *TextBuffer) !void {
-        try self.bytes.ensureTotalCapacity(self.chars.items.len * 4); // enough to store 4-byte chars
-        self.bytes.expandToCapacity();
-        var cursor: usize = 0;
-        for (self.chars.items) |char| {
-            const num_bytes = try std.unicode.utf8Encode(char, self.bytes.items[cursor..]);
-            cursor += @intCast(usize, num_bytes);
-        }
-        self.bytes.shrinkRetainingCapacity(cursor);
-        try self.bytes.append(0); // so we can pass it to tokenizer
-    }
-
-    pub fn highlightCode(self: *TextBuffer) !void {
-        // Have the color array ready
-        try self.colors.ensureTotalCapacity(self.chars.items.len);
-        self.colors.expandToCapacity();
-        var colors = self.colors.items;
-        std.mem.set(u.TextColor, colors, .comment);
-
-        // NOTE: we're tokenizing the whole source file. At least for zig this can be optimised,
-        // but we're not doing it just yet
-        const source_bytes = self.bytes.items[0 .. self.bytes.items.len - 1 :0]; // has to be null-terminated
-        var tokenizer = std.zig.Tokenizer.init(source_bytes);
-        while (true) {
-            var token = tokenizer.next();
-            const token_color: u.TextColor = switch (token.tag) {
-                .eof => break,
-                .invalid => .@"error",
-                .string_literal, .multiline_string_literal_line, .char_literal => .string,
-                .builtin => .function,
-                .identifier => u.TextColor.getForIdentifier(self.chars.items[token.loc.start..token.loc.end], self.chars.items[token.loc.end]),
-                .integer_literal, .float_literal => .value,
-                .doc_comment, .container_doc_comment => .comment,
-                .keyword_addrspace, .keyword_align, .keyword_allowzero, .keyword_and, .keyword_anyframe, .keyword_anytype, .keyword_asm, .keyword_async, .keyword_await, .keyword_break, .keyword_callconv, .keyword_catch, .keyword_comptime, .keyword_const, .keyword_continue, .keyword_defer, .keyword_else, .keyword_enum, .keyword_errdefer, .keyword_error, .keyword_export, .keyword_extern, .keyword_fn, .keyword_for, .keyword_if, .keyword_inline, .keyword_noalias, .keyword_noinline, .keyword_nosuspend, .keyword_opaque, .keyword_or, .keyword_orelse, .keyword_packed, .keyword_pub, .keyword_resume, .keyword_return, .keyword_linksection, .keyword_struct, .keyword_suspend, .keyword_switch, .keyword_test, .keyword_threadlocal, .keyword_try, .keyword_union, .keyword_unreachable, .keyword_usingnamespace, .keyword_var, .keyword_volatile, .keyword_while => .keyword,
-                .bang, .pipe, .pipe_pipe, .pipe_equal, .equal, .equal_equal, .equal_angle_bracket_right, .bang_equal, .l_paren, .r_paren, .semicolon, .percent, .percent_equal, .l_brace, .r_brace, .l_bracket, .r_bracket, .period, .period_asterisk, .ellipsis2, .ellipsis3, .caret, .caret_equal, .plus, .plus_plus, .plus_equal, .plus_percent, .plus_percent_equal, .plus_pipe, .plus_pipe_equal, .minus, .minus_equal, .minus_percent, .minus_percent_equal, .minus_pipe, .minus_pipe_equal, .asterisk, .asterisk_equal, .asterisk_asterisk, .asterisk_percent, .asterisk_percent_equal, .asterisk_pipe, .asterisk_pipe_equal, .arrow, .colon, .slash, .slash_equal, .comma, .ampersand, .ampersand_equal, .question_mark, .angle_bracket_left, .angle_bracket_left_equal, .angle_bracket_angle_bracket_left, .angle_bracket_angle_bracket_left_equal, .angle_bracket_angle_bracket_left_pipe, .angle_bracket_angle_bracket_left_pipe_equal, .angle_bracket_right, .angle_bracket_right_equal, .angle_bracket_angle_bracket_right, .angle_bracket_angle_bracket_right_equal, .tilde => .punctuation,
-                else => .default,
-            };
-            std.mem.set(u.TextColor, colors[token.loc.start..token.loc.end], token_color);
-        }
-    }
 };
 
-fn processKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: glfw.Action, mods: glfw.Mods) void {
+fn newKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: glfw.Action, mods: glfw.Mods) void {
     _ = window;
     _ = scancode;
-    _ = mods;
-    _ = key;
-    _ = action;
+    if (action == .press or action == .repeat) {
+        g_events.append(Event{ .key_pressed = .{ .key = key, .mods = mods } }) catch u.oom();
+    }
 }
 
-fn processCharEvent(window: glfw.Window, codepoint: u.Codepoint) void {
+fn newCharEvent(window: glfw.Window, codepoint: u.Codepoint) void {
     _ = window;
-    _ = codepoint;
-    // g_buf.chars.insert(g_buf.cursor.pos, codepoint) catch unreachable;
-    // g_buf.cursor.pos += 1;
-    // g_buf.cursor.col_wanted = null;
-    // g_buf.text_changed = true;
+    g_events.append(Event{ .char_entered = codepoint }) catch u.oom();
 }
 
-fn processWindowSizeEvent(window: glfw.Window, width: i32, height: i32) void {
+fn newWindowSizeEvent(window: glfw.Window, width: i32, height: i32) void {
     _ = window;
-    _ = width;
-    _ = height;
+    g_events.append(Event{ .window_resized = .{ .width = width, .height = height } }) catch u.oom();
 }
 
 fn createRenderPass(vc: *const VulkanContext, attachment_format: vk.Format) !vk.RenderPass {

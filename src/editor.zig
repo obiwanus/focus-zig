@@ -1,8 +1,11 @@
 const std = @import("std");
+const glfw = @import("glfw");
 const u = @import("utils.zig");
 
 const Allocator = std.mem.Allocator;
 const Vec2 = u.Vec2;
+
+const TAB_SIZE = 4;
 
 const Cursor = struct {
     pos: usize = 0,
@@ -19,6 +22,8 @@ pub const Editor = struct {
     chars: std.ArrayList(u.Codepoint),
     colors: std.ArrayList(u.TextColor),
     lines: std.ArrayList(usize),
+    dirty: bool = true, // needs syncing internal structures
+    lines_per_screen: usize = 60, // ideally we'd want to get this number from the ui system somehow
 
     // editor
     cursor: Cursor,
@@ -68,31 +73,218 @@ pub const Editor = struct {
         self.lines.deinit();
     }
 
-    pub fn recalculateLines(self: *Editor) !void {
+    /// Inserts a char at the cursor
+    pub fn typeChar(self: *Editor, char: u.Codepoint) void {
+        self.chars.insert(self.cursor.pos, char) catch u.oom();
+        self.cursor.pos += 1;
+        self.cursor.col_wanted = null;
+        self.dirty = true;
+    }
+
+    /// Processes a key press event
+    // TODO: process feedback events such as toggle editor, open/close editor etc
+    pub fn keyPress(self: *Editor, key: glfw.Key, mods: glfw.Mods) void {
+        self.dirty = true;
+
+        switch (key) {
+            .left => {
+                self.cursor.pos -|= 1;
+                self.cursor.col_wanted = null;
+            },
+            .right => if (self.cursor.pos < self.chars.items.len - 1) {
+                self.cursor.pos += 1;
+                self.cursor.col_wanted = null;
+            },
+            .up => {
+                const offset: usize = if (mods.control) 5 else 1;
+                self.moveCursorToLine(self.cursor.line -| offset);
+            },
+            .down => {
+                const offset: usize = if (mods.control) 5 else 1;
+                self.moveCursorToLine(self.cursor.line + offset);
+            },
+            .page_up => {
+                self.moveCursorToLine(self.cursor.line -| self.lines_per_screen);
+            },
+            .page_down => {
+                self.moveCursorToLine(self.cursor.line + self.lines_per_screen);
+            },
+            .home => {
+                self.cursor.pos = self.lines.items[self.cursor.line];
+                self.cursor.col_wanted = null;
+            },
+            .end => {
+                self.cursor.pos = self.lines.items[self.cursor.line + 1] - 1;
+                self.cursor.col_wanted = std.math.maxInt(usize);
+            },
+            .tab => {
+                const SPACES = [1]u.Codepoint{' '} ** TAB_SIZE;
+                const to_next_tabstop = TAB_SIZE - self.cursor.col % TAB_SIZE;
+                self.chars.insertSlice(self.cursor.pos, SPACES[0..to_next_tabstop]) catch u.oom();
+                self.cursor.pos += to_next_tabstop;
+                self.cursor.col_wanted = null;
+            },
+            .enter => {
+                var indent = self.getCurrentLineIndent();
+                var buf: [1024]u.Codepoint = undefined;
+                if (mods.control and mods.shift) {
+                    // Insert line above
+                    std.mem.set(u.Codepoint, buf[0..indent], ' ');
+                    buf[indent] = '\n';
+                    self.cursor.pos = self.lines.items[self.cursor.line];
+                    self.chars.insertSlice(self.cursor.pos, buf[0 .. indent + 1]) catch u.oom();
+                    self.cursor.pos += indent;
+                } else if (mods.control) {
+                    // Insert line below
+                    std.mem.set(u.Codepoint, buf[0..indent], ' ');
+                    buf[indent] = '\n';
+                    self.cursor.pos = self.lines.items[self.cursor.line + 1];
+                    self.chars.insertSlice(self.cursor.pos, buf[0 .. indent + 1]) catch u.oom();
+                    self.cursor.pos += indent;
+                } else {
+                    // Break the line normally
+                    const prev_char = self.chars.items[self.cursor.pos -| 1];
+                    const next_char = self.chars.items[self.cursor.pos]; // TODO: fix when near the end
+                    if (prev_char == '{' and next_char == '\n') {
+                        indent += TAB_SIZE;
+                    }
+                    buf[0] = '\n';
+                    std.mem.set(u.Codepoint, buf[1 .. indent + 1], ' ');
+                    self.chars.insertSlice(self.cursor.pos, buf[0 .. indent + 1]) catch u.oom();
+                    self.cursor.pos += 1 + indent;
+                    if (prev_char == '{' and next_char == '\n') {
+                        // Insert a closing brace
+                        indent -= TAB_SIZE;
+                        self.chars.insertSlice(self.cursor.pos, buf[0 .. indent + 1]) catch u.oom();
+                        self.chars.insert(self.cursor.pos + indent + 1, '}') catch u.oom();
+                    }
+                }
+                self.cursor.col_wanted = null;
+            },
+            .backspace => if (self.cursor.pos > 0) {
+                const to_prev_tabstop = x: {
+                    var spaces = self.cursor.col % TAB_SIZE;
+                    if (spaces == 0 and self.cursor.col > 0) spaces = 4;
+                    break :x spaces;
+                };
+                // Check if we can delete spaces to the previous tabstop
+                var all_spaces: bool = false;
+                if (to_prev_tabstop > 0) {
+                    const pos = self.cursor.pos;
+                    all_spaces = for (self.chars.items[(pos - to_prev_tabstop)..pos]) |char| {
+                        if (char != ' ') break false;
+                    } else true;
+                    if (all_spaces) {
+                        // Delete all spaces
+                        self.cursor.pos -= to_prev_tabstop;
+                        const EMPTY_ARRAY = [_]u.Codepoint{};
+                        self.chars.replaceRange(self.cursor.pos, to_prev_tabstop, EMPTY_ARRAY[0..]) catch unreachable;
+                    }
+                }
+                if (!all_spaces) {
+                    // Just delete 1 char
+                    self.cursor.pos -= 1;
+                    _ = self.chars.orderedRemove(self.cursor.pos);
+                }
+                self.cursor.col_wanted = null;
+            },
+            .delete => if (self.chars.items.len > 1 and self.cursor.pos < self.chars.items.len - 1) {
+                _ = self.chars.orderedRemove(self.cursor.pos);
+                self.cursor.col_wanted = null;
+            },
+            else => {
+                self.dirty = false; // nothing needs to be done
+            },
+        }
+    }
+
+    fn moveCursorToLine(self: *Editor, line: usize) void {
+        const target_line = if (line > self.lines.items.len - 2)
+            self.lines.items.len - 2
+        else
+            line;
+        const chars_on_target_line = self.lines.items[target_line + 1] - self.lines.items[target_line] -| 1;
+        const wanted_pos = if (self.cursor.col_wanted) |wanted|
+            wanted
+        else
+            self.cursor.col;
+        const new_line_pos = std.math.min(wanted_pos, chars_on_target_line);
+        self.cursor.col_wanted = if (new_line_pos < wanted_pos) wanted_pos else null; // reset or remember wanted position
+        self.cursor.pos = self.lines.items[target_line] + new_line_pos;
+    }
+
+    fn getCurrentLineIndent(self: Editor) usize {
+        var indent: usize = 0;
+        var cursor: usize = self.lines.items[self.cursor.line];
+        while (self.chars.items[cursor] == ' ') {
+            indent += 1;
+            cursor += 1;
+        }
+        return indent;
+    }
+
+    pub fn updateCursor(self: *Editor) void {
+        self.cursor.line = for (self.lines.items) |line_start, line| {
+            if (self.cursor.pos < line_start) {
+                break line - 1;
+            } else if (self.cursor.pos == line_start) {
+                break line; // for one-line files
+            }
+        } else self.lines.items.len;
+        self.cursor.col = self.cursor.pos - self.lines.items[self.cursor.line];
+
+        // // Allowed cursor positions within viewport
+        // const padding = 4;
+        // const line_min = self.viewport.top + padding;
+        // const line_max = self.viewport.top + g_screen.total_lines - padding - 1;
+        // const col_min = self.viewport.left + padding;
+        // const col_max = self.viewport.left + g_screen.total_cols - padding - 1;
+
+        // // Detect if cursor is outside viewport
+        // if (self.cursor.line < line_min) {
+        //     self.viewport.top = self.cursor.line -| padding;
+        // } else if (self.cursor.line > line_max) {
+        //     self.viewport.top = self.cursor.line + padding + 1 - g_screen.total_lines;
+        // }
+        // if (self.cursor.col < col_min) {
+        //     self.viewport.left -|= (col_min - self.cursor.col);
+        // } else if (self.cursor.col > col_max) {
+        //     self.viewport.left += (self.cursor.col - col_max);
+        // }
+    }
+
+    pub fn syncInternalData(self: *Editor) void {
+        self.recalculateLines();
+        self.recalculateBytes();
+        self.highlightCode();
+        self.dirty = false;
+    }
+
+    fn recalculateLines(self: *Editor) void {
         self.lines.shrinkRetainingCapacity(1);
         for (self.chars.items) |char, i| {
             if (char == '\n') {
-                try self.lines.append(i + 1);
+                self.lines.append(i + 1) catch u.oom();
             }
         }
-        try self.lines.append(self.chars.items.len);
+        self.lines.append(self.chars.items.len) catch u.oom();
     }
 
-    pub fn recalculateBytes(self: *Editor) !void {
-        try self.bytes.ensureTotalCapacity(self.chars.items.len * 4); // enough to store 4-byte chars
+    fn recalculateBytes(self: *Editor) void {
+        self.bytes.ensureTotalCapacity(self.chars.items.len * 4) catch u.oom(); // enough to store 4-byte chars
         self.bytes.expandToCapacity();
         var cursor: usize = 0;
         for (self.chars.items) |char| {
-            const num_bytes = try std.unicode.utf8Encode(char, self.bytes.items[cursor..]);
+            const num_bytes = std.unicode.utf8Encode(char, self.bytes.items[cursor..]) catch unreachable;
             cursor += @intCast(usize, num_bytes);
         }
         self.bytes.shrinkRetainingCapacity(cursor);
-        try self.bytes.append(0); // so we can pass it to tokenizer
+        self.bytes.append(0) catch u.oom(); // so we can pass it to tokenizer
     }
 
-    pub fn highlightCode(self: *Editor) !void {
+    fn highlightCode(self: *Editor) void {
         // Have the color array ready
-        try self.colors.ensureTotalCapacity(self.chars.items.len);
+        self.colors.ensureTotalCapacity(self.chars.items.len) catch u.oom();
         self.colors.expandToCapacity();
         var colors = self.colors.items;
         std.mem.set(u.TextColor, colors, .comment);

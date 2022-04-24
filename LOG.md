@@ -1,5 +1,6 @@
 # TODO
-- Add cursors to editors and implement editing
+- Switch editors by ctrl+alt+arrow
+- Make viewport follow cursor with a smooth scrolling
 - Make an open file dialog like in VSCode
 - Fix editing near the end of the buffer (can't get cursor close enough)
 - Multiple cursors
@@ -20,6 +21,8 @@
 - Search within buffer
 
 # DONE
++ Add cursors to editors and implement editing
+    + Add an event system
 + Position two editors side by side with some margins
 + Have an editor struct, which will have all the associated data:
     + text buffer
