@@ -20,6 +20,34 @@ const EditorEvent = enum {
     close_current,
 };
 
+const ScrollAnimation = struct {
+    start_ms: f64,
+    target_ms: f64,
+    value1: Vec2,
+    value2: Vec2,
+
+    const DURATION_MS: f64 = 500;
+
+    fn getValue(self: ScrollAnimation, clock_ms: f64) Vec2 {
+        const total = self.target_ms - self.start_ms;
+        const delta = if (clock_ms <= self.target_ms)
+            clock_ms - self.start_ms
+        else
+            total;
+        const t = @floatCast(f32, delta / total);
+        const result = Vec2{
+            .x = self.value1.x * (1 - t) + self.value2.x * t,
+            .y = self.value1.y * (1 - t) + self.value2.y * t,
+        };
+        // print("animation: t = {d:.3}, value = {d:.3}", .{result.y});
+        return result;
+    }
+
+    fn isFinished(self: ScrollAnimation, clock_ms: f64) bool {
+        return self.target_ms <= clock_ms;
+    }
+};
+
 pub const Editor = struct {
     // TODO: implement 2 editors using the same buffer
 
@@ -29,12 +57,15 @@ pub const Editor = struct {
     colors: std.ArrayList(u.TextColor),
     lines: std.ArrayList(usize),
     dirty: bool = true, // needs syncing internal structures
-    lines_per_screen: usize = 60, // ideally we'd want to get this number from the ui system somehow
+
+    // Updated every time we draw UI (because that's when we know the layout and therefore size)
+    lines_per_screen: usize = 60,
+    cols_per_screen: usize = 120,
 
     // editor
     cursor: Cursor,
-    offset: Vec2, // how many px we have scrolled to the left and to the top
-    offset_wanted: Vec2, // where we want to scroll
+    scroll: Vec2, // how many px we have scrolled to the left and to the top
+    scroll_animation: ?ScrollAnimation = null,
 
     // TODO:
     // text_changed: bool = false,
@@ -67,8 +98,7 @@ pub const Editor = struct {
             .colors = colors,
             .lines = lines,
             .cursor = Cursor{},
-            .offset = Vec2{},
-            .offset_wanted = Vec2{},
+            .scroll = Vec2{},
         };
     }
 
@@ -211,6 +241,27 @@ pub const Editor = struct {
             },
         }
         return null;
+    }
+
+    pub fn setNewScrollTarget(self: *Editor, target: f32, clock_ms: f64) void {
+        self.scroll_animation = ScrollAnimation{
+            .start_ms = clock_ms,
+            .target_ms = clock_ms + ScrollAnimation.DURATION_MS,
+            .value1 = self.scroll,
+            .value2 = Vec2{ .x = self.scroll.x, .y = target }, // TODO: support x
+        };
+    }
+
+    pub fn animateScrolling(self: *Editor, clock_ms: f64) bool {
+        if (self.scroll_animation) |animation| {
+            self.scroll = animation.getValue(clock_ms);
+            if (animation.isFinished(clock_ms)) {
+                self.scroll_animation = null;
+            }
+            return true;
+        } else {
+            return false;
+        }
     }
 
     fn moveCursorToLine(self: *Editor, line: usize) void {

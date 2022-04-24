@@ -1,9 +1,15 @@
 # TODO
 - Make viewport follow cursor with a smooth scrolling
+    + Draw text at non-sticky offsets
+    - Make viewport scroll to scroll_wanted over time
+        + Don't wait for events when there's animation to do
+        + Implement a debug panel and display frame number there
+    - Update scroll_wanted when cursor is outside the viewport
 - Make an open file dialog like in VSCode
 - Fix editing near the end of the buffer (can't get cursor close enough)
 - Multiple cursors
-
+- [code] Use rect.shrink and rect.split to position rects
+- [code] Use a frame allocator for events
 - [optimisation] Highlighting syntax:
     - Implement a few languages, not just Zig
     - Measure how expensive it is to rehighlight everything

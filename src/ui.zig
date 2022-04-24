@@ -146,7 +146,7 @@ pub const Ui = struct {
         return @intCast(u32, self.indices.items.len);
     }
 
-    pub fn drawEditors(self: *Ui, editor1: Editor, editor2: Editor, active_editor: *const Editor) void {
+    pub fn drawEditors(self: *Ui, editor1: Editor, editor2: Editor, active_editor: *const Editor) u.Rect {
         // Figure out where to draw editors
         const margin_h = MARGIN_HORIZONTAL * self.screen.scale;
         const margin_v = MARGIN_VERTICAL * self.screen.scale;
@@ -169,6 +169,10 @@ pub const Ui = struct {
         // Draw editors in the corresponding rects
         self.drawEditor(editor1, rect1, active_editor == &editor1);
         self.drawEditor(editor2, rect2, active_editor == &editor2);
+
+        // Return editor dimensions so we can adjust their internal data
+        // (assuming the two rects have the same dimensions)
+        return rect1;
     }
 
     pub fn drawEditor(self: *Ui, editor: Editor, rect: u.Rect, is_active: bool) void {
@@ -180,20 +184,26 @@ pub const Ui = struct {
 
         // First and last visible lines
         // TODO: check how it behaves when scale changes
-        const top_line = @floatToInt(usize, editor.offset.y / font.line_height);
-        var bottom_line = top_line + total_lines + 1;
-        if (bottom_line >= editor.lines.items.len) {
-            bottom_line = editor.lines.items.len - 1;
+        const line_min = @floatToInt(usize, editor.scroll.y / font.line_height) -| 1;
+        var line_max = line_min + total_lines + 3;
+        if (line_max >= editor.lines.items.len) {
+            line_max = editor.lines.items.len - 1;
         }
+        const col_min = @floatToInt(usize, editor.scroll.x / font.xadvance);
+        const col_max = col_min + total_cols;
 
-        const start_char = editor.lines.items[top_line];
-        const end_char = editor.lines.items[bottom_line];
+        // Offset from canonical position (for smooth scrolling)
+        const offset = u.Vec2{
+            .x = editor.scroll.x - @intToFloat(f32, col_min) * font.xadvance,
+            .y = editor.scroll.y - @intToFloat(f32, line_min) * font.line_height,
+        };
+
+        const start_char = editor.lines.items[line_min];
+        const end_char = editor.lines.items[line_max];
 
         const chars = editor.chars.items[start_char..end_char];
         const colors = editor.colors.items[start_char..end_char];
-        const col_min = @floatToInt(usize, editor.offset.x / font.xadvance);
-        const col_max = col_min + total_cols;
-        const top_left = u.Vec2{ .x = rect.x, .y = rect.y };
+        const top_left = u.Vec2{ .x = rect.x - offset.x, .y = rect.y - offset.y };
 
         self.drawText(chars, colors, top_left, col_min, col_max);
 
@@ -201,13 +211,13 @@ pub const Ui = struct {
         const size = u.Vec2{ .x = font.xadvance, .y = font.letter_height };
         const advance = u.Vec2{ .x = font.xadvance, .y = font.line_height };
         const padding = u.Vec2{ .x = 0, .y = 4 };
-        const offset = u.Vec2{
+        const cursor_offset = u.Vec2{
             .x = @intToFloat(f32, editor.cursor.col),
-            .y = @intToFloat(f32, editor.cursor.line - top_line),
+            .y = @intToFloat(f32, editor.cursor.line -| line_min),
         };
         const cursor_rect = u.Rect{
-            .x = rect.x + offset.x * advance.x - padding.x,
-            .y = rect.y + offset.y * advance.y - padding.y,
+            .x = rect.x - offset.x + cursor_offset.x * advance.x - padding.x,
+            .y = rect.y - offset.y + cursor_offset.y * advance.y - padding.y,
             .w = size.x + 2 * padding.x,
             .h = size.y + 2 * padding.y,
         };
@@ -218,9 +228,36 @@ pub const Ui = struct {
         self.drawSolidRect(cursor_rect, color);
     }
 
+    pub fn drawDebugPanel(self: *Ui, frame_number: usize) void {
+        const screen_x = @intToFloat(f32, self.screen.size.width);
+        const width = 200;
+        const height = 100;
+        const margin = 20;
+        const padding = 10;
+        self.drawSolidRect(
+            u.Rect{
+                .x = screen_x - margin - 2 * padding - width,
+                .y = margin,
+                .w = width + 2 * padding,
+                .h = height,
+            },
+            u.Color{ .r = 0.2, .g = 0.2, .b = 0.2, .a = 1.0 },
+        );
+        var buf: [10]u8 = undefined;
+        _ = std.fmt.bufPrint(buf[0..], "{d:10}", .{frame_number}) catch unreachable;
+        var chars: [10]u.Codepoint = undefined;
+        var colors: [10]u.TextColor = undefined;
+        for (buf) |char, i| {
+            chars[i] = char;
+            colors[i] = .keyword;
+        }
+        // TODO: write a more convenient method for drawing debug stuff
+        self.drawText(chars[0..], colors[0..], u.Vec2{ .x = screen_x - margin - padding - width, .y = margin + padding }, 0, 10);
+    }
+
     // ----------------------------------------------------------------------------------------------------------------
 
-    pub fn drawSolidRect(self: *Ui, r: u.Rect, color: u.Color) void {
+    fn drawSolidRect(self: *Ui, r: u.Rect, color: u.Color) void {
         // Current vertex index
         const v = @intCast(u32, self.vertices.items.len);
 

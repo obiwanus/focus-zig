@@ -120,12 +120,12 @@ pub const Swapchain = struct {
         self.* = try initRecycle(vc, allocator, new_extent, old_handle);
     }
 
-    pub fn wait_until_last_frame_is_rendered(self: Swapchain) !void {
+    pub fn waitUntilLastFrameIsRendered(self: Swapchain) !void {
         _ = try self.vc.vkd.waitForFences(self.vc.dev, 1, @ptrCast([*]const vk.Fence, &self.render_finished_fence), vk.TRUE, std.math.maxInt(u64));
         try self.vc.vkd.resetFences(self.vc.dev, 1, @ptrCast([*]const vk.Fence, &self.render_finished_fence));
     }
 
-    pub fn acquire_next_image(self: *Swapchain) bool {
+    pub fn acquireNextImage(self: *Swapchain) bool {
         const result = self.vc.vkd.acquireNextImageKHR(
             self.vc.dev,
             self.handle,

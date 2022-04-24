@@ -146,9 +146,17 @@ pub fn main() !void {
     var view_changed = false;
     var active_editor: *Editor = &editor1;
 
+    const app_start_ms = std.time.milliTimestamp();
+
+    var frame_number: usize = 0;
+    var num_animation_frames: usize = 0;
+
     while (!window.shouldClose()) {
+        // Monotonically increasing clock for animations
+        const clock_ms = @intToFloat(f64, std.time.milliTimestamp() - app_start_ms);
+
         // Ask the swapchain for the next image
-        const is_optimal = swapchain.acquire_next_image();
+        const is_optimal = swapchain.acquireNextImage();
         if (!is_optimal) {
             // Recreate swapchain if necessary
             const new_size = try window.getFramebufferSize();
@@ -156,7 +164,7 @@ pub fn main() !void {
             screen.size.height = new_size.height;
 
             try swapchain.recreate(screen.size);
-            if (!swapchain.acquire_next_image()) {
+            if (!swapchain.acquireNextImage()) {
                 return error.SwapchainRecreationFailure;
             }
 
@@ -178,7 +186,8 @@ pub fn main() !void {
 
         // Process events
         while (!view_changed and !text_changed and !window.shouldClose()) {
-            try glfw.waitEvents();
+            try glfw.pollEvents();
+            // try glfw.waitEventsTimeout(0.015);
 
             for (g_events.items) |event| {
                 switch (event) {
@@ -188,6 +197,23 @@ pub fn main() !void {
                     },
                     .key_pressed => |kp| {
                         const editor_event = active_editor.keyPress(kp.key, kp.mods);
+                        // TMP
+                        if (kp.key == .up) {
+                            var target = active_editor.scroll.y - screen.font.line_height * 5;
+                            if (target < 0) target = 0;
+                            active_editor.setNewScrollTarget(target, clock_ms);
+                            // print("scroll.y = {d:.3}\n", .{active_editor.scroll.y});
+                            // print("target = {d:.3}\n", .{target});
+                            // print("clock_ms = {d:.3}\n", .{clock_ms});
+                        }
+                        if (kp.key == .down) {
+                            const target = active_editor.scroll.y + screen.font.line_height * 5;
+                            active_editor.setNewScrollTarget(target, clock_ms);
+                            // print("scroll.y = {d:.3}\n", .{active_editor.scroll.y});
+                            // print("target = {d:.3}\n", .{target});
+                            // print("clock_ms = {d:.3}\n", .{clock_ms});
+                        }
+                        // TODO: do it before anything else to intercept events
                         if (editor_event) |e| {
                             switch (e) {
                                 .switch_to_left => active_editor = &editor1,
@@ -195,12 +221,22 @@ pub fn main() !void {
                                 else => {},
                             }
                         }
+                        // TODO: don't do this when text is not changed
                         text_changed = true;
                     },
                     .window_resized, .redraw_requested => {
                         view_changed = true;
                     },
                 }
+            }
+
+            if (active_editor.animateScrolling(clock_ms)) {
+                num_animation_frames += 1;
+                view_changed = true;
+            } else if (num_animation_frames > 0) {
+                // print("num_animation_frames = {}\n", .{num_animation_frames});
+                // print("---------------------------------\n", .{});
+                num_animation_frames = 0;
             }
 
             g_events.shrinkRetainingCapacity(0);
@@ -229,7 +265,15 @@ pub fn main() !void {
             ui.startFrame(screen);
 
             // TODO: support no editor, 1 editor, 2 editors
-            ui.drawEditors(editor1, editor2, active_editor);
+            const editor_rect = ui.drawEditors(editor1, editor2, active_editor);
+
+            // This data will be available next frame
+            // TODO: I'm worried that this may cause bugs when resizing. Might need to introduce
+            // a redraw event when either of these changes
+            active_editor.lines_per_screen = @floatToInt(usize, editor_rect.h / screen.font.line_height);
+            active_editor.cols_per_screen = @floatToInt(usize, editor_rect.w / screen.font.xadvance);
+
+            ui.drawDebugPanel(frame_number);
 
             try ui.endFrame(&vc, main_cmd_pool);
         }
@@ -330,7 +374,8 @@ pub fn main() !void {
         });
 
         // Make sure the rendering is finished
-        try swapchain.wait_until_last_frame_is_rendered();
+        try swapchain.waitUntilLastFrameIsRendered();
+        frame_number += 1;
     }
 
     // Wait for GPU to finish all work before cleaning up
