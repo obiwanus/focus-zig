@@ -155,6 +155,9 @@ pub fn main() !void {
     var clock_ms: f64 = 0;
 
     var layout_mode: EditorLayout = .side_by_side;
+    // var layout_mode: EditorLayout = .single;
+
+    var show_open_file_dialog = false;
 
     while (!window.shouldClose()) {
         frame_number += 1;
@@ -212,6 +215,9 @@ pub fn main() !void {
                     switch (command) {
                         .switch_to_left => active_editor = &editor1,
                         .switch_to_right => active_editor = &editor2, // TODO: editor2 doesn't always exist
+                        .toggle_open_file_dialog => {
+                            show_open_file_dialog = !show_open_file_dialog;
+                        },
                         else => {},
                     }
                 },
@@ -240,7 +246,7 @@ pub fn main() !void {
                 // Layout rects to prepare for drawing
                 var area = screen.getRect();
                 const footer_rect = area.splitBottom(screen.font.line_height + 4, 0);
-                ui.drawSolidRect(footer_rect, style.colors.FOOTER);
+                ui.drawSolidRect(footer_rect, style.colors.BACKGROUND_BRIGHT);
             },
             .single => {
                 // Layout rects to prepare for drawing
@@ -260,14 +266,14 @@ pub fn main() !void {
 
                 ui.drawEditor(editor1, editor1_rect, true);
 
-                ui.drawSolidRect(footer_rect, style.colors.FOOTER);
+                ui.drawSolidRect(footer_rect, style.colors.BACKGROUND_BRIGHT);
             },
             .side_by_side => {
                 // Layout rects to prepare for drawing
                 var area = screen.getRect();
                 const footer_rect = area.splitBottom(screen.font.line_height + 4, 0);
                 area = area.shrink(margin_h, margin_v, margin_h, 0);
-                const editor1_rect = area.splitLeft(area.w / 2, margin_h);
+                const editor1_rect = area.splitLeft(area.w / 2, margin_h).shrink(0, 0, margin_h, 0);
                 const editor2_rect = area;
 
                 // Retain info about dimensions
@@ -284,16 +290,16 @@ pub fn main() !void {
                 ui.drawEditor(editor1, editor1_rect, active_editor == &editor1);
                 ui.drawEditor(editor2, editor2_rect, active_editor == &editor2);
 
-                ui.drawSolidRect(footer_rect, style.colors.FOOTER);
+                ui.drawSolidRect(footer_rect, style.colors.BACKGROUND_BRIGHT);
                 const screen_rect = screen.getRect();
                 const splitter_rect = screen_rect.shrink(screen_rect.w / 2 - 1, 0, screen_rect.w / 2 - 1, 0);
-                ui.drawSolidRect(splitter_rect, style.colors.FOOTER);
+                ui.drawSolidRect(splitter_rect, style.colors.BACKGROUND_BRIGHT);
             },
         }
 
-        // if (show_open_file_dialog) {
-        //     ui.drawOpenFileDialog();
-        // }
+        if (show_open_file_dialog) {
+            ui.drawOpenFileDialog();
+        }
 
         ui.drawDebugPanel(frame_number);
         try ui.endFrame(&vc, main_cmd_pool);
@@ -420,6 +426,7 @@ pub const Event = union(enum) {
         switch_to_left,
         switch_to_right,
         close_current,
+        toggle_open_file_dialog,
     };
 };
 
@@ -436,6 +443,10 @@ fn newKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: glfw.A
                 g_events.append(Event{ .command = .switch_to_right }) catch u.oom();
                 return;
             }
+        }
+        if (mods.control and key == .p) {
+            g_events.append(Event{ .command = .toggle_open_file_dialog }) catch u.oom();
+            return;
         }
         g_events.append(Event{ .key_pressed = .{ .key = key, .mods = mods } }) catch u.oom();
     }

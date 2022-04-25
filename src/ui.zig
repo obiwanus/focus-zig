@@ -4,8 +4,6 @@ const u = @import("utils.zig");
 const vu = @import("vulkan/utils.zig");
 const style = @import("style.zig");
 
-const assert = std.debug.assert;
-
 const Allocator = std.mem.Allocator;
 const Font = @import("fonts.zig").Font;
 const VulkanContext = @import("vulkan/context.zig").VulkanContext;
@@ -145,8 +143,8 @@ pub const Ui = struct {
     }
 
     pub fn endFrame(self: Ui, vc: *const VulkanContext, pool: vk.CommandPool) !void {
-        assert(self.vertices.items.len < MAX_VERTEX_COUNT);
-        assert(self.indices.items.len < MAX_VERTEX_COUNT * 2);
+        u.assert(self.vertices.items.len < MAX_VERTEX_COUNT);
+        u.assert(self.indices.items.len < MAX_VERTEX_COUNT * 2);
         // Copy drawing data to GPU buffers
         try vu.uploadDataToBuffer(vc, Vertex, self.vertices.items, pool, self.vertex_buffer);
         try vu.uploadDataToBuffer(vc, u32, self.indices.items, pool, self.index_buffer);
@@ -186,9 +184,7 @@ pub const Ui = struct {
         const colors = editor.colors.items[start_char..end_char];
         const top_left = Vec2{ .x = rect.x - offset.x, .y = rect.y - offset.y };
 
-        self.drawText(chars, colors, top_left, col_min, col_max);
-
-        // Draw cursor
+        // Draw cursor first
         const size = Vec2{ .x = font.xadvance, .y = font.letter_height };
         const advance = Vec2{ .x = font.xadvance, .y = font.line_height };
         const padding = Vec2{ .x = 0, .y = 4 };
@@ -196,6 +192,13 @@ pub const Ui = struct {
             .x = @intToFloat(f32, editor.cursor.col),
             .y = @intToFloat(f32, editor.cursor.line -| line_min),
         };
+        const highlight_rect = Rect{
+            .x = rect.x - 4,
+            .y = rect.y - offset.y + cursor_offset.y * advance.y - padding.y,
+            .w = rect.w + 8,
+            .h = size.y + 2 * padding.y,
+        };
+        self.drawSolidRect(highlight_rect, style.colors.BACKGROUND_HIGHLIGHT);
         const cursor_rect = Rect{
             .x = rect.x - offset.x + cursor_offset.x * advance.x - padding.x,
             .y = rect.y - offset.y + cursor_offset.y * advance.y - padding.y,
@@ -204,6 +207,22 @@ pub const Ui = struct {
         };
         const color = if (is_active) style.colors.CURSOR_ACTIVE else style.colors.CURSOR_INACTIVE;
         self.drawSolidRect(cursor_rect, color);
+
+        // Then draw text on top
+        self.drawText(chars, colors, top_left, col_min, col_max);
+    }
+
+    pub fn drawOpenFileDialog(self: *Ui) void {
+        const min_width = 500 * self.screen.scale;
+        const max_width = 1500 * self.screen.scale;
+        const area = self.screen.getRect();
+        const width = std.math.clamp(area.w / 3, min_width, max_width);
+        self.drawSolidRect(Rect{
+            .x = (area.w - width) / 2,
+            .y = 100,
+            .w = width,
+            .h = 200,
+        }, style.colors.BACKGROUND_LIGHT);
     }
 
     pub fn drawDebugPanel(self: *Ui, frame_number: usize) void {

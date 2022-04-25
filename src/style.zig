@@ -15,10 +15,12 @@ pub const Color = extern struct {
 
 pub const colors = struct {
     pub const BACKGROUND = Color{ .r = 0.086, .g = 0.133, .b = 0.165, .a = 1.0 };
-    pub const BACKGROUND_LIGHT = Color{ .r = 0.186, .g = 0.233, .b = 0.265, .a = 1.0 };
-    pub const FOOTER = Color{ .r = 0.52, .g = 0.56, .b = 0.54, .a = 1.0 };
-    pub const CURSOR_ACTIVE = Color{ .r = 1, .g = 1, .b = 0.2, .a = 0.8 };
-    pub const CURSOR_INACTIVE = Color{ .r = 0.2, .g = 0.8, .b = 0.8, .a = 0.4 };
+    pub const BACKGROUND_DARK = Color{ .r = 0.065, .g = 0.101, .b = 0.125, .a = 1.0 };
+    pub const BACKGROUND_HIGHLIGHT = Color{ .r = 0.097, .g = 0.15, .b = 0.185, .a = 1.0 };
+    pub const BACKGROUND_LIGHT = Color{ .r = 0.102, .g = 0.158, .b = 0.195, .a = 1.0 };
+    pub const BACKGROUND_BRIGHT = Color{ .r = 0.131, .g = 0.202, .b = 0.25, .a = 1.0 };
+    pub const CURSOR_ACTIVE = Color{ .r = 0.2, .g = 0.8, .b = 0.8, .a = 0.6 };
+    pub const CURSOR_INACTIVE = Color{ .r = 0.4, .g = 0.8, .b = 0.8, .a = 0.3 };
 
     // Code
     pub const DEFAULT = Color{ .r = 0.81, .g = 0.77, .b = 0.66, .a = 1.0 };

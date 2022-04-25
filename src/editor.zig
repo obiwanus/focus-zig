@@ -294,20 +294,20 @@ pub const Editor = struct {
         // Allowed cursor positions within viewport
         const padding = 4;
         const line_min = viewport_top + padding;
-        const line_max = viewport_top + self.lines_per_screen - padding - 1;
+        const line_max = viewport_top + self.lines_per_screen -| padding -| 1;
         const col_min = viewport_left + padding;
-        const col_max = viewport_left + self.cols_per_screen - padding - 1;
+        const col_max = viewport_left + self.cols_per_screen -| padding -| 1;
 
         // Detect if cursor is outside viewport
         if (self.cursor.line < line_min) {
             viewport_top = self.cursor.line -| padding;
         } else if (self.cursor.line > line_max) {
-            viewport_top = self.cursor.line + padding + 1 - self.lines_per_screen;
+            viewport_top = self.cursor.line + padding + 1 -| self.lines_per_screen;
         }
         if (self.cursor.col < col_min) {
             viewport_left -|= (col_min - self.cursor.col);
         } else if (self.cursor.col > col_max) {
-            viewport_left += (self.cursor.col - col_max);
+            viewport_left += (self.cursor.col -| col_max);
         }
 
         self.scroll.y = @intToFloat(f32, viewport_top) * font.line_height;
