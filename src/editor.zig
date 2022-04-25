@@ -26,7 +26,7 @@ const ScrollAnimation = struct {
     value1: Vec2,
     value2: Vec2,
 
-    const DURATION_MS: f64 = 500;
+    const DURATION_MS: f64 = 32;
 
     fn getValue(self: ScrollAnimation, clock_ms: f64) Vec2 {
         const total = self.target_ms - self.start_ms;

@@ -146,14 +146,13 @@ pub fn main() !void {
     var view_changed = false;
     var active_editor: *Editor = &editor1;
 
-    const app_start_ms = std.time.milliTimestamp();
+    const app_start_ms = std.time.nanoTimestamp();
+    var clock_ms: f64 = 0;
 
     var frame_number: usize = 0;
-    var num_animation_frames: usize = 0;
 
     while (!window.shouldClose()) {
-        // Monotonically increasing clock for animations
-        const clock_ms = @intToFloat(f64, std.time.milliTimestamp() - app_start_ms);
+        frame_number += 1;
 
         // Ask the swapchain for the next image
         const is_optimal = swapchain.acquireNextImage();
@@ -186,8 +185,11 @@ pub fn main() !void {
 
         // Process events
         while (!view_changed and !text_changed and !window.shouldClose()) {
-            try glfw.pollEvents();
-            // try glfw.waitEventsTimeout(0.015);
+            // try glfw.pollEvents();
+            try glfw.waitEventsTimeout(0.005);
+
+            // Monotonically increasing clock for animations
+            clock_ms = @intToFloat(f64, std.time.nanoTimestamp() - app_start_ms) / 1_000_000;
 
             for (g_events.items) |event| {
                 switch (event) {
@@ -202,16 +204,10 @@ pub fn main() !void {
                             var target = active_editor.scroll.y - screen.font.line_height * 5;
                             if (target < 0) target = 0;
                             active_editor.setNewScrollTarget(target, clock_ms);
-                            // print("scroll.y = {d:.3}\n", .{active_editor.scroll.y});
-                            // print("target = {d:.3}\n", .{target});
-                            // print("clock_ms = {d:.3}\n", .{clock_ms});
                         }
                         if (kp.key == .down) {
                             const target = active_editor.scroll.y + screen.font.line_height * 5;
                             active_editor.setNewScrollTarget(target, clock_ms);
-                            // print("scroll.y = {d:.3}\n", .{active_editor.scroll.y});
-                            // print("target = {d:.3}\n", .{target});
-                            // print("clock_ms = {d:.3}\n", .{clock_ms});
                         }
                         // TODO: do it before anything else to intercept events
                         if (editor_event) |e| {
@@ -231,12 +227,7 @@ pub fn main() !void {
             }
 
             if (active_editor.animateScrolling(clock_ms)) {
-                num_animation_frames += 1;
                 view_changed = true;
-            } else if (num_animation_frames > 0) {
-                // print("num_animation_frames = {}\n", .{num_animation_frames});
-                // print("---------------------------------\n", .{});
-                num_animation_frames = 0;
             }
 
             g_events.shrinkRetainingCapacity(0);
@@ -375,7 +366,6 @@ pub fn main() !void {
 
         // Make sure the rendering is finished
         try swapchain.waitUntilLastFrameIsRendered();
-        frame_number += 1;
     }
 
     // Wait for GPU to finish all work before cleaning up
