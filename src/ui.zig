@@ -2,6 +2,7 @@ const std = @import("std");
 const vk = @import("vulkan");
 const u = @import("utils.zig");
 const vu = @import("vulkan/utils.zig");
+const style = @import("style.zig");
 
 const assert = std.debug.assert;
 
@@ -9,6 +10,9 @@ const Allocator = std.mem.Allocator;
 const Font = @import("fonts.zig").Font;
 const VulkanContext = @import("vulkan/context.zig").VulkanContext;
 const Editor = @import("editor.zig").Editor;
+const TextColor = style.TextColor;
+const Color = style.Color;
+const Vec2 = u.Vec2;
 const Rect = u.Rect;
 
 // Probably temporary - this is just to preallocate buffers on the GPU
@@ -42,9 +46,9 @@ const VertexType = enum(u32) {
 
 // #MEMORY: fat vertex. TODO: use a primitive buffer instead
 pub const Vertex = extern struct {
-    color: u.Color,
-    pos: u.Vec2,
-    texcoord: u.Vec2,
+    color: Color,
+    pos: Vec2,
+    texcoord: Vec2,
     vertex_type: VertexType,
 
     pub const binding_description = vk.VertexInputBindingDescription{
@@ -203,7 +207,7 @@ pub const Ui = struct {
         const col_max = col_min + total_cols;
 
         // Offset from canonical position (for smooth scrolling)
-        const offset = u.Vec2{
+        const offset = Vec2{
             .x = editor.scroll.x - @intToFloat(f32, col_min) * font.xadvance,
             .y = editor.scroll.y - @intToFloat(f32, line_min) * font.line_height,
         };
@@ -213,15 +217,15 @@ pub const Ui = struct {
 
         const chars = editor.chars.items[start_char..end_char];
         const colors = editor.colors.items[start_char..end_char];
-        const top_left = u.Vec2{ .x = rect.x - offset.x, .y = rect.y - offset.y };
+        const top_left = Vec2{ .x = rect.x - offset.x, .y = rect.y - offset.y };
 
         self.drawText(chars, colors, top_left, col_min, col_max);
 
         // Draw cursor
-        const size = u.Vec2{ .x = font.xadvance, .y = font.letter_height };
-        const advance = u.Vec2{ .x = font.xadvance, .y = font.line_height };
-        const padding = u.Vec2{ .x = 0, .y = 4 };
-        const cursor_offset = u.Vec2{
+        const size = Vec2{ .x = font.xadvance, .y = font.letter_height };
+        const advance = Vec2{ .x = font.xadvance, .y = font.line_height };
+        const padding = Vec2{ .x = 0, .y = 4 };
+        const cursor_offset = Vec2{
             .x = @intToFloat(f32, editor.cursor.col),
             .y = @intToFloat(f32, editor.cursor.line -| line_min),
         };
@@ -231,10 +235,7 @@ pub const Ui = struct {
             .w = size.x + 2 * padding.x,
             .h = size.y + 2 * padding.y,
         };
-        const color = if (is_active)
-            u.Color{ .r = 1, .g = 1, .b = 0.2, .a = 0.8 }
-        else
-            u.Color{ .r = 0.2, .g = 0.8, .b = 0.8, .a = 0.4 };
+        const color = if (is_active) style.Colors.CURSOR_ACTIVE else style.Colors.CURSOR_INACTIVE;
         self.drawSolidRect(cursor_rect, color);
     }
 
@@ -251,23 +252,23 @@ pub const Ui = struct {
                 .w = width + 2 * padding,
                 .h = height,
             },
-            u.Color{ .r = 0.2, .g = 0.2, .b = 0.2, .a = 1.0 },
+            style.Colors.BACKGROUND_LIGHT,
         );
         var buf: [10]u8 = undefined;
         _ = std.fmt.bufPrint(buf[0..], "{d:10}", .{frame_number}) catch unreachable;
         var chars: [10]u.Codepoint = undefined;
-        var colors: [10]u.TextColor = undefined;
+        var colors: [10]TextColor = undefined;
         for (buf) |char, i| {
             chars[i] = char;
             colors[i] = .keyword;
         }
         // TODO: write a more convenient method for drawing debug stuff
-        self.drawText(chars[0..], colors[0..], u.Vec2{ .x = screen_x - margin - padding - width, .y = margin + padding }, 0, 10);
+        self.drawText(chars[0..], colors[0..], Vec2{ .x = screen_x - margin - padding - width, .y = margin + padding }, 0, 10);
     }
 
     // ----------------------------------------------------------------------------------------------------------------
 
-    pub fn drawSolidRect(self: *Ui, r: Rect, color: u.Color) void {
+    pub fn drawSolidRect(self: *Ui, r: Rect, color: Color) void {
         // Current vertex index
         const v = @intCast(u32, self.vertices.items.len);
 
@@ -285,21 +286,9 @@ pub const Ui = struct {
         self.indices.appendSlice(&indices) catch u.oom();
     }
 
-    fn drawText(self: *Ui, chars: []u.Codepoint, colors: []u.TextColor, top_left: u.Vec2, col_min: usize, col_max: usize) void {
+    fn drawText(self: *Ui, chars: []u.Codepoint, colors: []TextColor, top_left: Vec2, col_min: usize, col_max: usize) void {
         const font = self.screen.font;
-        const PALETTE = [_]u.Color{
-            .{ .r = 0.81, .g = 0.77, .b = 0.66, .a = 1.0 }, // default
-            .{ .r = 0.52, .g = 0.56, .b = 0.54, .a = 1.0 }, // comment
-            .{ .r = 0.51, .g = 0.67, .b = 0.64, .a = 1.0 }, // type
-            .{ .r = 0.67, .g = 0.74, .b = 0.49, .a = 1.0 }, // function
-            .{ .r = 0.65, .g = 0.69, .b = 0.76, .a = 1.0 }, // punctuation
-            .{ .r = 0.85, .g = 0.68, .b = 0.33, .a = 1.0 }, // string
-            .{ .r = 0.84, .g = 0.60, .b = 0.71, .a = 1.0 }, // value
-            .{ .r = 0.85, .g = 0.61, .b = 0.46, .a = 1.0 }, // highlight
-            .{ .r = 1.00, .g = 0.00, .b = 0.00, .a = 1.0 }, // error
-            .{ .r = 0.902, .g = 0.493, .b = 0.457, .a = 1.0 }, // keyword
-        };
-        var pos = u.Vec2{ .x = top_left.x, .y = top_left.y + font.baseline };
+        var pos = Vec2{ .x = top_left.x, .y = top_left.y + font.baseline };
         var col: usize = 0;
 
         // Current vertex index
@@ -308,7 +297,7 @@ pub const Ui = struct {
         for (chars) |char, i| {
             if (char != ' ' and char != '\n' and col_min <= col and col <= col_max) {
                 const q = font.getQuad(char, pos.x, pos.y);
-                const color = PALETTE[@intCast(usize, @enumToInt(colors[i]))];
+                const color = style.Colors.PALETTE[@intCast(usize, @enumToInt(colors[i]))];
 
                 // Quad vertices in clockwise order, starting from top left
                 const vertices = [_]Vertex{

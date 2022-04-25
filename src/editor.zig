@@ -5,6 +5,7 @@ const u = @import("utils.zig");
 const Allocator = std.mem.Allocator;
 const Vec2 = u.Vec2;
 const Font = @import("fonts.zig").Font;
+const TextColor = @import("style.zig").TextColor;
 
 const TAB_SIZE = 4;
 
@@ -47,7 +48,7 @@ pub const Editor = struct {
     // buffer
     bytes: std.ArrayList(u8),
     chars: std.ArrayList(u.Codepoint),
-    colors: std.ArrayList(u.TextColor),
+    colors: std.ArrayList(TextColor),
     lines: std.ArrayList(usize),
     dirty: bool = true, // needs syncing internal structures
 
@@ -79,7 +80,7 @@ pub const Editor = struct {
             try chars.append(codepoint);
         }
 
-        var colors = std.ArrayList(u.TextColor).init(allocator);
+        var colors = std.ArrayList(TextColor).init(allocator);
         try colors.ensureTotalCapacity(chars.items.len);
 
         var lines = std.ArrayList(usize).init(allocator);
@@ -347,7 +348,7 @@ pub const Editor = struct {
         self.colors.ensureTotalCapacity(self.chars.items.len) catch u.oom();
         self.colors.expandToCapacity();
         var colors = self.colors.items;
-        std.mem.set(u.TextColor, colors, .comment);
+        std.mem.set(TextColor, colors, .comment);
 
         // NOTE: we're tokenizing the whole source file. At least for zig this can be optimised,
         // but we're not doing it just yet
@@ -355,19 +356,19 @@ pub const Editor = struct {
         var tokenizer = std.zig.Tokenizer.init(source_bytes);
         while (true) {
             var token = tokenizer.next();
-            const token_color: u.TextColor = switch (token.tag) {
+            const token_color: TextColor = switch (token.tag) {
                 .eof => break,
                 .invalid => .@"error",
                 .string_literal, .multiline_string_literal_line, .char_literal => .string,
                 .builtin => .function,
-                .identifier => u.TextColor.getForIdentifier(self.chars.items[token.loc.start..token.loc.end], self.chars.items[token.loc.end]),
+                .identifier => TextColor.getForIdentifier(self.chars.items[token.loc.start..token.loc.end], self.chars.items[token.loc.end]),
                 .integer_literal, .float_literal => .value,
                 .doc_comment, .container_doc_comment => .comment,
                 .keyword_addrspace, .keyword_align, .keyword_allowzero, .keyword_and, .keyword_anyframe, .keyword_anytype, .keyword_asm, .keyword_async, .keyword_await, .keyword_break, .keyword_callconv, .keyword_catch, .keyword_comptime, .keyword_const, .keyword_continue, .keyword_defer, .keyword_else, .keyword_enum, .keyword_errdefer, .keyword_error, .keyword_export, .keyword_extern, .keyword_fn, .keyword_for, .keyword_if, .keyword_inline, .keyword_noalias, .keyword_noinline, .keyword_nosuspend, .keyword_opaque, .keyword_or, .keyword_orelse, .keyword_packed, .keyword_pub, .keyword_resume, .keyword_return, .keyword_linksection, .keyword_struct, .keyword_suspend, .keyword_switch, .keyword_test, .keyword_threadlocal, .keyword_try, .keyword_union, .keyword_unreachable, .keyword_usingnamespace, .keyword_var, .keyword_volatile, .keyword_while => .keyword,
                 .bang, .pipe, .pipe_pipe, .pipe_equal, .equal, .equal_equal, .equal_angle_bracket_right, .bang_equal, .l_paren, .r_paren, .semicolon, .percent, .percent_equal, .l_brace, .r_brace, .l_bracket, .r_bracket, .period, .period_asterisk, .ellipsis2, .ellipsis3, .caret, .caret_equal, .plus, .plus_plus, .plus_equal, .plus_percent, .plus_percent_equal, .plus_pipe, .plus_pipe_equal, .minus, .minus_equal, .minus_percent, .minus_percent_equal, .minus_pipe, .minus_pipe_equal, .asterisk, .asterisk_equal, .asterisk_asterisk, .asterisk_percent, .asterisk_percent_equal, .asterisk_pipe, .asterisk_pipe_equal, .arrow, .colon, .slash, .slash_equal, .comma, .ampersand, .ampersand_equal, .question_mark, .angle_bracket_left, .angle_bracket_left_equal, .angle_bracket_angle_bracket_left, .angle_bracket_angle_bracket_left_equal, .angle_bracket_angle_bracket_left_pipe, .angle_bracket_angle_bracket_left_pipe_equal, .angle_bracket_right, .angle_bracket_right_equal, .angle_bracket_angle_bracket_right, .angle_bracket_angle_bracket_right_equal, .tilde => .punctuation,
                 else => .default,
             };
-            std.mem.set(u.TextColor, colors[token.loc.start..token.loc.end], token_color);
+            std.mem.set(TextColor, colors[token.loc.start..token.loc.end], token_color);
         }
     }
 };

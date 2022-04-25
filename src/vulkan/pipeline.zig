@@ -8,8 +8,6 @@ const vu = @import("utils.zig");
 const Vertex = @import("../ui.zig").Vertex;
 const VulkanContext = @import("context.zig").VulkanContext;
 const Vec2 = u.Vec2;
-const TextColor = u.TextColor;
-const Color = u.Color;
 
 const assert = std.debug.assert;
 

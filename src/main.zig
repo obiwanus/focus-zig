@@ -7,6 +7,7 @@ const vk = @import("vulkan");
 const u = @import("utils.zig");
 const vu = @import("vulkan/utils.zig");
 const pipeline = @import("vulkan/pipeline.zig");
+const style = @import("style.zig");
 
 const Allocator = std.mem.Allocator;
 const VulkanContext = @import("vulkan/context.zig").VulkanContext;
@@ -153,7 +154,7 @@ pub fn main() !void {
     const app_start_ms = std.time.nanoTimestamp();
     var clock_ms: f64 = 0;
 
-    var layout_mode: EditorLayout = .side_by_side;
+    var layout_mode: EditorLayout = .single;
 
     while (!window.shouldClose()) {
         frame_number += 1;
@@ -233,10 +234,30 @@ pub fn main() !void {
 
         switch (layout_mode) {
             .none => {
-                // TODO
+                // Layout rects to prepare for drawing
+                var area = screen.getRect();
+                const footer_rect = area.splitBottom(screen.font.line_height + 4, 0);
+                ui.drawSolidRect(footer_rect, style.Colors.FOOTER);
             },
             .single => {
-                // TODO
+                // Layout rects to prepare for drawing
+                var area = screen.getRect();
+                const footer_rect = area.splitBottom(screen.font.line_height + 4, 0);
+                const editor1_rect = area.shrink(30, 15, 30, 0);
+
+                // Retain info about dimensions
+                active_editor.lines_per_screen = @floatToInt(usize, editor1_rect.h / screen.font.line_height);
+                active_editor.cols_per_screen = @floatToInt(usize, editor1_rect.w / screen.font.xadvance);
+
+                // Update internal data if necessary
+                if (editor1.dirty) editor1.syncInternalData();
+                active_editor.updateCursor();
+                active_editor.moveViewportToCursor(screen.font); // depends on lines_per_screen etc
+                active_animation = active_editor.animateScrolling(clock_ms);
+
+                ui.drawEditor(editor1, editor1_rect, true);
+
+                ui.drawSolidRect(footer_rect, style.Colors.FOOTER);
             },
             .side_by_side => {
                 // Layout rects to prepare for drawing
@@ -260,15 +281,14 @@ pub fn main() !void {
                 ui.drawEditor(editor1, editor1_rect, active_editor == &editor1);
                 ui.drawEditor(editor2, editor2_rect, active_editor == &editor2);
 
-                ui.drawSolidRect(footer_rect, u.Color{ .r = 0.52, .g = 0.56, .b = 0.54, .a = 1.0 });
+                ui.drawSolidRect(footer_rect, style.Colors.FOOTER);
                 const screen_rect = screen.getRect();
                 const splitter_rect = screen_rect.shrink(screen_rect.w / 2 - 1, 0, screen_rect.w / 2 - 1, 0);
-                ui.drawSolidRect(splitter_rect, u.Color{ .r = 0.52, .g = 0.56, .b = 0.54, .a = 1.0 });
-
-                ui.drawDebugPanel(frame_number);
+                ui.drawSolidRect(splitter_rect, style.Colors.FOOTER);
             },
         }
 
+        ui.drawDebugPanel(frame_number);
         try ui.endFrame(&vc, main_cmd_pool);
 
         // Record the main command buffer
@@ -306,7 +326,7 @@ pub fn main() !void {
             vc.vkd.cmdSetScissor(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Rect2D, &scissor));
 
             const clear = vk.ClearValue{
-                .color = .{ .float_32 = .{ 0.086, 0.133, 0.165, 1 } },
+                .color = .{ .float_32 = style.Colors.BACKGROUND.asArray() },
             };
             const render_area = vk.Rect2D{
                 .offset = .{ .x = 0, .y = 0 },
