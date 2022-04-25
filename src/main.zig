@@ -17,9 +17,6 @@ const Ui = @import("ui.zig").Ui;
 const Screen = @import("ui.zig").Screen;
 const Editor = @import("editor.zig").Editor;
 
-const print = std.debug.print;
-const assert = std.debug.assert;
-
 var GPA = std.heap.GeneralPurposeAllocator(.{ .never_unmap = false }){};
 
 const APP_NAME = "Focus";
@@ -27,6 +24,12 @@ const FONT_NAME = "fonts/FiraCode-Retina.ttf";
 const FONT_SIZE = 18; // for scale = 1.0
 
 var g_events: std.ArrayList(Event) = undefined;
+
+const EditorLayout = enum {
+    none,
+    single,
+    side_by_side,
+};
 
 pub fn main() !void {
     // Static arena lives until the end of the program
@@ -91,7 +94,7 @@ pub fn main() !void {
         };
     };
     const content_scale = try window.getContentScale();
-    assert(content_scale.x_scale == content_scale.y_scale);
+    u.assert(content_scale.x_scale == content_scale.y_scale);
     screen.scale = content_scale.x_scale;
     screen.font = try Font.init(&vc, gpa, FONT_NAME, FONT_SIZE * screen.scale, main_cmd_pool);
     defer screen.font.deinit(&vc);
@@ -150,6 +153,8 @@ pub fn main() !void {
     const app_start_ms = std.time.nanoTimestamp();
     var clock_ms: f64 = 0;
 
+    var layout_mode: EditorLayout = .side_by_side;
+
     while (!window.shouldClose()) {
         frame_number += 1;
 
@@ -168,7 +173,7 @@ pub fn main() !void {
 
             // Make sure the font is updated if screen scale has changed
             const new_scale = try window.getContentScale();
-            assert(new_scale.x_scale == new_scale.y_scale);
+            u.assert(new_scale.x_scale == new_scale.y_scale);
             if (screen.scale != new_scale.x_scale) {
                 screen.scale = new_scale.x_scale;
                 screen.font.deinit(&vc);
@@ -214,14 +219,6 @@ pub fn main() !void {
         }
         g_events.shrinkRetainingCapacity(0);
 
-        // If we're animating we don't want to go to sleep
-        active_animation = active_editor.animateScrolling(clock_ms);
-
-        // Update internal data if necessary
-        if (editor1.dirty) editor1.syncInternalData();
-        if (editor2.dirty) editor2.syncInternalData();
-        active_editor.updateCursor();
-
         // Update uniform buffer
         // NOTE: no need to update every frame right now, but we're still doing it
         // because it'll be easier to add stuff here if we need to
@@ -234,16 +231,43 @@ pub fn main() !void {
         // Draw UI
         ui.startFrame(screen);
 
-        // TODO: support no editor, 1 editor, 2 editors
-        const editor_rect = ui.drawEditors(editor1, editor2, active_editor);
+        switch (layout_mode) {
+            .none => {
+                // TODO
+            },
+            .single => {
+                // TODO
+            },
+            .side_by_side => {
+                // Layout rects to prepare for drawing
+                var area = screen.getRect();
+                const footer_rect = area.splitBottom(screen.font.line_height + 4, 0);
+                area = area.shrink(30, 15, 30, 0);
+                const editor1_rect = area.splitLeft(area.w / 2, 30);
+                const editor2_rect = area;
 
-        // This data will be available next frame
-        // TODO: I'm worried that this may cause bugs when resizing. Might need to introduce
-        // a redraw event when either of these changes
-        active_editor.lines_per_screen = @floatToInt(usize, editor_rect.h / screen.font.line_height);
-        active_editor.cols_per_screen = @floatToInt(usize, editor_rect.w / screen.font.xadvance);
+                // Retain info about dimensions
+                active_editor.lines_per_screen = @floatToInt(usize, editor1_rect.h / screen.font.line_height);
+                active_editor.cols_per_screen = @floatToInt(usize, editor1_rect.w / screen.font.xadvance);
 
-        ui.drawDebugPanel(frame_number);
+                // Update internal data if necessary
+                if (editor1.dirty) editor1.syncInternalData();
+                if (editor2.dirty) editor2.syncInternalData();
+                active_editor.updateCursor();
+                active_editor.moveViewportToCursor(screen.font); // depends on lines_per_screen etc
+                active_animation = active_editor.animateScrolling(clock_ms);
+
+                ui.drawEditor(editor1, editor1_rect, active_editor == &editor1);
+                ui.drawEditor(editor2, editor2_rect, active_editor == &editor2);
+
+                ui.drawSolidRect(footer_rect, u.Color{ .r = 0.52, .g = 0.56, .b = 0.54, .a = 1.0 });
+                const screen_rect = screen.getRect();
+                const splitter_rect = screen_rect.shrink(screen_rect.w / 2 - 1, 0, screen_rect.w / 2 - 1, 0);
+                ui.drawSolidRect(splitter_rect, u.Color{ .r = 0.52, .g = 0.56, .b = 0.54, .a = 1.0 });
+
+                ui.drawDebugPanel(frame_number);
+            },
+        }
 
         try ui.endFrame(&vc, main_cmd_pool);
 
@@ -296,7 +320,7 @@ pub fn main() !void {
                 .p_clear_values = @ptrCast([*]const vk.ClearValue, &clear),
             }, .@"inline");
 
-            // Draw UI
+            // Draw everything
             vc.vkd.cmdBindPipeline(main_cmd_buf, .graphics, ui_pipeline.handle);
             const ui_descriptors = [_]vk.DescriptorSet{
                 uniform_buffer.descriptor_set, // 0 = uniform buffer

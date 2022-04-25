@@ -1,7 +1,7 @@
 # TODO
-- Make viewport follow cursor with a smooth scrolling
-    + Draw text at non-sticky offsets
-    - Update scroll_wanted when cursor is outside the viewport
+- Support 0, 1, 2 editors
+    + Rewrite the layout system - first get rects, then draw into them
+    - Switch between 1 and 2 editors
 - Make an open file dialog like in VSCode
 - Fix editing near the end of the buffer (can't get cursor close enough)
 - Multiple cursors
@@ -22,6 +22,9 @@
 - Search within buffer
 
 # DONE
++ Make viewport follow cursor with a smooth scrolling
+    + Draw text at non-sticky offsets
+    + Update scroll_wanted when cursor is outside the viewport
 + Reorganise code to avoid waiting on timeout
 + Make viewport scroll to scroll_wanted over time
     + Don't wait for events when there's animation to do

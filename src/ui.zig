@@ -9,6 +9,7 @@ const Allocator = std.mem.Allocator;
 const Font = @import("fonts.zig").Font;
 const VulkanContext = @import("vulkan/context.zig").VulkanContext;
 const Editor = @import("editor.zig").Editor;
+const Rect = u.Rect;
 
 // Probably temporary - this is just to preallocate buffers on the GPU
 // and not worry about more sophisticated allocation strategies
@@ -22,6 +23,15 @@ pub const Screen = struct {
     size: vk.Extent2D,
     scale: f32,
     font: Font,
+
+    pub fn getRect(self: Screen) Rect {
+        return Rect{
+            .x = 0,
+            .y = 0,
+            .w = @intToFloat(f32, self.size.width),
+            .h = @intToFloat(f32, self.size.height),
+        };
+    }
 };
 
 const VertexType = enum(u32) {
@@ -146,20 +156,20 @@ pub const Ui = struct {
         return @intCast(u32, self.indices.items.len);
     }
 
-    pub fn drawEditors(self: *Ui, editor1: Editor, editor2: Editor, active_editor: *const Editor) u.Rect {
+    pub fn drawEditors(self: *Ui, editor1: Editor, editor2: Editor, active_editor: *const Editor) Rect {
         // Figure out where to draw editors
         const margin_h = MARGIN_HORIZONTAL * self.screen.scale;
         const margin_v = MARGIN_VERTICAL * self.screen.scale;
         const editor_width = (@intToFloat(f32, self.screen.size.width) - 3 * margin_h) / 2;
         const editor_height = @intToFloat(f32, self.screen.size.height) - 2 * margin_v;
 
-        const rect1 = u.Rect{
+        const rect1 = Rect{
             .x = margin_h,
             .y = margin_v,
             .w = editor_width,
             .h = editor_height,
         };
-        const rect2 = u.Rect{
+        const rect2 = Rect{
             .x = margin_h + editor_width + margin_h,
             .y = margin_v,
             .w = editor_width,
@@ -175,7 +185,7 @@ pub const Ui = struct {
         return rect1;
     }
 
-    pub fn drawEditor(self: *Ui, editor: Editor, rect: u.Rect, is_active: bool) void {
+    pub fn drawEditor(self: *Ui, editor: Editor, rect: Rect, is_active: bool) void {
         const font = self.screen.font;
 
         // How many lines/cols fit inside the rect
@@ -215,7 +225,7 @@ pub const Ui = struct {
             .x = @intToFloat(f32, editor.cursor.col),
             .y = @intToFloat(f32, editor.cursor.line -| line_min),
         };
-        const cursor_rect = u.Rect{
+        const cursor_rect = Rect{
             .x = rect.x - offset.x + cursor_offset.x * advance.x - padding.x,
             .y = rect.y - offset.y + cursor_offset.y * advance.y - padding.y,
             .w = size.x + 2 * padding.x,
@@ -235,7 +245,7 @@ pub const Ui = struct {
         const margin = 20;
         const padding = 10;
         self.drawSolidRect(
-            u.Rect{
+            Rect{
                 .x = screen_x - margin - 2 * padding - width,
                 .y = margin,
                 .w = width + 2 * padding,
@@ -257,7 +267,7 @@ pub const Ui = struct {
 
     // ----------------------------------------------------------------------------------------------------------------
 
-    fn drawSolidRect(self: *Ui, r: u.Rect, color: u.Color) void {
+    pub fn drawSolidRect(self: *Ui, r: Rect, color: u.Color) void {
         // Current vertex index
         const v = @intCast(u32, self.vertices.items.len);
 

@@ -4,6 +4,7 @@ const u = @import("utils.zig");
 
 const Allocator = std.mem.Allocator;
 const Vec2 = u.Vec2;
+const Font = @import("fonts.zig").Font;
 
 const TAB_SIZE = 4;
 
@@ -282,25 +283,34 @@ pub const Editor = struct {
             }
         } else self.lines.items.len;
         self.cursor.col = self.cursor.pos - self.lines.items[self.cursor.line];
+    }
 
-        // // Allowed cursor positions within viewport
-        // const padding = 4;
-        // const line_min = self.viewport.top + padding;
-        // const line_max = self.viewport.top + g_screen.total_lines - padding - 1;
-        // const col_min = self.viewport.left + padding;
-        // const col_max = self.viewport.left + g_screen.total_cols - padding - 1;
+    pub fn moveViewportToCursor(self: *Editor, font: Font) void {
+        // Current scroll offset in characters
+        var viewport_top = @floatToInt(usize, self.scroll.y / font.line_height);
+        var viewport_left = @floatToInt(usize, self.scroll.x / font.xadvance);
 
-        // // Detect if cursor is outside viewport
-        // if (self.cursor.line < line_min) {
-        //     self.viewport.top = self.cursor.line -| padding;
-        // } else if (self.cursor.line > line_max) {
-        //     self.viewport.top = self.cursor.line + padding + 1 - g_screen.total_lines;
-        // }
-        // if (self.cursor.col < col_min) {
-        //     self.viewport.left -|= (col_min - self.cursor.col);
-        // } else if (self.cursor.col > col_max) {
-        //     self.viewport.left += (self.cursor.col - col_max);
-        // }
+        // Allowed cursor positions within viewport
+        const padding = 4;
+        const line_min = viewport_top + padding;
+        const line_max = viewport_top + self.lines_per_screen - padding - 1;
+        const col_min = viewport_left + padding;
+        const col_max = viewport_left + self.cols_per_screen - padding - 1;
+
+        // Detect if cursor is outside viewport
+        if (self.cursor.line < line_min) {
+            viewport_top = self.cursor.line -| padding;
+        } else if (self.cursor.line > line_max) {
+            viewport_top = self.cursor.line + padding + 1 - self.lines_per_screen;
+        }
+        if (self.cursor.col < col_min) {
+            viewport_left -|= (col_min - self.cursor.col);
+        } else if (self.cursor.col > col_max) {
+            viewport_left += (self.cursor.col - col_max);
+        }
+
+        self.scroll.y = @intToFloat(f32, viewport_top) * font.line_height;
+        self.scroll.x = @intToFloat(f32, viewport_left) * font.xadvance;
     }
 
     pub fn syncInternalData(self: *Editor) void {
