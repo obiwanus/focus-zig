@@ -19,10 +19,6 @@ const Rect = u.Rect;
 // and not worry about more sophisticated allocation strategies
 const MAX_VERTEX_COUNT = 100000;
 
-// Margins in pixels for scale = 1.0
-const MARGIN_VERTICAL = 15;
-const MARGIN_HORIZONTAL = 30;
-
 pub const Screen = struct {
     size: vk.Extent2D,
     scale: f32,
@@ -158,35 +154,6 @@ pub const Ui = struct {
 
     pub fn indexCount(self: Ui) u32 {
         return @intCast(u32, self.indices.items.len);
-    }
-
-    pub fn drawEditors(self: *Ui, editor1: Editor, editor2: Editor, active_editor: *const Editor) Rect {
-        // Figure out where to draw editors
-        const margin_h = MARGIN_HORIZONTAL * self.screen.scale;
-        const margin_v = MARGIN_VERTICAL * self.screen.scale;
-        const editor_width = (@intToFloat(f32, self.screen.size.width) - 3 * margin_h) / 2;
-        const editor_height = @intToFloat(f32, self.screen.size.height) - 2 * margin_v;
-
-        const rect1 = Rect{
-            .x = margin_h,
-            .y = margin_v,
-            .w = editor_width,
-            .h = editor_height,
-        };
-        const rect2 = Rect{
-            .x = margin_h + editor_width + margin_h,
-            .y = margin_v,
-            .w = editor_width,
-            .h = editor_height,
-        };
-
-        // Draw editors in the corresponding rects
-        self.drawEditor(editor1, rect1, active_editor == &editor1);
-        self.drawEditor(editor2, rect2, active_editor == &editor2);
-
-        // Return editor dimensions so we can adjust their internal data
-        // (assuming the two rects have the same dimensions)
-        return rect1;
     }
 
     pub fn drawEditor(self: *Ui, editor: Editor, rect: Rect, is_active: bool) void {

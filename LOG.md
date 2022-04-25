@@ -1,8 +1,9 @@
 # TODO
+- Make an open file dialog
+    - Show a rect where the dialog would be. Support min/max width and scale.
 - Support 0, 1, 2 editors
     + Rewrite the layout system - first get rects, then draw into them
     - Switch between 1 and 2 editors
-- Make an open file dialog like in VSCode
 - Fix editing near the end of the buffer (can't get cursor close enough)
 - Multiple cursors
 - [code] Use rect.shrink and rect.split to position rects

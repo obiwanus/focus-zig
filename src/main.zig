@@ -154,7 +154,7 @@ pub fn main() !void {
     const app_start_ms = std.time.nanoTimestamp();
     var clock_ms: f64 = 0;
 
-    var layout_mode: EditorLayout = .single;
+    var layout_mode: EditorLayout = .side_by_side;
 
     while (!window.shouldClose()) {
         frame_number += 1;
@@ -232,6 +232,9 @@ pub fn main() !void {
         // Draw UI
         ui.startFrame(screen);
 
+        const margin_h = 30 * screen.scale;
+        const margin_v = 15 * screen.scale;
+
         switch (layout_mode) {
             .none => {
                 // Layout rects to prepare for drawing
@@ -243,7 +246,7 @@ pub fn main() !void {
                 // Layout rects to prepare for drawing
                 var area = screen.getRect();
                 const footer_rect = area.splitBottom(screen.font.line_height + 4, 0);
-                const editor1_rect = area.shrink(30, 15, 30, 0);
+                const editor1_rect = area.shrink(margin_h, margin_v, margin_h, 0);
 
                 // Retain info about dimensions
                 active_editor.lines_per_screen = @floatToInt(usize, editor1_rect.h / screen.font.line_height);
@@ -263,8 +266,8 @@ pub fn main() !void {
                 // Layout rects to prepare for drawing
                 var area = screen.getRect();
                 const footer_rect = area.splitBottom(screen.font.line_height + 4, 0);
-                area = area.shrink(30, 15, 30, 0);
-                const editor1_rect = area.splitLeft(area.w / 2, 30);
+                area = area.shrink(margin_h, margin_v, margin_h, 0);
+                const editor1_rect = area.splitLeft(area.w / 2, margin_h);
                 const editor2_rect = area;
 
                 // Retain info about dimensions
@@ -287,6 +290,10 @@ pub fn main() !void {
                 ui.drawSolidRect(splitter_rect, style.colors.FOOTER);
             },
         }
+
+        // if (show_open_file_dialog) {
+        //     ui.drawOpenFileDialog();
+        // }
 
         ui.drawDebugPanel(frame_number);
         try ui.endFrame(&vc, main_cmd_pool);
