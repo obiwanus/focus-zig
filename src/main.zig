@@ -237,7 +237,7 @@ pub fn main() !void {
                 // Layout rects to prepare for drawing
                 var area = screen.getRect();
                 const footer_rect = area.splitBottom(screen.font.line_height + 4, 0);
-                ui.drawSolidRect(footer_rect, style.Colors.FOOTER);
+                ui.drawSolidRect(footer_rect, style.colors.FOOTER);
             },
             .single => {
                 // Layout rects to prepare for drawing
@@ -257,7 +257,7 @@ pub fn main() !void {
 
                 ui.drawEditor(editor1, editor1_rect, true);
 
-                ui.drawSolidRect(footer_rect, style.Colors.FOOTER);
+                ui.drawSolidRect(footer_rect, style.colors.FOOTER);
             },
             .side_by_side => {
                 // Layout rects to prepare for drawing
@@ -281,10 +281,10 @@ pub fn main() !void {
                 ui.drawEditor(editor1, editor1_rect, active_editor == &editor1);
                 ui.drawEditor(editor2, editor2_rect, active_editor == &editor2);
 
-                ui.drawSolidRect(footer_rect, style.Colors.FOOTER);
+                ui.drawSolidRect(footer_rect, style.colors.FOOTER);
                 const screen_rect = screen.getRect();
                 const splitter_rect = screen_rect.shrink(screen_rect.w / 2 - 1, 0, screen_rect.w / 2 - 1, 0);
-                ui.drawSolidRect(splitter_rect, style.Colors.FOOTER);
+                ui.drawSolidRect(splitter_rect, style.colors.FOOTER);
             },
         }
 
@@ -326,7 +326,7 @@ pub fn main() !void {
             vc.vkd.cmdSetScissor(main_cmd_buf, 0, 1, @ptrCast([*]const vk.Rect2D, &scissor));
 
             const clear = vk.ClearValue{
-                .color = .{ .float_32 = style.Colors.BACKGROUND.asArray() },
+                .color = .{ .float_32 = style.colors.BACKGROUND.asArray() },
             };
             const render_area = vk.Rect2D{
                 .offset = .{ .x = 0, .y = 0 },

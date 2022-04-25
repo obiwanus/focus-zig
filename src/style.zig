@@ -13,7 +13,7 @@ pub const Color = extern struct {
     }
 };
 
-pub const Colors = struct {
+pub const colors = struct {
     pub const BACKGROUND = Color{ .r = 0.086, .g = 0.133, .b = 0.165, .a = 1.0 };
     pub const BACKGROUND_LIGHT = Color{ .r = 0.186, .g = 0.233, .b = 0.265, .a = 1.0 };
     pub const FOOTER = Color{ .r = 0.52, .g = 0.56, .b = 0.54, .a = 1.0 };

@@ -235,7 +235,7 @@ pub const Ui = struct {
             .w = size.x + 2 * padding.x,
             .h = size.y + 2 * padding.y,
         };
-        const color = if (is_active) style.Colors.CURSOR_ACTIVE else style.Colors.CURSOR_INACTIVE;
+        const color = if (is_active) style.colors.CURSOR_ACTIVE else style.colors.CURSOR_INACTIVE;
         self.drawSolidRect(cursor_rect, color);
     }
 
@@ -252,7 +252,7 @@ pub const Ui = struct {
                 .w = width + 2 * padding,
                 .h = height,
             },
-            style.Colors.BACKGROUND_LIGHT,
+            style.colors.BACKGROUND_LIGHT,
         );
         var buf: [10]u8 = undefined;
         _ = std.fmt.bufPrint(buf[0..], "{d:10}", .{frame_number}) catch unreachable;
@@ -297,7 +297,7 @@ pub const Ui = struct {
         for (chars) |char, i| {
             if (char != ' ' and char != '\n' and col_min <= col and col <= col_max) {
                 const q = font.getQuad(char, pos.x, pos.y);
-                const color = style.Colors.PALETTE[@intCast(usize, @enumToInt(colors[i]))];
+                const color = style.colors.PALETTE[@intCast(usize, @enumToInt(colors[i]))];
 
                 // Quad vertices in clockwise order, starting from top left
                 const vertices = [_]Vertex{
