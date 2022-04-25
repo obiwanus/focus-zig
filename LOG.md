@@ -22,6 +22,7 @@
 - Search within buffer
 
 # DONE
++ Reorganise code to avoid waiting on timeout
 + Make viewport scroll to scroll_wanted over time
     + Don't wait for events when there's animation to do
     + Implement a debug panel and display frame number there

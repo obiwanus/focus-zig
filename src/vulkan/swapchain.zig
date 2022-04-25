@@ -220,7 +220,7 @@ fn findPresentMode(vc: *const VulkanContext, allocator: Allocator) !vk.PresentMo
 
     const preferred = [_]vk.PresentModeKHR{
         .mailbox_khr,
-        .immediate_khr,
+        .immediate_khr, // comment out to enable vsync
     };
 
     for (preferred) |mode| {

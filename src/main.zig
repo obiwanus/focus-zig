@@ -143,13 +143,13 @@ pub fn main() !void {
     defer ui.deinit(&vc);
 
     var text_changed = true;
-    var view_changed = false;
+    var active_animation = false;
     var active_editor: *Editor = &editor1;
-
-    const app_start_ms = std.time.nanoTimestamp();
-    var clock_ms: f64 = 0;
+    g_events.append(.redraw_requested) catch u.oom();
 
     var frame_number: usize = 0;
+    const app_start_ms = std.time.nanoTimestamp();
+    var clock_ms: f64 = 0;
 
     while (!window.shouldClose()) {
         frame_number += 1;
@@ -180,94 +180,90 @@ pub fn main() !void {
             vu.destroyFramebuffers(&vc, gpa, framebuffers);
             framebuffers = try createFramebuffers(&vc, gpa, render_pass, swapchain);
 
-            view_changed = true;
+            g_events.append(.redraw_requested) catch u.oom();
         }
+
+        // Check if we have events and immediately continue
+        try glfw.pollEvents();
+
+        // Otherwise sleep until something happens
+        while (g_events.items.len == 0 and !active_animation and !window.shouldClose()) {
+            try glfw.waitEvents();
+        }
+
+        // Monotonically increasing clock for animations
+        clock_ms = @intToFloat(f64, std.time.nanoTimestamp() - app_start_ms) / 1_000_000;
 
         // Process events
-        while (!view_changed and !text_changed and !window.shouldClose()) {
-            // try glfw.pollEvents();
-            try glfw.waitEventsTimeout(0.005);
-
-            // Monotonically increasing clock for animations
-            clock_ms = @intToFloat(f64, std.time.nanoTimestamp() - app_start_ms) / 1_000_000;
-
-            for (g_events.items) |event| {
-                switch (event) {
-                    .char_entered => |char| {
-                        active_editor.typeChar(char);
-                        text_changed = true;
-                    },
-                    .key_pressed => |kp| {
-                        const editor_event = active_editor.keyPress(kp.key, kp.mods);
-                        // TMP
-                        if (kp.key == .up) {
-                            var target = active_editor.scroll.y - screen.font.line_height * 5;
-                            if (target < 0) target = 0;
-                            active_editor.setNewScrollTarget(target, clock_ms);
+        for (g_events.items) |event| {
+            switch (event) {
+                .char_entered => |char| {
+                    active_editor.typeChar(char);
+                    text_changed = true;
+                },
+                .key_pressed => |kp| {
+                    const editor_event = active_editor.keyPress(kp.key, kp.mods);
+                    // TMP
+                    if (kp.key == .up) {
+                        var target = active_editor.scroll.y - screen.font.line_height * 5;
+                        if (target < 0) target = 0;
+                        active_editor.setNewScrollTarget(target, clock_ms);
+                    }
+                    if (kp.key == .down) {
+                        const target = active_editor.scroll.y + screen.font.line_height * 5;
+                        active_editor.setNewScrollTarget(target, clock_ms);
+                    }
+                    // TODO: do it before anything else to intercept events
+                    if (editor_event) |e| {
+                        switch (e) {
+                            .switch_to_left => active_editor = &editor1,
+                            .switch_to_right => active_editor = &editor2,
+                            else => {},
                         }
-                        if (kp.key == .down) {
-                            const target = active_editor.scroll.y + screen.font.line_height * 5;
-                            active_editor.setNewScrollTarget(target, clock_ms);
-                        }
-                        // TODO: do it before anything else to intercept events
-                        if (editor_event) |e| {
-                            switch (e) {
-                                .switch_to_left => active_editor = &editor1,
-                                .switch_to_right => active_editor = &editor2,
-                                else => {},
-                            }
-                        }
-                        // TODO: don't do this when text is not changed
-                        text_changed = true;
-                    },
-                    .window_resized, .redraw_requested => {
-                        view_changed = true;
-                    },
-                }
+                    }
+                    // TODO: don't do this when text is not changed
+                    text_changed = true;
+                },
+                else => {},
             }
-
-            if (active_editor.animateScrolling(clock_ms)) {
-                view_changed = true;
-            }
-
-            g_events.shrinkRetainingCapacity(0);
         }
+        g_events.shrinkRetainingCapacity(0);
+
+        // If we're animating we don't want to go to sleep
+        active_animation = active_editor.animateScrolling(clock_ms);
 
         // Update view or text
-        if (view_changed or text_changed) {
-            view_changed = false;
-            if (text_changed) {
-                if (editor1.dirty) editor1.syncInternalData();
-                if (editor2.dirty) editor2.syncInternalData();
-                text_changed = false;
-            }
-            active_editor.updateCursor();
-
-            // Update uniform buffer
-            // NOTE: no need to update every frame right now, but we're still doing it
-            // because it'll be easier to add stuff here if we need to
-            uniform_buffer.data.screen_size = u.Vec2{
-                .x = @intToFloat(f32, screen.size.width),
-                .y = @intToFloat(f32, screen.size.height),
-            };
-            try uniform_buffer.copyToGPU(&vc);
-
-            // Draw UI
-            ui.startFrame(screen);
-
-            // TODO: support no editor, 1 editor, 2 editors
-            const editor_rect = ui.drawEditors(editor1, editor2, active_editor);
-
-            // This data will be available next frame
-            // TODO: I'm worried that this may cause bugs when resizing. Might need to introduce
-            // a redraw event when either of these changes
-            active_editor.lines_per_screen = @floatToInt(usize, editor_rect.h / screen.font.line_height);
-            active_editor.cols_per_screen = @floatToInt(usize, editor_rect.w / screen.font.xadvance);
-
-            ui.drawDebugPanel(frame_number);
-
-            try ui.endFrame(&vc, main_cmd_pool);
+        if (text_changed) {
+            if (editor1.dirty) editor1.syncInternalData();
+            if (editor2.dirty) editor2.syncInternalData();
+            text_changed = false;
         }
+        active_editor.updateCursor();
+
+        // Update uniform buffer
+        // NOTE: no need to update every frame right now, but we're still doing it
+        // because it'll be easier to add stuff here if we need to
+        uniform_buffer.data.screen_size = u.Vec2{
+            .x = @intToFloat(f32, screen.size.width),
+            .y = @intToFloat(f32, screen.size.height),
+        };
+        try uniform_buffer.copyToGPU(&vc);
+
+        // Draw UI
+        ui.startFrame(screen);
+
+        // TODO: support no editor, 1 editor, 2 editors
+        const editor_rect = ui.drawEditors(editor1, editor2, active_editor);
+
+        // This data will be available next frame
+        // TODO: I'm worried that this may cause bugs when resizing. Might need to introduce
+        // a redraw event when either of these changes
+        active_editor.lines_per_screen = @floatToInt(usize, editor_rect.h / screen.font.line_height);
+        active_editor.cols_per_screen = @floatToInt(usize, editor_rect.w / screen.font.xadvance);
+
+        ui.drawDebugPanel(frame_number);
+
+        try ui.endFrame(&vc, main_cmd_pool);
 
         // Record the main command buffer
         {

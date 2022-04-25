@@ -35,12 +35,10 @@ const ScrollAnimation = struct {
         else
             total;
         const t = @floatCast(f32, delta / total);
-        const result = Vec2{
+        return Vec2{
             .x = self.value1.x * (1 - t) + self.value2.x * t,
             .y = self.value1.y * (1 - t) + self.value2.y * t,
         };
-        // print("animation: t = {d:.3}, value = {d:.3}", .{result.y});
-        return result;
     }
 
     fn isFinished(self: ScrollAnimation, clock_ms: f64) bool {
