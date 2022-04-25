@@ -14,12 +14,6 @@ const Cursor = struct {
     col_wanted: ?usize = null, // where the cursor wants to be
 };
 
-const EditorEvent = enum {
-    switch_to_left,
-    switch_to_right,
-    close_current,
-};
-
 const ScrollAnimation = struct {
     start_ms: f64,
     target_ms: f64,
@@ -116,22 +110,15 @@ pub const Editor = struct {
     }
 
     /// Processes a key press event
-    // TODO: process feedback events such as toggle editor, open/close editor etc
-    pub fn keyPress(self: *Editor, key: glfw.Key, mods: glfw.Mods) ?EditorEvent {
+    pub fn keyPress(self: *Editor, key: glfw.Key, mods: glfw.Mods) void {
         self.dirty = true;
 
         switch (key) {
             .left => {
-                if (mods.control and mods.alt) {
-                    return .switch_to_left;
-                }
                 self.cursor.pos -|= 1;
                 self.cursor.col_wanted = null;
             },
             .right => {
-                if (mods.control and mods.alt) {
-                    return .switch_to_right;
-                }
                 if (self.cursor.pos < self.chars.items.len - 1) {
                     self.cursor.pos += 1;
                     self.cursor.col_wanted = null;
@@ -238,7 +225,6 @@ pub const Editor = struct {
                 self.dirty = false; // nothing needs to be done
             },
         }
-        return null;
     }
 
     pub fn setNewScrollTarget(self: *Editor, target: f32, clock_ms: f64) void {

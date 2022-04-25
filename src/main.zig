@@ -142,7 +142,6 @@ pub fn main() !void {
     var ui = try Ui.init(gpa, &vc);
     defer ui.deinit(&vc);
 
-    var text_changed = true;
     var active_animation = false;
     var active_editor: *Editor = &editor1;
     g_events.append(.redraw_requested) catch u.oom();
@@ -199,30 +198,16 @@ pub fn main() !void {
             switch (event) {
                 .char_entered => |char| {
                     active_editor.typeChar(char);
-                    text_changed = true;
                 },
                 .key_pressed => |kp| {
-                    const editor_event = active_editor.keyPress(kp.key, kp.mods);
-                    // TMP
-                    if (kp.key == .up) {
-                        var target = active_editor.scroll.y - screen.font.line_height * 5;
-                        if (target < 0) target = 0;
-                        active_editor.setNewScrollTarget(target, clock_ms);
+                    active_editor.keyPress(kp.key, kp.mods);
+                },
+                .command => |command| {
+                    switch (command) {
+                        .switch_to_left => active_editor = &editor1,
+                        .switch_to_right => active_editor = &editor2, // TODO: editor2 doesn't always exist
+                        else => {},
                     }
-                    if (kp.key == .down) {
-                        const target = active_editor.scroll.y + screen.font.line_height * 5;
-                        active_editor.setNewScrollTarget(target, clock_ms);
-                    }
-                    // TODO: do it before anything else to intercept events
-                    if (editor_event) |e| {
-                        switch (e) {
-                            .switch_to_left => active_editor = &editor1,
-                            .switch_to_right => active_editor = &editor2,
-                            else => {},
-                        }
-                    }
-                    // TODO: don't do this when text is not changed
-                    text_changed = true;
                 },
                 else => {},
             }
@@ -232,12 +217,9 @@ pub fn main() !void {
         // If we're animating we don't want to go to sleep
         active_animation = active_editor.animateScrolling(clock_ms);
 
-        // Update view or text
-        if (text_changed) {
-            if (editor1.dirty) editor1.syncInternalData();
-            if (editor2.dirty) editor2.syncInternalData();
-            text_changed = false;
-        }
+        // Update internal data if necessary
+        if (editor1.dirty) editor1.syncInternalData();
+        if (editor2.dirty) editor2.syncInternalData();
         active_editor.updateCursor();
 
         // Update uniform buffer
@@ -372,6 +354,7 @@ pub const Event = union(enum) {
     key_pressed: KeyPress,
     char_entered: u.Codepoint,
     window_resized: WindowResize,
+    command: Command,
     redraw_requested: void,
 
     pub const WindowResize = struct {
@@ -382,12 +365,27 @@ pub const Event = union(enum) {
         key: glfw.Key,
         mods: glfw.Mods,
     };
+    pub const Command = enum {
+        switch_to_left,
+        switch_to_right,
+        close_current,
+    };
 };
 
 fn newKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: glfw.Action, mods: glfw.Mods) void {
     _ = window;
     _ = scancode;
     if (action == .press or action == .repeat) {
+        if (mods.control and mods.alt) {
+            if (key == .left) {
+                g_events.append(Event{ .command = .switch_to_left }) catch u.oom();
+                return;
+            }
+            if (key == .right) {
+                g_events.append(Event{ .command = .switch_to_right }) catch u.oom();
+                return;
+            }
+        }
         g_events.append(Event{ .key_pressed = .{ .key = key, .mods = mods } }) catch u.oom();
     }
 }
