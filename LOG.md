@@ -1,5 +1,13 @@
 # TODO
-- Print the entry we're trying to open
+- Open current directory and show files there
+    - Ignore .git and all in .gitignore
+    - Make the window scroll
+    - Add a scrollbar
+    - Only show files in the current directory
+- Allow to filter files and directories using fuzzy search
+- Use tab or enter to enter directories
+    - Display directories in bubbles
+- Use backspace to go up a directory (remove rightmost bubble)
 - Support 0, 1, 2 editors
     + Rewrite the layout system - first get rects, then draw into them
     - Switch between 1 and 2 editors
@@ -11,6 +19,7 @@
     - Implement a few languages, not just Zig
     - Measure how expensive it is to rehighlight everything
 - [bug] Colors are off when non-ascii bytes are present (tokenizer doesn't support utf-8)
+- [debt] Fix the leak when getting files in working dir
 
 # WHAT NEEDS TO WORK BEFORE I CAN START USING IT
 - Open files
@@ -22,6 +31,7 @@
 - Search within buffer
 
 # DONE
++ Print the entry we're trying to open
 + Switch selected entry using the arrow keys
 + Make an open file dialog
     + Show a rect where the dialog would be. Support min/max width and scale.

@@ -73,9 +73,22 @@ pub fn bytesToCodepoints(bytes: []const u8, allocator: Allocator) ![]Codepoint {
     const utf8_view = try std.unicode.Utf8View.init(bytes);
     var iterator = utf8_view.iterator();
     while (iterator.nextCodepoint()) |codepoint| {
-        try codepoints.append(codepoint);
+        codepoints.append(codepoint) catch oom();
     }
     return codepoints.toOwnedSlice();
+}
+
+pub fn codepointsToBytes(codepoints: []const Codepoint, allocator: Allocator) ![]u8 {
+    var bytes = std.ArrayList(u8).init(allocator);
+    bytes.ensureTotalCapacity(codepoints.len * 4) catch oom();
+    bytes.expandToCapacity();
+    var total_bytes: usize = 0;
+    for (codepoints) |codepoint| {
+        const num_bytes = try std.unicode.utf8Encode(codepoint, bytes.items[total_bytes..]);
+        total_bytes += num_bytes;
+    }
+    bytes.shrinkRetainingCapacity(total_bytes);
+    return bytes.toOwnedSlice();
 }
 
 pub fn oom() noreturn {

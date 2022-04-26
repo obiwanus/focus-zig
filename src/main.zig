@@ -77,6 +77,10 @@ pub const OpenFileDialog = struct {
     pub fn deinit(self: *OpenFileDialog) void {
         self.entries.deinit();
     }
+
+    pub fn selectedEntry(self: OpenFileDialog) Entry {
+        return self.entries.items[self.selected];
+    }
 };
 
 pub fn main() !void {
@@ -207,6 +211,10 @@ pub fn main() !void {
     var open_file_dialog: ?OpenFileDialog = null;
 
     while (!window.shouldClose()) {
+        var frame_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer frame_arena.deinit();
+        var frame_allocator = frame_arena.allocator();
+
         frame_number += 1;
 
         // Ask the swapchain for the next image
@@ -273,6 +281,11 @@ pub fn main() !void {
                             if (dialog.selected >= dialog.entries.items.len) {
                                 dialog.selected = dialog.entries.items.len -| 1;
                             }
+                        }
+                        if (kp.key == .enter) {
+                            const entry = dialog.selectedEntry();
+                            const filename = u.codepointsToBytes(entry.name, frame_allocator);
+                            u.print("Open: {s}\n", .{filename});
                         }
                     },
                     else => {},
