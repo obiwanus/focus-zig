@@ -1,5 +1,4 @@
 # TODO
-- Switch selected entry using the arrow keys
 - Print the entry we're trying to open
 - Support 0, 1, 2 editors
     + Rewrite the layout system - first get rects, then draw into them
@@ -23,6 +22,7 @@
 - Search within buffer
 
 # DONE
++ Switch selected entry using the arrow keys
 + Make an open file dialog
     + Show a rect where the dialog would be. Support min/max width and scale.
     + Get a list of files in the current directory

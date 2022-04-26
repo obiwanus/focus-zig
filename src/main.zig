@@ -250,30 +250,51 @@ pub fn main() !void {
         clock_ms = @intToFloat(f64, std.time.nanoTimestamp() - app_start_ms) / 1_000_000;
 
         // Process events
-        for (g_events.items) |event| {
-            switch (event) {
-                .char_entered => |char| {
-                    active_editor.typeChar(char);
-                },
-                .key_pressed => |kp| {
-                    active_editor.keyPress(kp.key, kp.mods);
-                },
-                .command => |command| {
-                    switch (command) {
-                        .switch_to_left => active_editor = &editor1,
-                        .switch_to_right => active_editor = &editor2, // TODO: editor2 doesn't always exist
-                        .toggle_open_file_dialog => {
-                            if (open_file_dialog) |*dialog| {
-                                dialog.deinit();
-                                open_file_dialog = null;
-                            } else {
-                                open_file_dialog = try OpenFileDialog.init(gpa);
+        if (open_file_dialog) |*dialog| {
+            // All events go to the dialog
+            for (g_events.items) |event| {
+                switch (event) {
+                    .char_entered => |char| {
+                        _ = char;
+                        // TODO
+                    },
+                    .key_pressed => |kp| {
+                        if (kp.key == .escape or (kp.mods.control and kp.key == .p)) {
+                            // Close dialog
+                            dialog.deinit();
+                            open_file_dialog = null;
+                            continue;
+                        }
+                        if (kp.key == .up) {
+                            dialog.selected -|= 1;
+                        }
+                        if (kp.key == .down) {
+                            dialog.selected += 1;
+                            if (dialog.selected >= dialog.entries.items.len) {
+                                dialog.selected = dialog.entries.items.len -| 1;
                             }
-                        },
-                        else => {},
-                    }
-                },
-                else => {},
+                        }
+                    },
+                    else => {},
+                }
+            }
+        } else {
+            // Normal editor mode
+            for (g_events.items) |event| {
+                switch (event) {
+                    .char_entered => |char| {
+                        active_editor.typeChar(char);
+                    },
+                    .key_pressed => |kp| {
+                        if (kp.mods.control and kp.key == .p) {
+                            open_file_dialog = try OpenFileDialog.init(gpa);
+                            continue;
+                        }
+                        // TODO: switch editors
+                        active_editor.keyPress(kp.key, kp.mods);
+                    },
+                    else => {},
+                }
             }
         }
         g_events.shrinkRetainingCapacity(0);
@@ -463,7 +484,6 @@ pub const Event = union(enum) {
     key_pressed: KeyPress,
     char_entered: u.Codepoint,
     window_resized: WindowResize,
-    command: Command,
     redraw_requested: void,
 
     pub const WindowResize = struct {
@@ -474,32 +494,12 @@ pub const Event = union(enum) {
         key: glfw.Key,
         mods: glfw.Mods,
     };
-    pub const Command = enum {
-        switch_to_left,
-        switch_to_right,
-        close_current,
-        toggle_open_file_dialog,
-    };
 };
 
 fn newKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: glfw.Action, mods: glfw.Mods) void {
     _ = window;
     _ = scancode;
     if (action == .press or action == .repeat) {
-        if (mods.control and mods.alt) {
-            if (key == .left) {
-                g_events.append(Event{ .command = .switch_to_left }) catch u.oom();
-                return;
-            }
-            if (key == .right) {
-                g_events.append(Event{ .command = .switch_to_right }) catch u.oom();
-                return;
-            }
-        }
-        if (mods.control and key == .p) {
-            g_events.append(Event{ .command = .toggle_open_file_dialog }) catch u.oom();
-            return;
-        }
         g_events.append(Event{ .key_pressed = .{ .key = key, .mods = mods } }) catch u.oom();
     }
 }
