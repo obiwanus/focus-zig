@@ -266,7 +266,7 @@ pub fn main() !void {
 
                 ui.drawEditor(editor1, editor1_rect, true);
 
-                ui.drawSolidRect(footer_rect, style.colors.BACKGROUND_BRIGHT);
+                ui.drawSolidRectWithShadow(footer_rect, style.colors.BACKGROUND_BRIGHT, 5);
             },
             .side_by_side => {
                 // Layout rects to prepare for drawing
@@ -290,7 +290,7 @@ pub fn main() !void {
                 ui.drawEditor(editor1, editor1_rect, active_editor == &editor1);
                 ui.drawEditor(editor2, editor2_rect, active_editor == &editor2);
 
-                ui.drawSolidRect(footer_rect, style.colors.BACKGROUND_BRIGHT);
+                ui.drawSolidRectWithShadow(footer_rect, style.colors.BACKGROUND_BRIGHT, 5);
                 const screen_rect = screen.getRect();
                 const splitter_rect = screen_rect.shrink(screen_rect.w / 2 - 1, 0, screen_rect.w / 2 - 1, 0);
                 ui.drawSolidRect(splitter_rect, style.colors.BACKGROUND_BRIGHT);

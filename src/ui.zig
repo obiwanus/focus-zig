@@ -217,12 +217,16 @@ pub const Ui = struct {
         const max_width = 1500 * self.screen.scale;
         const area = self.screen.getRect();
         const width = std.math.clamp(area.w / 3, min_width, max_width);
-        self.drawSolidRect(Rect{
-            .x = (area.w - width) / 2,
-            .y = 100,
-            .w = width,
-            .h = 200,
-        }, style.colors.BACKGROUND_LIGHT);
+        self.drawSolidRectWithShadow(
+            Rect{
+                .x = (area.w - width) / 2,
+                .y = 100,
+                .w = width,
+                .h = 200,
+            },
+            style.colors.BACKGROUND_LIGHT,
+            10,
+        );
     }
 
     pub fn drawDebugPanel(self: *Ui, frame_number: usize) void {
@@ -255,15 +259,70 @@ pub const Ui = struct {
     // ----------------------------------------------------------------------------------------------------------------
 
     pub fn drawSolidRect(self: *Ui, r: Rect, color: Color) void {
+        self.drawRect(r, color, color, color, color);
+    }
+
+    pub fn drawSolidRectWithShadow(self: *Ui, r: Rect, color: Color, shadow_size: f32) void {
+        const size = shadow_size * self.screen.scale;
+        const dark = Color{ .r = 0, .g = 0, .b = 0, .a = 0.2 };
+        const transparent = Color{ .r = 0, .g = 0, .b = 0, .a = 0 };
+        const pi = std.math.pi;
+
+        // Draw main shadows
+        self.drawRect(Rect{ .x = r.x, .y = r.y - size, .w = r.w, .h = size }, transparent, transparent, dark, dark); // top
+        self.drawRect(Rect{ .x = r.x, .y = r.y + r.h, .w = r.w, .h = size }, dark, dark, transparent, transparent); // bottom
+        self.drawRect(Rect{ .x = r.x - size, .y = r.y, .w = size, .h = r.h }, transparent, dark, dark, transparent); // left
+        self.drawRect(Rect{ .x = r.x + r.w, .y = r.y, .w = size, .h = r.h }, dark, transparent, transparent, dark); // right
+
+        // Draw corners
+        self.drawCircularShadow(.{ .x = r.x + r.w, .y = r.y }, size, pi / 2.0, pi, dark);
+        self.drawCircularShadow(.{ .x = r.x, .y = r.y }, size, pi, 3 * pi / 2.0, dark);
+        self.drawCircularShadow(.{ .x = r.x, .y = r.y + r.h }, size, 3 * pi / 2.0, 2.0 * pi, dark);
+        self.drawCircularShadow(.{ .x = r.x + r.w, .y = r.y + r.h }, size, 0, pi / 2.0, dark);
+
+        self.drawSolidRect(r, color);
+    }
+
+    fn drawCircularShadow(self: *Ui, center: Vec2, radius: f32, start_angle: f32, end_angle: f32, dark: Color) void {
+        const v = @intCast(u32, self.vertices.items.len);
+        const transparent = Color{ .r = 0, .g = 0, .b = 0, .a = 0 };
+
+        // Central vertex
+        self.vertices.append(Vertex{ .color = dark, .vertex_type = .solid, .texcoord = undefined, .pos = center }) catch u.oom();
+
+        // Get points in a circle
+        const num_triangles = 9;
+        const step = (end_angle - start_angle) / num_triangles;
+        var angle = start_angle;
+        var p: usize = 0;
+        while (p <= num_triangles) {
+            const pos = Vec2{
+                .x = center.x + radius * std.math.sin(angle),
+                .y = center.y + radius * std.math.cos(angle),
+            };
+            self.vertices.append(Vertex{ .color = transparent, .vertex_type = .solid, .texcoord = undefined, .pos = pos }) catch u.oom();
+
+            angle += step;
+            p += 1;
+        }
+        var i: u32 = 1;
+        while (i <= num_triangles) : (i += 1) {
+            const indices = [_]u32{ v, v + i, v + i + 1 };
+            self.indices.appendSlice(&indices) catch u.oom();
+        }
+    }
+
+    /// Queues a rect with colors for each vertex
+    fn drawRect(self: *Ui, r: Rect, color0: Color, color1: Color, color2: Color, color3: Color) void {
         // Current vertex index
         const v = @intCast(u32, self.vertices.items.len);
 
         // Rect vertices in clockwise order, starting from top left
         const vertices = [_]Vertex{
-            .{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = .{ .x = r.x, .y = r.y } },
-            .{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = .{ .x = r.x + r.w, .y = r.y } },
-            .{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = .{ .x = r.x + r.w, .y = r.y + r.h } },
-            .{ .color = color, .vertex_type = .solid, .texcoord = undefined, .pos = .{ .x = r.x, .y = r.y + r.h } },
+            .{ .color = color0, .vertex_type = .solid, .texcoord = undefined, .pos = .{ .x = r.x, .y = r.y } },
+            .{ .color = color1, .vertex_type = .solid, .texcoord = undefined, .pos = .{ .x = r.x + r.w, .y = r.y } },
+            .{ .color = color2, .vertex_type = .solid, .texcoord = undefined, .pos = .{ .x = r.x + r.w, .y = r.y + r.h } },
+            .{ .color = color3, .vertex_type = .solid, .texcoord = undefined, .pos = .{ .x = r.x, .y = r.y + r.h } },
         };
         self.vertices.appendSlice(&vertices) catch u.oom();
 

@@ -1,6 +1,8 @@
 # TODO
 - Make an open file dialog
-    - Show a rect where the dialog would be. Support min/max width and scale.
+    + Show a rect where the dialog would be. Support min/max width and scale.
+    - Get a list of files in the current directory
+    - Display the list (leave the search box out for now)
 - Support 0, 1, 2 editors
     + Rewrite the layout system - first get rects, then draw into them
     - Switch between 1 and 2 editors
