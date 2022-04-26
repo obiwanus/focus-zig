@@ -1,4 +1,7 @@
 const std = @import("std");
+
+const Allocator = std.mem.Allocator;
+
 pub const Codepoint = u21;
 
 pub const assert = std.debug.assert;
@@ -15,6 +18,10 @@ pub const Rect = struct {
     w: f32,
     h: f32,
 
+    pub fn copy(self: Rect) Rect {
+        return self;
+    }
+
     pub fn shrink(self: Rect, left: f32, top: f32, right: f32, bottom: f32) Rect {
         assert(self.w >= left + right);
         assert(self.h >= top + bottom);
@@ -24,6 +31,10 @@ pub const Rect = struct {
             .w = self.w - right - left,
             .h = self.h - bottom - top,
         };
+    }
+
+    pub fn shrinkEvenly(self: Rect, margin: f32) Rect {
+        return self.shrink(margin, margin, margin, margin);
     }
 
     pub fn splitLeft(self: *Rect, w: f32, margin: f32) Rect {
@@ -56,6 +67,16 @@ pub const Rect = struct {
         return split;
     }
 };
+
+pub fn bytesToCodepoints(bytes: []const u8, allocator: Allocator) ![]Codepoint {
+    var codepoints = std.ArrayList(Codepoint).init(allocator);
+    const utf8_view = try std.unicode.Utf8View.init(bytes);
+    var iterator = utf8_view.iterator();
+    while (iterator.nextCodepoint()) |codepoint| {
+        try codepoints.append(codepoint);
+    }
+    return codepoints.toOwnedSlice();
+}
 
 pub fn oom() noreturn {
     @panic("Out of memory");

@@ -8,14 +8,15 @@ const u = @import("utils.zig");
 const vu = @import("vulkan/utils.zig");
 const pipeline = @import("vulkan/pipeline.zig");
 const style = @import("style.zig");
+const ui_mod = @import("ui.zig");
 
 const Allocator = std.mem.Allocator;
 const VulkanContext = @import("vulkan/context.zig").VulkanContext;
 const Font = @import("fonts.zig").Font;
 const Swapchain = @import("vulkan/swapchain.zig").Swapchain;
 const UiPipeline = pipeline.UiPipeline;
-const Ui = @import("ui.zig").Ui;
-const Screen = @import("ui.zig").Screen;
+const Ui = ui_mod.Ui;
+const Screen = ui_mod.Screen;
 const Editor = @import("editor.zig").Editor;
 
 var GPA = std.heap.GeneralPurposeAllocator(.{ .never_unmap = false }){};
@@ -30,6 +31,52 @@ const EditorLayout = enum {
     none,
     single,
     side_by_side,
+};
+
+pub const OpenFileDialog = struct {
+    entries: std.ArrayList(Entry),
+    selected: usize = 0,
+
+    const Entry = struct {
+        path: []u.Codepoint,
+        name: []u.Codepoint,
+        kind: Kind,
+    };
+
+    const Kind = enum {
+        file,
+        directory,
+    };
+
+    pub fn init(allocator: Allocator) !OpenFileDialog {
+        var entries = std.ArrayList(Entry).init(allocator);
+        var dir = try std.fs.cwd().openDir("src", .{ .iterate = true });
+        var walker = try dir.walk(allocator);
+        defer walker.deinit();
+
+        while (try walker.next()) |entry| {
+            const kind = switch (entry.kind) {
+                .Directory => Kind.directory,
+                .File => Kind.file,
+                else => continue,
+            };
+            entries.append(Entry{
+                // TODO: Need to find an idiomatic way to handle this leak
+                // (e.g. have a memory arena for the strings so we can free them at once)
+                .path = try u.bytesToCodepoints(entry.path, allocator),
+                .name = try u.bytesToCodepoints(entry.basename, allocator),
+                .kind = kind,
+            }) catch u.oom();
+        }
+
+        return OpenFileDialog{
+            .entries = entries,
+        };
+    }
+
+    pub fn deinit(self: *OpenFileDialog) void {
+        self.entries.deinit();
+    }
 };
 
 pub fn main() !void {
@@ -157,7 +204,7 @@ pub fn main() !void {
     var layout_mode: EditorLayout = .side_by_side;
     // var layout_mode: EditorLayout = .single;
 
-    var show_open_file_dialog = false;
+    var open_file_dialog: ?OpenFileDialog = null;
 
     while (!window.shouldClose()) {
         frame_number += 1;
@@ -216,7 +263,12 @@ pub fn main() !void {
                         .switch_to_left => active_editor = &editor1,
                         .switch_to_right => active_editor = &editor2, // TODO: editor2 doesn't always exist
                         .toggle_open_file_dialog => {
-                            show_open_file_dialog = !show_open_file_dialog;
+                            if (open_file_dialog) |*dialog| {
+                                dialog.deinit();
+                                open_file_dialog = null;
+                            } else {
+                                open_file_dialog = try OpenFileDialog.init(gpa);
+                            }
                         },
                         else => {},
                     }
@@ -297,8 +349,8 @@ pub fn main() !void {
             },
         }
 
-        if (show_open_file_dialog) {
-            ui.drawOpenFileDialog();
+        if (open_file_dialog) |dialog| {
+            ui.drawOpenFileDialog(dialog);
         }
 
         ui.drawDebugPanel(frame_number);

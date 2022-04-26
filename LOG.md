@@ -1,8 +1,6 @@
 # TODO
-- Make an open file dialog
-    + Show a rect where the dialog would be. Support min/max width and scale.
-    - Get a list of files in the current directory
-    - Display the list (leave the search box out for now)
+- Switch selected entry using the arrow keys
+- Print the entry we're trying to open
 - Support 0, 1, 2 editors
     + Rewrite the layout system - first get rects, then draw into them
     - Switch between 1 and 2 editors
@@ -25,6 +23,10 @@
 - Search within buffer
 
 # DONE
++ Make an open file dialog
+    + Show a rect where the dialog would be. Support min/max width and scale.
+    + Get a list of files in the current directory
+    + Display the list and the search box
 + Make viewport follow cursor with a smooth scrolling
     + Draw text at non-sticky offsets
     + Update scroll_wanted when cursor is outside the viewport

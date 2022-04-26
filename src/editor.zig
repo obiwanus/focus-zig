@@ -61,10 +61,6 @@ pub const Editor = struct {
     scroll: Vec2, // how many px we have scrolled to the left and to the top
     scroll_animation: ?ScrollAnimation = null,
 
-    // TODO:
-    // text_changed: bool = false,
-    // view_changed: bool = false,
-
     pub fn init(allocator: Allocator, comptime file_name: []const u8) !Editor {
         const initial = @embedFile(file_name);
         var bytes = std.ArrayList(u8).init(allocator);

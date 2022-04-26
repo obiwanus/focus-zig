@@ -12,6 +12,7 @@ const TextColor = style.TextColor;
 const Color = style.Color;
 const Vec2 = u.Vec2;
 const Rect = u.Rect;
+const OpenFileDialog = @import("main.zig").OpenFileDialog;
 
 // Probably temporary - this is just to preallocate buffers on the GPU
 // and not worry about more sophisticated allocation strategies
@@ -21,6 +22,10 @@ pub const Screen = struct {
     size: vk.Extent2D,
     scale: f32,
     font: Font,
+
+    // TODO:
+    // font_ui_normal: Font,
+    // font_ui_small: Font,
 
     pub fn getRect(self: Screen) Rect {
         return Rect{
@@ -212,21 +217,65 @@ pub const Ui = struct {
         self.drawText(chars, colors, top_left, col_min, col_max);
     }
 
-    pub fn drawOpenFileDialog(self: *Ui) void {
-        const min_width = 500 * self.screen.scale;
-        const max_width = 1500 * self.screen.scale;
-        const area = self.screen.getRect();
-        const width = std.math.clamp(area.w / 3, min_width, max_width);
+    pub fn drawOpenFileDialog(self: *Ui, dialog: OpenFileDialog) void {
+        const scale = self.screen.scale;
+        const font = self.screen.font;
+
+        const min_width = 500 * scale;
+        const max_width = 1500 * scale;
+        const max_height = 800 * scale;
+
+        const screen = self.screen.getRect();
+        const width = std.math.clamp(screen.w / 3, min_width, max_width);
+        var dialog_box_rect = Rect{
+            .x = (screen.w - width) / 2,
+            .y = 100,
+            .w = width,
+            .h = max_height,
+        };
+
+        // Determine the height of the dialog box
+        const margin = 10 * scale;
+        const padding = 5 * scale;
+        const input_rect_height = font.line_height + 2 * padding + 2 * margin + 2;
+        const entry_height = font.line_height + 2 * padding;
+        const max_entries = @floatToInt(usize, dialog_box_rect.h / entry_height);
+        const num_entries = std.math.clamp(dialog.entries.items.len, 0, max_entries);
+        const actual_height = entry_height * @intToFloat(f32, num_entries) + input_rect_height;
+        dialog_box_rect.h = actual_height;
+
+        // Draw background
         self.drawSolidRectWithShadow(
-            Rect{
-                .x = (area.w - width) / 2,
-                .y = 100,
-                .w = width,
-                .h = 200,
-            },
+            dialog_box_rect,
             style.colors.BACKGROUND_LIGHT,
             10,
         );
+
+        // Draw input box
+        var input_rect = dialog_box_rect.splitTop(input_rect_height, 0).shrinkEvenly(margin);
+        self.drawSolidRect(input_rect, style.colors.BACKGROUND_DARK);
+        input_rect = input_rect.shrinkEvenly(1);
+        self.drawSolidRect(input_rect, style.colors.BACKGROUND);
+        input_rect = input_rect.shrinkEvenly(padding);
+
+        // Draw entries
+        for (dialog.entries.items) |entry, i| {
+            const entry_rect = Rect{
+                .x = dialog_box_rect.x,
+                .y = dialog_box_rect.y + @intToFloat(f32, i) * entry_height,
+                .w = dialog_box_rect.w,
+                .h = entry_height,
+            };
+            if (i == dialog.selected) {
+                self.drawSolidRect(entry_rect, style.colors.BACKGROUND_BRIGHT);
+            }
+            const adjust_y = 2 * scale; // to align with the box
+            self.drawLabel(
+                entry.name,
+                Vec2{ .x = entry_rect.x + margin + padding, .y = entry_rect.y + padding + adjust_y },
+                style.colors.PUNCTUATION,
+            );
+        }
     }
 
     pub fn drawDebugPanel(self: *Ui, frame_number: usize) void {
@@ -247,13 +296,10 @@ pub const Ui = struct {
         var buf: [10]u8 = undefined;
         _ = std.fmt.bufPrint(buf[0..], "{d:10}", .{frame_number}) catch unreachable;
         var chars: [10]u.Codepoint = undefined;
-        var colors: [10]TextColor = undefined;
         for (buf) |char, i| {
             chars[i] = char;
-            colors[i] = .keyword;
         }
-        // TODO: write a more convenient method for drawing debug stuff
-        self.drawText(chars[0..], colors[0..], Vec2{ .x = screen_x - margin - padding - width, .y = margin + padding }, 0, 10);
+        self.drawLabel(&chars, Vec2{ .x = screen_x - margin - padding - width, .y = margin + padding }, style.colors.KEYWORD);
     }
 
     // ----------------------------------------------------------------------------------------------------------------
@@ -336,28 +382,10 @@ pub const Ui = struct {
         var pos = Vec2{ .x = top_left.x, .y = top_left.y + font.baseline };
         var col: usize = 0;
 
-        // Current vertex index
-        var v = @intCast(u32, self.vertices.items.len);
-
         for (chars) |char, i| {
             if (char != ' ' and char != '\n' and col_min <= col and col <= col_max) {
-                const q = font.getQuad(char, pos.x, pos.y);
                 const color = style.colors.PALETTE[@intCast(usize, @enumToInt(colors[i]))];
-
-                // Quad vertices in clockwise order, starting from top left
-                const vertices = [_]Vertex{
-                    .{ .color = color, .vertex_type = .textured, .texcoord = .{ .x = q.s0, .y = q.t0 }, .pos = .{ .x = q.x0, .y = q.y0 } },
-                    .{ .color = color, .vertex_type = .textured, .texcoord = .{ .x = q.s1, .y = q.t0 }, .pos = .{ .x = q.x1, .y = q.y0 } },
-                    .{ .color = color, .vertex_type = .textured, .texcoord = .{ .x = q.s1, .y = q.t1 }, .pos = .{ .x = q.x1, .y = q.y1 } },
-                    .{ .color = color, .vertex_type = .textured, .texcoord = .{ .x = q.s0, .y = q.t1 }, .pos = .{ .x = q.x0, .y = q.y1 } },
-                };
-                self.vertices.appendSlice(&vertices) catch u.oom();
-
-                // Indices: 0, 2, 3, 0, 1, 2
-                const indices = [_]u32{ v, v + 2, v + 3, v, v + 1, v + 2 };
-                self.indices.appendSlice(&indices) catch u.oom();
-
-                v += 4;
+                self.drawChar(char, pos, font, color);
             }
             if (col_min <= col and col <= col_max) {
                 pos.x += font.xadvance;
@@ -369,5 +397,32 @@ pub const Ui = struct {
                 col = 0;
             }
         }
+    }
+
+    fn drawLabel(self: *Ui, chars: []u.Codepoint, top_left: Vec2, color: Color) void {
+        const font = self.screen.font;
+        var pos = Vec2{ .x = top_left.x, .y = top_left.y + font.baseline };
+        for (chars) |char| {
+            self.drawChar(char, pos, font, color);
+            pos.x += font.xadvance;
+        }
+    }
+
+    fn drawChar(self: *Ui, char: u.Codepoint, pos: Vec2, font: Font, color: Color) void {
+        var v = @intCast(u32, self.vertices.items.len);
+
+        // Quad vertices in clockwise order, starting from top left
+        const q = font.getQuad(char, pos.x, pos.y);
+        const vertices = [_]Vertex{
+            .{ .color = color, .vertex_type = .textured, .texcoord = .{ .x = q.s0, .y = q.t0 }, .pos = .{ .x = q.x0, .y = q.y0 } },
+            .{ .color = color, .vertex_type = .textured, .texcoord = .{ .x = q.s1, .y = q.t0 }, .pos = .{ .x = q.x1, .y = q.y0 } },
+            .{ .color = color, .vertex_type = .textured, .texcoord = .{ .x = q.s1, .y = q.t1 }, .pos = .{ .x = q.x1, .y = q.y1 } },
+            .{ .color = color, .vertex_type = .textured, .texcoord = .{ .x = q.s0, .y = q.t1 }, .pos = .{ .x = q.x0, .y = q.y1 } },
+        };
+        self.vertices.appendSlice(&vertices) catch u.oom();
+
+        // Indices: 0, 2, 3, 0, 1, 2
+        const indices = [_]u32{ v, v + 2, v + 3, v, v + 1, v + 2 };
+        self.indices.appendSlice(&indices) catch u.oom();
     }
 };
