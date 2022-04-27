@@ -128,11 +128,16 @@ pub const OpenFileDialog = struct {
         var arena = std.heap.ArenaAllocator.init(allocator);
         var arena_allocator = arena.allocator();
 
-        var dir = try std.fs.cwd().openDir("src", .{ .iterate = true });
+        var dir = try std.fs.cwd().openDir(".", .{ .iterate = true });
         var walker = try dir.walk(allocator);
         defer walker.deinit();
 
         var root = Dir.init(arena_allocator, ".");
+        const folders_to_ignore = [_][]const u8{
+            ".git",
+            "zig-cache",
+            "zig-out",
+        };
 
         // Go through all the files and subfolders and build a tree
         while (try walker.next()) |entry| {
@@ -146,13 +151,16 @@ pub const OpenFileDialog = struct {
                         path_chunks[i] = chunk;
                         i += 1;
                     }
+                    const ignore = for (folders_to_ignore) |folder| {
+                        if (std.mem.eql(u8, folder, path_chunks[0])) break true;
+                    } else false;
+                    if (ignore) continue;
+
                     root.insertFileIntoTree(entry.path, path_chunks[0..i], arena_allocator);
                 },
                 else => continue, // ignore everything else
             }
         }
-
-        root.printTree(0);
 
         return OpenFileDialog{
             .root = root,

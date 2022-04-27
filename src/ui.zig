@@ -259,27 +259,37 @@ pub const Ui = struct {
         self.drawSolidRect(input_rect, style.colors.BACKGROUND);
         input_rect = input_rect.shrinkEvenly(padding);
 
-        _ = tmp_allocator;
-        // Draw entries
-        for (dir.files.items) |entry, i| {
-            const entry_rect = Rect{
-                .x = dialog_box_rect.x,
-                .y = dialog_box_rect.y + @intToFloat(f32, i) * entry_height,
-                .w = dialog_box_rect.w,
-                .h = entry_height,
-            };
+        // Draw dirs
+        var i: usize = 0;
+        var r = Rect{ .x = dialog_box_rect.x, .y = dialog_box_rect.y, .w = dialog_box_rect.w, .h = entry_height };
+        for (dir.dirs.items) |entry| {
             if (i == dir.selected) {
-                self.drawSolidRect(entry_rect, style.colors.BACKGROUND_BRIGHT);
+                self.drawSolidRect(r, style.colors.BACKGROUND_BRIGHT);
             }
             const adjust_y = 2 * scale; // to align with the box
-
             const name = u.bytesToChars(entry.name.items, tmp_allocator) catch unreachable;
-
             self.drawLabel(
                 name,
-                Vec2{ .x = entry_rect.x + margin + padding, .y = entry_rect.y + padding + adjust_y },
+                Vec2{ .x = r.x + margin + padding, .y = r.y + padding + adjust_y },
                 style.colors.PUNCTUATION,
             );
+            r.y += entry_height;
+            i += 1;
+        }
+        // Draw files
+        for (dir.files.items) |entry| {
+            if (i == dir.selected) {
+                self.drawSolidRect(r, style.colors.BACKGROUND_BRIGHT);
+            }
+            const adjust_y = 2 * scale; // to align with the box
+            const name = u.bytesToChars(entry.name.items, tmp_allocator) catch unreachable;
+            self.drawLabel(
+                name,
+                Vec2{ .x = r.x + margin + padding, .y = r.y + padding + adjust_y },
+                style.colors.PUNCTUATION,
+            );
+            r.y += entry_height;
+            i += 1;
         }
     }
 

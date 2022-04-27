@@ -2,7 +2,7 @@
 - Open current directory and show files there
     + Only show files in the current directory
         + Fix the bug with the tree
-    - Ignore .git and all in .gitignore
+    + Ignore .git and all in .gitignore
     - Make the window scroll
     - Add a scrollbar
 - Allow to filter files and directories using fuzzy search
@@ -20,7 +20,7 @@
     - Implement a few languages, not just Zig
     - Measure how expensive it is to rehighlight everything
 - [bug] Colors are off when non-ascii bytes are present (tokenizer doesn't support utf-8)
-- [debt] Fix the leak when getting files in working dir
+- [tech-debt] When scanning the root folder, ignore the ignored folders right away (modify dir walker)
 
 # WHAT NEEDS TO WORK BEFORE I CAN START USING IT
 - Open files
@@ -32,6 +32,7 @@
 - Search within buffer
 
 # DONE
++ Fix the leak when getting files in working dir
 + Print the entry we're trying to open
 + Switch selected entry using the arrow keys
 + Make an open file dialog
