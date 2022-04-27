@@ -1,9 +1,10 @@
 # TODO
 - Open current directory and show files there
+    + Only show files in the current directory
+        + Fix the bug with the tree
     - Ignore .git and all in .gitignore
     - Make the window scroll
     - Add a scrollbar
-    - Only show files in the current directory
 - Allow to filter files and directories using fuzzy search
 - Use tab or enter to enter directories
     - Display directories in bubbles

@@ -88,7 +88,7 @@ pub const Font = struct {
         vc.vkd.destroyImage(vc.dev, self.atlas_texture.image, null);
     }
 
-    pub fn getQuad(self: Font, char: u.Codepoint, x: f32, y: f32) stbtt.AlignedQuad {
+    pub fn getQuad(self: Font, char: u.Char, x: f32, y: f32) stbtt.AlignedQuad {
         var range = self.ascii;
         var char_index: c_int = 0;
         if (self.ascii.getIndex(char)) |index| {
@@ -115,7 +115,7 @@ const CharRange = struct {
     num_chars: usize,
     chars: []stbtt.PackedChar,
 
-    pub fn getIndex(self: CharRange, char: u.Codepoint) ?c_int {
+    pub fn getIndex(self: CharRange, char: u.Char) ?c_int {
         var index = @intCast(c_int, char) - @intCast(c_int, self.first);
         if (index < 0 or index >= self.chars.len) {
             return null;

@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const Codepoint = @import("utils.zig").Codepoint;
+const Char = @import("utils.zig").Char;
 
 pub const Color = extern struct {
     r: f32 = 0,
@@ -64,7 +64,7 @@ pub const TextColor = enum(u8) {
     const TYPE_KEYWORDS = [_][]const u8{ "bool", "usize", "type" };
     const VALUE_KEYWORDS = [_][]const u8{ "true", "false", "undefined", "null" };
 
-    pub fn getForIdentifier(ident: []Codepoint, next_char: Codepoint) TextColor {
+    pub fn getForIdentifier(ident: []Char, next_char: Char) TextColor {
         if (ident.len == 0) return .default;
         const starts_with_capital_letter = switch (ident[0]) {
             'A'...'Z' => true,

@@ -2,7 +2,7 @@ const std = @import("std");
 
 const Allocator = std.mem.Allocator;
 
-pub const Codepoint = u21;
+pub const Char = u21;
 
 pub const assert = std.debug.assert;
 pub const print = std.debug.print;
@@ -68,23 +68,23 @@ pub const Rect = struct {
     }
 };
 
-pub fn bytesToCodepoints(bytes: []const u8, allocator: Allocator) ![]Codepoint {
-    var codepoints = std.ArrayList(Codepoint).init(allocator);
+pub fn bytesToChars(bytes: []const u8, allocator: Allocator) ![]Char {
+    var chars = std.ArrayList(Char).init(allocator);
     const utf8_view = try std.unicode.Utf8View.init(bytes);
     var iterator = utf8_view.iterator();
-    while (iterator.nextCodepoint()) |codepoint| {
-        codepoints.append(codepoint) catch oom();
+    while (iterator.nextCodepoint()) |char| {
+        chars.append(char) catch oom();
     }
-    return codepoints.toOwnedSlice();
+    return chars.toOwnedSlice();
 }
 
-pub fn codepointsToBytes(codepoints: []const Codepoint, allocator: Allocator) ![]u8 {
+pub fn charsToBytes(chars: []const Char, allocator: Allocator) ![]u8 {
     var bytes = std.ArrayList(u8).init(allocator);
-    bytes.ensureTotalCapacity(codepoints.len * 4) catch oom();
+    bytes.ensureTotalCapacity(chars.len * 4) catch oom();
     bytes.expandToCapacity();
     var total_bytes: usize = 0;
-    for (codepoints) |codepoint| {
-        const num_bytes = try std.unicode.utf8Encode(codepoint, bytes.items[total_bytes..]);
+    for (chars) |char| {
+        const num_bytes = try std.unicode.utf8Encode(char, bytes.items[total_bytes..]);
         total_bytes += num_bytes;
     }
     bytes.shrinkRetainingCapacity(total_bytes);

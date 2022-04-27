@@ -34,52 +34,147 @@ const EditorLayout = enum {
 };
 
 pub const OpenFileDialog = struct {
-    entries: std.ArrayList(Entry),
-    selected: usize = 0,
+    root: Dir,
+    current_dir: ?*const Dir = null,
 
-    const Entry = struct {
-        path: []u.Codepoint,
-        name: []u.Codepoint,
-        kind: Kind,
+    memory_arena: std.heap.ArenaAllocator,
+
+    const delimiter = if (builtin.os.tag == .windows) "\\" else "/";
+
+    // Filesystem tree node
+    pub const Dir = struct {
+        name: std.ArrayList(u8),
+        dirs: std.ArrayList(Dir),
+        files: std.ArrayList(File),
+        selected: usize,
+
+        pub fn init(allocator: Allocator, name_slice: []const u8) Dir {
+            var name = std.ArrayList(u8).init(allocator);
+            name.appendSlice(name_slice) catch u.oom();
+            return Dir{
+                .name = name,
+                .dirs = std.ArrayList(Dir).init(allocator),
+                .files = std.ArrayList(File).init(allocator),
+                .selected = 0,
+            };
+        }
+
+        pub fn deinit(self: *Dir) void {
+            for (self.dirs.items) |*dir| {
+                dir.deinit();
+            }
+            self.files.deinit();
+        }
+
+        pub fn printTree(self: Dir, level: usize) void {
+            const indent = " " ** 100;
+            u.print("{s}[{s}]\n", .{ indent[0 .. 4 * level], self.name.items });
+            for (self.dirs.items) |dir| {
+                dir.printTree(level + 1);
+            }
+            for (self.files.items) |f| {
+                u.print("{s} {s} \n", .{ indent[0 .. 4 * (level + 1)], f.name.items });
+            }
+        }
+
+        pub fn insertFileIntoTree(self: *Dir, path: []const u8, path_chunks: []const []const u8, allocator: Allocator) void {
+            if (path_chunks.len >= 2) {
+                // <dir_name>\...
+                const dir_name = path_chunks[0];
+
+                // Insert dir into list if doesn't exist
+                var dir = for (self.dirs.items) |d| {
+                    if (std.mem.eql(u8, d.name.items, dir_name)) {
+                        break d;
+                    }
+                } else blk: {
+                    var new_dir = Dir.init(allocator, dir_name);
+                    self.dirs.append(new_dir) catch u.oom();
+                    break :blk new_dir;
+                };
+
+                // Insert the rest into the dir
+                dir.insertFileIntoTree(path, path_chunks[1..], allocator);
+            } else if (path_chunks.len == 1) {
+                // <file_name>
+                const file_name = path_chunks[0];
+                const file = File.init(allocator, file_name, path);
+                self.files.append(file) catch u.oom();
+            } else unreachable;
+        }
+
+        pub fn totalEntries(self: Dir) usize {
+            return self.dirs.items.len + self.files.items.len;
+        }
     };
 
-    const Kind = enum {
-        file,
-        directory,
+    pub const File = struct {
+        name: std.ArrayList(u8), // for displaying
+        path: std.ArrayList(u8), // for opening
+
+        pub fn init(allocator: Allocator, name_slice: []const u8, path_slice: []const u8) File {
+            var name = std.ArrayList(u8).init(allocator);
+            var path = std.ArrayList(u8).init(allocator);
+            name.appendSlice(name_slice) catch u.oom();
+            path.appendSlice(path_slice) catch u.oom();
+            return File{
+                .name = name,
+                .path = path,
+            };
+        }
     };
 
     pub fn init(allocator: Allocator) !OpenFileDialog {
-        var entries = std.ArrayList(Entry).init(allocator);
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        var arena_allocator = arena.allocator();
+
         var dir = try std.fs.cwd().openDir("src", .{ .iterate = true });
         var walker = try dir.walk(allocator);
         defer walker.deinit();
 
+        var root = Dir.init(arena_allocator, ".");
+
+        // Go through all the files and subfolders and build a tree
         while (try walker.next()) |entry| {
-            const kind = switch (entry.kind) {
-                .Directory => Kind.directory,
-                .File => Kind.file,
-                else => continue,
-            };
-            entries.append(Entry{
-                // TODO: Need to find an idiomatic way to handle this leak
-                // (e.g. have a memory arena for the strings so we can free them at once)
-                .path = try u.bytesToCodepoints(entry.path, allocator),
-                .name = try u.bytesToCodepoints(entry.basename, allocator),
-                .kind = kind,
-            }) catch u.oom();
+            switch (entry.kind) {
+                .File => {
+                    // Split path into chunks
+                    var iter = std.mem.split(u8, entry.path, delimiter);
+                    var path_chunks: [50][]const u8 = undefined; // (surely 50 should be enough)
+                    var i: usize = 0;
+                    while (iter.next()) |chunk| {
+                        path_chunks[i] = chunk;
+                        i += 1;
+                    }
+                    root.insertFileIntoTree(entry.path, path_chunks[0..i], arena_allocator);
+                },
+                else => continue, // ignore everything else
+            }
         }
 
+        root.printTree(0);
+
         return OpenFileDialog{
-            .entries = entries,
+            .root = root,
+            .current_dir = null,
+            .memory_arena = arena,
         };
     }
 
     pub fn deinit(self: *OpenFileDialog) void {
-        self.entries.deinit();
+        self.root.deinit();
+        self.memory_arena.deinit();
     }
 
-    pub fn selectedEntry(self: OpenFileDialog) Entry {
-        return self.entries.items[self.selected];
+    pub fn getCurrentDir(self: OpenFileDialog) *const Dir {
+        if (self.current_dir) |current_dir| return current_dir;
+        return &self.root;
+    }
+
+    fn copyToNameBuffer(name: []const u8, buffer: *std.ArrayList(u8)) []const u8 {
+        const len = buffer.items.len;
+        buffer.appendSlice(name) catch u.oom();
+        return buffer.items[len .. len + name.len];
     }
 };
 
@@ -273,20 +368,20 @@ pub fn main() !void {
                             open_file_dialog = null;
                             continue;
                         }
-                        if (kp.key == .up) {
-                            dialog.selected -|= 1;
-                        }
-                        if (kp.key == .down) {
-                            dialog.selected += 1;
-                            if (dialog.selected >= dialog.entries.items.len) {
-                                dialog.selected = dialog.entries.items.len -| 1;
-                            }
-                        }
-                        if (kp.key == .enter) {
-                            const entry = dialog.selectedEntry();
-                            const filename = u.codepointsToBytes(entry.name, frame_allocator);
-                            u.print("Open: {s}\n", .{filename});
-                        }
+                        // if (kp.key == .up) {
+                        //     dialog.selected -|= 1;
+                        // }
+                        // if (kp.key == .down) {
+                        //     dialog.selected += 1;
+                        //     if (dialog.selected >= dialog.entries.items.len) {
+                        //         dialog.selected = dialog.entries.items.len -| 1;
+                        //     }
+                        // }
+                        // if (kp.key == .enter) {
+                        //     const entry = dialog.selectedEntry();
+                        //     const filename = u.charsToBytes(entry.name, frame_allocator);
+                        //     u.print("Open: {s}\n", .{filename});
+                        // }
                     },
                     else => {},
                 }
@@ -384,7 +479,7 @@ pub fn main() !void {
         }
 
         if (open_file_dialog) |dialog| {
-            ui.drawOpenFileDialog(dialog);
+            ui.drawOpenFileDialog(dialog.getCurrentDir(), frame_allocator);
         }
 
         ui.drawDebugPanel(frame_number);
@@ -495,7 +590,7 @@ pub fn main() !void {
 
 pub const Event = union(enum) {
     key_pressed: KeyPress,
-    char_entered: u.Codepoint,
+    char_entered: u.Char,
     window_resized: WindowResize,
     redraw_requested: void,
 
@@ -517,9 +612,9 @@ fn newKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: glfw.A
     }
 }
 
-fn newCharEvent(window: glfw.Window, codepoint: u.Codepoint) void {
+fn newCharEvent(window: glfw.Window, char: u.Char) void {
     _ = window;
-    g_events.append(Event{ .char_entered = codepoint }) catch u.oom();
+    g_events.append(Event{ .char_entered = char }) catch u.oom();
 }
 
 fn newWindowSizeEvent(window: glfw.Window, width: i32, height: i32) void {

@@ -217,7 +217,7 @@ pub const Ui = struct {
         self.drawText(chars, colors, top_left, col_min, col_max);
     }
 
-    pub fn drawOpenFileDialog(self: *Ui, dialog: OpenFileDialog) void {
+    pub fn drawOpenFileDialog(self: *Ui, dir: *const OpenFileDialog.Dir, tmp_allocator: Allocator) void {
         const scale = self.screen.scale;
         const font = self.screen.font;
 
@@ -240,7 +240,8 @@ pub const Ui = struct {
         const input_rect_height = font.line_height + 2 * padding + 2 * margin + 2;
         const entry_height = font.line_height + 2 * padding;
         const max_entries = @floatToInt(usize, dialog_box_rect.h / entry_height);
-        const num_entries = std.math.clamp(dialog.entries.items.len, 0, max_entries);
+        const num_entries = std.math.clamp(dir.totalEntries(), 0, max_entries);
+
         const actual_height = entry_height * @intToFloat(f32, num_entries) + input_rect_height;
         dialog_box_rect.h = actual_height;
 
@@ -258,20 +259,24 @@ pub const Ui = struct {
         self.drawSolidRect(input_rect, style.colors.BACKGROUND);
         input_rect = input_rect.shrinkEvenly(padding);
 
+        _ = tmp_allocator;
         // Draw entries
-        for (dialog.entries.items) |entry, i| {
+        for (dir.files.items) |entry, i| {
             const entry_rect = Rect{
                 .x = dialog_box_rect.x,
                 .y = dialog_box_rect.y + @intToFloat(f32, i) * entry_height,
                 .w = dialog_box_rect.w,
                 .h = entry_height,
             };
-            if (i == dialog.selected) {
+            if (i == dir.selected) {
                 self.drawSolidRect(entry_rect, style.colors.BACKGROUND_BRIGHT);
             }
             const adjust_y = 2 * scale; // to align with the box
+
+            const name = u.bytesToChars(entry.name.items, tmp_allocator) catch unreachable;
+
             self.drawLabel(
-                entry.name,
+                name,
                 Vec2{ .x = entry_rect.x + margin + padding, .y = entry_rect.y + padding + adjust_y },
                 style.colors.PUNCTUATION,
             );
@@ -295,7 +300,7 @@ pub const Ui = struct {
         );
         var buf: [10]u8 = undefined;
         _ = std.fmt.bufPrint(buf[0..], "{d:10}", .{frame_number}) catch unreachable;
-        var chars: [10]u.Codepoint = undefined;
+        var chars: [10]u.Char = undefined;
         for (buf) |char, i| {
             chars[i] = char;
         }
@@ -377,7 +382,7 @@ pub const Ui = struct {
         self.indices.appendSlice(&indices) catch u.oom();
     }
 
-    fn drawText(self: *Ui, chars: []u.Codepoint, colors: []TextColor, top_left: Vec2, col_min: usize, col_max: usize) void {
+    fn drawText(self: *Ui, chars: []u.Char, colors: []TextColor, top_left: Vec2, col_min: usize, col_max: usize) void {
         const font = self.screen.font;
         var pos = Vec2{ .x = top_left.x, .y = top_left.y + font.baseline };
         var col: usize = 0;
@@ -399,7 +404,7 @@ pub const Ui = struct {
         }
     }
 
-    fn drawLabel(self: *Ui, chars: []u.Codepoint, top_left: Vec2, color: Color) void {
+    fn drawLabel(self: *Ui, chars: []u.Char, top_left: Vec2, color: Color) void {
         const font = self.screen.font;
         var pos = Vec2{ .x = top_left.x, .y = top_left.y + font.baseline };
         for (chars) |char| {
@@ -408,7 +413,7 @@ pub const Ui = struct {
         }
     }
 
-    fn drawChar(self: *Ui, char: u.Codepoint, pos: Vec2, font: Font, color: Color) void {
+    fn drawChar(self: *Ui, char: u.Char, pos: Vec2, font: Font, color: Color) void {
         var v = @intCast(u32, self.vertices.items.len);
 
         // Quad vertices in clockwise order, starting from top left

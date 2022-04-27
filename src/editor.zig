@@ -47,7 +47,7 @@ pub const Editor = struct {
 
     // buffer
     bytes: std.ArrayList(u8),
-    chars: std.ArrayList(u.Codepoint),
+    chars: std.ArrayList(u.Char),
     colors: std.ArrayList(TextColor),
     lines: std.ArrayList(usize),
     dirty: bool = true, // needs syncing internal structures
@@ -68,12 +68,12 @@ pub const Editor = struct {
 
         // For simplicity we assume that a codepoint equals a character (though it's not true).
         // If we ever encounter multi-codepoint characters, we can revisit this
-        var chars = std.ArrayList(u.Codepoint).init(allocator);
+        var chars = std.ArrayList(u.Char).init(allocator);
         try chars.ensureTotalCapacity(bytes.items.len);
         const utf8_view = try std.unicode.Utf8View.init(bytes.items);
-        var codepoints = utf8_view.iterator();
-        while (codepoints.nextCodepoint()) |codepoint| {
-            try chars.append(codepoint);
+        var iterator = utf8_view.iterator();
+        while (iterator.nextCodepoint()) |char| {
+            try chars.append(char);
         }
 
         var colors = std.ArrayList(TextColor).init(allocator);
@@ -100,7 +100,7 @@ pub const Editor = struct {
     }
 
     /// Inserts a char at the cursor
-    pub fn typeChar(self: *Editor, char: u.Codepoint) void {
+    pub fn typeChar(self: *Editor, char: u.Char) void {
         self.chars.insert(self.cursor.pos, char) catch u.oom();
         self.cursor.pos += 1;
         self.cursor.col_wanted = null;
@@ -145,7 +145,7 @@ pub const Editor = struct {
                 self.cursor.col_wanted = std.math.maxInt(usize);
             },
             .tab => {
-                const SPACES = [1]u.Codepoint{' '} ** TAB_SIZE;
+                const SPACES = [1]u.Char{' '} ** TAB_SIZE;
                 const to_next_tabstop = TAB_SIZE - self.cursor.col % TAB_SIZE;
                 self.chars.insertSlice(self.cursor.pos, SPACES[0..to_next_tabstop]) catch u.oom();
                 self.cursor.pos += to_next_tabstop;
@@ -153,17 +153,17 @@ pub const Editor = struct {
             },
             .enter => {
                 var indent = self.getCurrentLineIndent();
-                var buf: [1024]u.Codepoint = undefined;
+                var buf: [1024]u.Char = undefined;
                 if (mods.control and mods.shift) {
                     // Insert line above
-                    std.mem.set(u.Codepoint, buf[0..indent], ' ');
+                    std.mem.set(u.Char, buf[0..indent], ' ');
                     buf[indent] = '\n';
                     self.cursor.pos = self.lines.items[self.cursor.line];
                     self.chars.insertSlice(self.cursor.pos, buf[0 .. indent + 1]) catch u.oom();
                     self.cursor.pos += indent;
                 } else if (mods.control) {
                     // Insert line below
-                    std.mem.set(u.Codepoint, buf[0..indent], ' ');
+                    std.mem.set(u.Char, buf[0..indent], ' ');
                     buf[indent] = '\n';
                     self.cursor.pos = self.lines.items[self.cursor.line + 1];
                     self.chars.insertSlice(self.cursor.pos, buf[0 .. indent + 1]) catch u.oom();
@@ -176,7 +176,7 @@ pub const Editor = struct {
                         indent += TAB_SIZE;
                     }
                     buf[0] = '\n';
-                    std.mem.set(u.Codepoint, buf[1 .. indent + 1], ' ');
+                    std.mem.set(u.Char, buf[1 .. indent + 1], ' ');
                     self.chars.insertSlice(self.cursor.pos, buf[0 .. indent + 1]) catch u.oom();
                     self.cursor.pos += 1 + indent;
                     if (prev_char == '{' and next_char == '\n') {
@@ -204,7 +204,7 @@ pub const Editor = struct {
                     if (all_spaces) {
                         // Delete all spaces
                         self.cursor.pos -= to_prev_tabstop;
-                        const EMPTY_ARRAY = [_]u.Codepoint{};
+                        const EMPTY_ARRAY = [_]u.Char{};
                         self.chars.replaceRange(self.cursor.pos, to_prev_tabstop, EMPTY_ARRAY[0..]) catch unreachable;
                     }
                 }
