@@ -35,7 +35,7 @@ const EditorLayout = enum {
 
 pub const OpenFileDialog = struct {
     root: Dir,
-    current_dir: ?*const Dir = null,
+    current_dir: ?*Dir = null,
 
     memory_arena: std.heap.ArenaAllocator,
 
@@ -47,6 +47,11 @@ pub const OpenFileDialog = struct {
         dirs: std.ArrayList(Dir),
         files: std.ArrayList(File),
         selected: usize,
+
+        pub const Entry = union(enum) {
+            dir: *Dir,
+            file: *File,
+        };
 
         pub fn init(allocator: Allocator, name_slice: []const u8) Dir {
             var name = std.ArrayList(u8).init(allocator);
@@ -106,6 +111,14 @@ pub const OpenFileDialog = struct {
         pub fn totalEntries(self: Dir) usize {
             return self.dirs.items.len + self.files.items.len;
         }
+
+        pub fn selectedEntry(self: *Dir) Entry {
+            if (self.selected < self.dirs.items.len) {
+                return Entry{ .dir = &self.dirs.items[self.selected] };
+            }
+            u.assert(self.selected < self.totalEntries());
+            return Entry{ .file = &self.files.items[self.selected - self.dirs.items.len] };
+        }
     };
 
     pub const File = struct {
@@ -151,6 +164,7 @@ pub const OpenFileDialog = struct {
                         path_chunks[i] = chunk;
                         i += 1;
                     }
+                    u.assert(i < 50);
                     const ignore = for (folders_to_ignore) |folder| {
                         if (std.mem.eql(u8, folder, path_chunks[0])) break true;
                     } else false;
@@ -174,7 +188,7 @@ pub const OpenFileDialog = struct {
         self.memory_arena.deinit();
     }
 
-    pub fn getCurrentDir(self: OpenFileDialog) *const Dir {
+    pub fn getCurrentDir(self: *OpenFileDialog) *Dir {
         if (self.current_dir) |current_dir| return current_dir;
         return &self.root;
     }
@@ -376,20 +390,28 @@ pub fn main() !void {
                             open_file_dialog = null;
                             continue;
                         }
-                        // if (kp.key == .up) {
-                        //     dialog.selected -|= 1;
-                        // }
-                        // if (kp.key == .down) {
-                        //     dialog.selected += 1;
-                        //     if (dialog.selected >= dialog.entries.items.len) {
-                        //         dialog.selected = dialog.entries.items.len -| 1;
-                        //     }
-                        // }
-                        // if (kp.key == .enter) {
-                        //     const entry = dialog.selectedEntry();
-                        //     const filename = u.charsToBytes(entry.name, frame_allocator);
-                        //     u.print("Open: {s}\n", .{filename});
-                        // }
+                        var dir = dialog.getCurrentDir();
+                        if (kp.key == .up) {
+                            dir.selected -|= 1;
+                        }
+                        if (kp.key == .down) {
+                            dir.selected += 1;
+                            const num_entries = dir.totalEntries();
+                            if (dir.selected >= num_entries) {
+                                dir.selected = num_entries -| 1;
+                            }
+                        }
+                        if (kp.key == .enter) {
+                            const entry = dir.selectedEntry();
+                            switch (entry) {
+                                .dir => |d| {
+                                    u.print("Open dir: {s}\n", .{d.name.items});
+                                },
+                                .file => |f| {
+                                    u.print("Open file: {s}\n", .{f.name.items});
+                                },
+                            }
+                        }
                     },
                     else => {},
                 }
@@ -486,7 +508,7 @@ pub fn main() !void {
             },
         }
 
-        if (open_file_dialog) |dialog| {
+        if (open_file_dialog) |*dialog| {
             ui.drawOpenFileDialog(dialog.getCurrentDir(), frame_allocator);
         }
 

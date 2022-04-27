@@ -3,12 +3,12 @@
     + Only show files in the current directory
         + Fix the bug with the tree
     + Ignore .git and all in .gitignore
-    - Make the window scroll
-    - Add a scrollbar
 - Allow to filter files and directories using fuzzy search
 - Use tab or enter to enter directories
     - Display directories in bubbles
 - Use backspace to go up a directory (remove rightmost bubble)
+- Make the window scroll
+- Add a scrollbar
 - Support 0, 1, 2 editors
     + Rewrite the layout system - first get rects, then draw into them
     - Switch between 1 and 2 editors
