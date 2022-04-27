@@ -1,18 +1,20 @@
 const std = @import("std");
 const vk = @import("vulkan");
-const u = @import("utils.zig");
-const vu = @import("vulkan/utils.zig");
-const style = @import("style.zig");
+
+const focus = @import("focus.zig");
+const u = focus.utils;
+const vu = focus.vulkan.utils;
+const style = focus.style;
 
 const Allocator = std.mem.Allocator;
-const Font = @import("fonts.zig").Font;
-const VulkanContext = @import("vulkan/context.zig").VulkanContext;
-const Editor = @import("editor.zig").Editor;
+const Font = focus.fonts.Font;
+const VulkanContext = focus.vulkan.context.VulkanContext;
+const Editor = focus.editor.Editor;
 const TextColor = style.TextColor;
 const Color = style.Color;
 const Vec2 = u.Vec2;
 const Rect = u.Rect;
-const OpenFileDialog = @import("main.zig").OpenFileDialog;
+const OpenFileDialog = focus.dialogs.OpenFile;
 
 // Probably temporary - this is just to preallocate buffers on the GPU
 // and not worry about more sophisticated allocation strategies

@@ -1,9 +1,6 @@
 # TODO
-- Open current directory and show files there
-    + Only show files in the current directory
-        + Fix the bug with the tree
-    + Ignore .git and all in .gitignore
 - Allow to filter files and directories using fuzzy search
+    - Enter text into the input box
 - Use tab or enter to enter directories
     - Display directories in bubbles
 - Use backspace to go up a directory (remove rightmost bubble)
@@ -12,10 +9,8 @@
 - Support 0, 1, 2 editors
     + Rewrite the layout system - first get rects, then draw into them
     - Switch between 1 and 2 editors
-- Fix editing near the end of the buffer (can't get cursor close enough)
+- Fix editing near the end of the buffer (crashes on insert)
 - Multiple cursors
-- [code] Use rect.shrink and rect.split to position rects
-- [code] Use a frame allocator for events
 - [optimisation] Highlighting syntax:
     - Implement a few languages, not just Zig
     - Measure how expensive it is to rehighlight everything
@@ -32,6 +27,10 @@
 - Search within buffer
 
 # DONE
++ Open current directory and show files there
+    + Only show files in the current directory
+        + Fix the bug with the tree
+    + Ignore .git and all in .gitignore
 + Fix the leak when getting files in working dir
 + Print the entry we're trying to open
 + Switch selected entry using the arrow keys

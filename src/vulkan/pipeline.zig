@@ -2,11 +2,12 @@ const std = @import("std");
 const vk = @import("vulkan");
 const resources = @import("resources");
 
-const u = @import("../utils.zig");
-const vu = @import("utils.zig");
+const focus = @import("../focus.zig");
+const u = focus.utils;
+const vu = focus.vulkan.utils;
 
-const Vertex = @import("../ui.zig").Vertex;
-const VulkanContext = @import("context.zig").VulkanContext;
+const Vertex = focus.ui.Vertex;
+const VulkanContext = focus.vulkan.context.VulkanContext;
 const Vec2 = u.Vec2;
 
 const assert = std.debug.assert;

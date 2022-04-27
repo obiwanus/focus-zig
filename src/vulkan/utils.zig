@@ -1,9 +1,11 @@
 const std = @import("std");
 const vk = @import("vulkan");
-const u = @import("../utils.zig");
+
+const focus = @import("../focus.zig");
+const u = focus.utils;
 
 const Allocator = std.mem.Allocator;
-const VulkanContext = @import("context.zig").VulkanContext;
+const VulkanContext = focus.vulkan.context.VulkanContext;
 const Vec2 = u.Vec2;
 
 pub const SingleTimeCommandBuffer = struct {

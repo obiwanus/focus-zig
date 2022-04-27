@@ -1,8 +1,10 @@
 const std = @import("std");
 const vk = @import("vulkan");
 
-const VulkanContext = @import("context.zig").VulkanContext;
+const focus = @import("../focus.zig");
+
 const Allocator = std.mem.Allocator;
+const VulkanContext = focus.vulkan.context.VulkanContext;
 
 pub const Swapchain = struct {
     vc: *const VulkanContext,

@@ -2,13 +2,13 @@ const std = @import("std");
 const stbtt = @import("stbtt");
 
 const vk = @import("vulkan");
-const u = @import("utils.zig");
-const vu = @import("vulkan/utils.zig");
+
+const focus = @import("focus.zig");
+const u = focus.utils;
+const vu = focus.vulkan.utils;
 
 const Allocator = std.mem.Allocator;
-const VulkanContext = @import("vulkan/context.zig").VulkanContext;
-
-const assert = std.debug.assert;
+const VulkanContext = focus.vulkan.context.VulkanContext;
 
 // TODO: calculate dynamically based on oversampling and font size
 const ATLAS_WIDTH = 2048;
@@ -69,7 +69,7 @@ pub const Font = struct {
         const letter_height = scale * (v_metrics.ascent - v_metrics.descent);
 
         const xadvance = ascii.chars[@intCast(usize, 'a' - ascii.first)].xadvance;
-        assert(xadvance == ascii.chars[@intCast(usize, 'i' - ascii.first)].xadvance); // Should be the same for all characters
+        u.assert(xadvance == ascii.chars[@intCast(usize, 'i' - ascii.first)].xadvance); // Should be the same for all characters
 
         return Font{
             .xadvance = xadvance,

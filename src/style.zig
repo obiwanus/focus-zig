@@ -1,6 +1,7 @@
 const std = @import("std");
 
-const Char = @import("utils.zig").Char;
+const focus = @import("focus.zig");
+const Char = focus.utils.Char;
 
 pub const Color = extern struct {
     r: f32 = 0,

@@ -1,11 +1,13 @@
 const std = @import("std");
 const glfw = @import("glfw");
-const u = @import("utils.zig");
+
+const focus = @import("focus.zig");
+const u = focus.utils;
 
 const Allocator = std.mem.Allocator;
 const Vec2 = u.Vec2;
-const Font = @import("fonts.zig").Font;
-const TextColor = @import("style.zig").TextColor;
+const Font = focus.fonts.Font;
+const TextColor = focus.style.TextColor;
 
 const TAB_SIZE = 4;
 
