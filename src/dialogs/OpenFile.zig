@@ -242,15 +242,39 @@ pub const FilteredEntriesIterator = struct {
 
     fn matchesFuzzyFilter(self: *FilteredEntriesIterator, entry: Entry) bool {
         const name = u.bytesToChars(entry.getName(), self.tmp_allocator) catch @panic("file name contains invalid utf8");
-        var i: usize = 0;
         var pos: usize = 0;
-        while (i < self.filter_text.len) : (i += 1) {
+        for (self.filter_text) |char, i| {
             if (std.mem.indexOfPos(u.Char, name, pos, self.filter_text[i .. i + 1])) |index| {
                 pos = index + 1;
             } else {
-                return false;
+                // Try switching case for latin letters
+                const lowercase = 'a' <= char and char <= 'z';
+                const uppercase = 'A' <= char and char <= 'Z';
+                if (!lowercase and !uppercase) return false; // not latin. give up
+
+                const new_char = if (lowercase)
+                    'A' + (char - 'a')
+                else
+                    'a' + (char - 'A');
+
+                // Try again
+                const needle = [_]u.Char{new_char};
+                if (std.mem.indexOfPos(u.Char, name, pos, &needle)) |index| {
+                    pos = index + 1;
+                } else {
+                    return false;
+                }
             }
         }
+
+        // var i: usize = 0;
+        // while (i < self.filter_text.len) : (i += 1) {
+        //     if (std.mem.indexOfPos(u.Char, name, pos, self.filter_text[i .. i + 1])) |index| {
+        //         pos = index + 1;
+        //     } else {
+        //         return false;
+        //     }
+        // }
         return true;
     }
 };

@@ -1,12 +1,4 @@
 # TODO
-- Allow to filter files and directories using fuzzy search
-    + Enter text into the input box
-    + Use this text for filtering
-    + Match the dialog height with the number of entries
-    + Draw a cursor
-    + Don't move the selected index past the filtered entries
-    + Draw a placeholder when no entries are present
-    - Support case-insensitive search for English chars
 - Use tab or enter to enter directories
     - Display directories in bubbles
 - Limit the number of chars you can see in the input box
@@ -34,6 +26,14 @@
 - Search within buffer
 
 # DONE
++ Allow to filter files and directories using fuzzy search
+    + Enter text into the input box
+    + Use this text for filtering
+    + Match the dialog height with the number of entries
+    + Draw a cursor
+    + Don't move the selected index past the filtered entries
+    + Draw a placeholder when no entries are present
+    + Support case-insensitive search for English chars
 + Open current directory and show files there
     + Only show files in the current directory
         + Fix the bug with the tree
