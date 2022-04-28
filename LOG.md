@@ -1,5 +1,4 @@
 # TODO
-- Fix filtering by uppercase letters
 - Make the window scroll
 - Add a scrollbar
 - Support 0, 1, 2 editors
@@ -21,6 +20,7 @@
 - Search within buffer
 
 # DONE
++ Fix filtering by uppercase letters
 + Limit the number of chars you can see in the input box
     + Show only the rightmost dirs in the dir list
     + Show only the rightmost chars in the input box

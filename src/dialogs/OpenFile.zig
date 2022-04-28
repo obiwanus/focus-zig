@@ -245,27 +245,34 @@ pub const FilteredEntriesIterator = struct {
     fn matchesFuzzyFilter(self: *FilteredEntriesIterator, entry: Entry) bool {
         const name = u.bytesToChars(entry.getName(), self.tmp_allocator) catch @panic("file name contains invalid utf8");
         var pos: usize = 0;
-        for (self.filter_text) |char, i| {
-            if (std.mem.indexOfPos(u.Char, name, pos, self.filter_text[i .. i + 1])) |index| {
-                pos = index + 1;
-            } else {
-                // Try switching case for latin letters
-                const lowercase = 'a' <= char and char <= 'z';
-                const uppercase = 'A' <= char and char <= 'Z';
-                if (!lowercase and !uppercase) return false; // not latin. give up
+        for (self.filter_text) |char| {
+            var new_pos = pos;
 
-                const new_char = if (lowercase)
+            // Try original char
+            if (std.mem.indexOfPos(u.Char, name, pos, &[_]u.Char{char})) |index| {
+                new_pos = index + 1;
+            }
+            // Try switched case for latin chars
+            const lowercase_latin = 'a' <= char and char <= 'z';
+            const uppercase_latin = 'A' <= char and char <= 'Z';
+            if (lowercase_latin or uppercase_latin) {
+                const switched_case_char = if (lowercase_latin)
                     'A' + (char - 'a')
                 else
                     'a' + (char - 'A');
 
                 // Try again
-                const needle = [_]u.Char{new_char};
-                if (std.mem.indexOfPos(u.Char, name, pos, &needle)) |index| {
-                    pos = index + 1;
-                } else {
-                    return false;
+                if (std.mem.indexOfPos(u.Char, name, pos, &[_]u.Char{switched_case_char})) |index| {
+                    if (new_pos == pos or new_pos > index + 1) {
+                        new_pos = index + 1; // found an earlier match with the switched case
+                    }
                 }
+            }
+
+            if (pos == new_pos) {
+                return false; // found no match
+            } else {
+                pos = new_pos; // carry on
             }
         }
         return true;
