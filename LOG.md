@@ -1,7 +1,13 @@
 # TODO
 - Use tab or enter to enter directories
     - Display directories in bubbles
+        + Replace current_dir with a dir stack
+        + Fix the file tree
+        - Display the directory stack
 - Limit the number of chars you can see in the input box
+    - Make a relative limit to the input box and allocate the rest to directories
+    - Show only the rightmost chars in the input box
+    - Show only the rightmost dirs in the dir list
 - Use backspace to go up a directory (remove rightmost bubble)
 - Make the window scroll
 - Add a scrollbar

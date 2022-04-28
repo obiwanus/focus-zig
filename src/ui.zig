@@ -240,7 +240,7 @@ pub const Ui = struct {
         const max_entries = @floatToInt(usize, dialog_rect.h / entry_height);
 
         const filtered_entries = dir.filteredEntries(dialog.filter_text.items, tmp_allocator);
-        const num_entries = std.math.clamp(1, filtered_entries.len, max_entries);
+        const num_entries = std.math.clamp(filtered_entries.len, 1, max_entries);
 
         const actual_height = entry_height * @intToFloat(f32, num_entries) + input_rect_height;
         dialog_rect.h = actual_height;
@@ -260,6 +260,11 @@ pub const Ui = struct {
         input_rect = input_rect.shrinkEvenly(1);
         self.drawSolidRect(input_rect, style.colors.BACKGROUND);
         input_rect = input_rect.shrinkEvenly(padding);
+        for (dialog.open_dirs.items) |d| {
+            const w = @intToFloat(f32, d.name.items.len) * font.xadvance + 2 * padding;
+            const r = input_rect.splitLeft(w, padding);
+            self.drawSolidRect(r, style.colors.CURSOR_INACTIVE);
+        }
         self.drawLabel(dialog.filter_text.items, .{ .x = input_rect.x, .y = input_rect.y + adjust_y }, style.colors.DEFAULT);
         const cursor_rect = Rect{
             .x = input_rect.x + @intToFloat(f32, dialog.filter_text.items.len) * font.xadvance,
@@ -270,7 +275,11 @@ pub const Ui = struct {
         self.drawSolidRect(cursor_rect, style.colors.CURSOR_ACTIVE);
 
         // Draw entries
-        for (filtered_entries) |entry, i| {
+        const visible_entries = if (filtered_entries.len > max_entries)
+            filtered_entries[0..max_entries]
+        else
+            filtered_entries;
+        for (visible_entries) |entry, i| {
             const r = Rect{
                 .x = dialog_rect.x,
                 .y = dialog_rect.y + @intToFloat(f32, i) * entry_height,

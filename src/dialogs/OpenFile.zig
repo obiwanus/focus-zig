@@ -7,26 +7,22 @@ const u = focus.utils;
 
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
-const ArenaAllocator = std.heap.ArenaAllocator;
+const ArenaAllocator = std.heap.ArenaAllocator; // couldn't get it to work
 
 const Self = @This();
 
 root: Dir,
-current_dir: ?*Dir = null,
+open_dirs: ArrayList(*Dir),
 filter_text: ArrayList(u.Char),
-memory_arena: ArenaAllocator,
 
 const delimiter = if (builtin.os.tag == .windows) "\\" else "/";
 
 pub fn init(allocator: Allocator) !Self {
-    var arena = ArenaAllocator.init(std.heap.page_allocator);
-    var arena_allocator = arena.allocator();
-
     var dir = try std.fs.cwd().openDir(".", .{ .iterate = true });
     var walker = try dir.walk(allocator);
     defer walker.deinit();
 
-    var root = Dir.init(arena_allocator, ".");
+    var root = Dir.init(allocator, ".");
     const folders_to_ignore = [_][]const u8{
         ".git",
         "zig-cache",
@@ -51,42 +47,41 @@ pub fn init(allocator: Allocator) !Self {
                 } else false;
                 if (ignore) continue;
 
-                root.insertFileIntoTree(entry.path, path_chunks[0..i], arena_allocator);
+                root.insertFileIntoTree(entry.path, path_chunks[0..i], allocator);
             },
             else => continue, // ignore everything else
         }
     }
 
+    // root.printTree(0);
+
     return Self{
         .root = root,
-        .current_dir = null,
         // NOTE: there seems to be a bug in zig or something but
-        // we can't currently use the arena allocator for the filter text,
+        // we can't currently use the arena allocator for these array lists,
         // it crashes when trying to append
+        .open_dirs = ArrayList(*Dir).init(allocator),
         .filter_text = ArrayList(u.Char).init(allocator),
-        .memory_arena = arena,
     };
 }
 
 pub fn deinit(self: *Self) void {
     self.root.deinit();
-    self.memory_arena.deinit();
     self.filter_text.deinit();
+    self.open_dirs.deinit();
+
+    // TODO: free the tree properly
 }
 
-pub fn getCurrentDirMut(self: *Self) *Dir {
-    if (self.current_dir) |current_dir| return current_dir;
-    return &self.root;
-}
-
-pub fn getCurrentDir(self: Self) *const Dir {
-    if (self.current_dir) |current_dir| return current_dir;
-    return &self.root;
+pub fn getCurrentDir(self: *Self) *Dir {
+    const num_open_dirs = self.open_dirs.items.len;
+    if (self.open_dirs.items.len == 0) return &self.root;
+    return self.open_dirs.items[num_open_dirs - 1];
 }
 
 pub fn keyPress(self: *Self, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allocator) void {
     _ = mods;
-    var dir = self.getCurrentDirMut();
+    var dir = self.getCurrentDir();
     switch (key) {
         .up => {
             dir.selected -|= 1;
@@ -98,22 +93,26 @@ pub fn keyPress(self: *Self, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allo
                 dir.selected = num_entries -| 1;
             }
         },
-        .enter => {
-            // const entry = dir.selectedEntry();
-            // switch (entry) {
-            //     .dir => |d| {
-            //         u.print("Open dir: {s}\n", .{d.name.items});
-            //     },
-            //     .file => |f| {
-            //         u.print("Open file: {s}\n", .{f.name.items});
-            //     },
-            // }
+        .enter, .tab => {
+            const filtered_entries = dir.filteredEntries(self.filter_text.items, tmp_allocator);
+            if (filtered_entries.len > 0) {
+                const entry = filtered_entries[dir.selected];
+                switch (entry) {
+                    .dir => |*d| {
+                        self.open_dirs.append(d.*) catch u.oom();
+                        self.filter_text.shrinkRetainingCapacity(0);
+                    },
+                    .file => |f| {
+                        u.print("Open file: {s}\n", .{f.name.items});
+                    },
+                }
+            }
         },
         .backspace => {
             if (self.filter_text.items.len > 0) {
                 _ = self.filter_text.pop();
-            } else {
-                // TODO: go back one directory
+            } else if (self.open_dirs.items.len > 0) {
+                _ = self.open_dirs.pop();
             }
         },
         else => {},
@@ -122,12 +121,12 @@ pub fn keyPress(self: *Self, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allo
 
 pub fn charEntered(self: *Self, char: u.Char) void {
     self.filter_text.append(char) catch u.oom();
-    self.getCurrentDirMut().selected = 0;
+    self.getCurrentDir().selected = 0;
 }
 
 pub const Entry = union(enum) {
-    dir: *const Dir,
-    file: *const File,
+    dir: *Dir,
+    file: *File,
 
     pub fn getName(self: Entry) []const u8 {
         return switch (self) {
@@ -159,6 +158,10 @@ pub const Dir = struct {
         for (self.dirs.items) |*dir| {
             dir.deinit();
         }
+        self.dirs.deinit();
+        for (self.files.items) |*file| {
+            file.deinit();
+        }
         self.files.deinit();
     }
 
@@ -179,14 +182,13 @@ pub const Dir = struct {
             const dir_name = path_chunks[0];
 
             // Insert dir into list if doesn't exist
-            var dir = for (self.dirs.items) |d| {
+            const dir = for (self.dirs.items) |*d| {
                 if (std.mem.eql(u8, d.name.items, dir_name)) {
                     break d;
                 }
             } else blk: {
-                var new_dir = Dir.init(allocator, dir_name);
-                self.dirs.append(new_dir) catch u.oom();
-                break :blk new_dir;
+                self.dirs.append(Dir.init(allocator, dir_name)) catch u.oom();
+                break :blk &self.dirs.items[self.dirs.items.len - 1];
             };
 
             // Insert the rest into the dir
@@ -210,10 +212,10 @@ pub const Dir = struct {
     }
 
     /// Don't store them anywhere
-    pub fn filteredEntries(self: Dir, filter_text: []const u.Char, tmp_allocator: Allocator) []Entry {
+    pub fn filteredEntries(self: *Dir, filter_text: []const u.Char, tmp_allocator: Allocator) []Entry {
         var entries = std.ArrayList(Entry).init(tmp_allocator);
         var dir_iterator = FilteredEntriesIterator{
-            .dir = &self,
+            .dir = self,
             .filter_text = filter_text,
             .tmp_allocator = tmp_allocator,
         };
@@ -225,7 +227,7 @@ pub const Dir = struct {
 };
 
 pub const FilteredEntriesIterator = struct {
-    dir: *const Dir,
+    dir: *Dir,
     filter_text: []const u.Char,
     tmp_allocator: Allocator,
     i: usize = 0,
@@ -292,5 +294,11 @@ pub const File = struct {
             .name = name,
             .path = path,
         };
+    }
+
+    pub fn deinit(self: *File) void {
+        // TODO: need to get the memory arena working
+        self.name.deinit();
+        self.path.deinit();
     }
 };
