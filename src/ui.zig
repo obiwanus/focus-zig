@@ -265,6 +265,13 @@ pub const Ui = struct {
         self.drawSolidRect(input_rect, style.colors.BACKGROUND);
         input_rect = input_rect.shrinkEvenly(padding);
         self.drawLabel(dialog.filter_text.items, .{ .x = input_rect.x, .y = input_rect.y + adjust_y }, style.colors.DEFAULT);
+        const cursor_rect = Rect{
+            .x = input_rect.x + @intToFloat(f32, dialog.filter_text.items.len) * font.xadvance,
+            .y = input_rect.y,
+            .w = font.xadvance,
+            .h = font.line_height,
+        };
+        self.drawSolidRect(cursor_rect, style.colors.CURSOR_ACTIVE);
 
         // Draw entries
         for (filtered_entries.items) |entry, i| {
