@@ -1,6 +1,11 @@
 # TODO
 - Allow to filter files and directories using fuzzy search
-    - Enter text into the input box
+    + Enter text into the input box
+    + Use this text for filtering
+    + Match the dialog height with the number of entries
+    - Draw a placeholder when no entries are present
+    - Draw a cursor
+    - Support case-insensitive search for English chars
 - Use tab or enter to enter directories
     - Display directories in bubbles
 - Use backspace to go up a directory (remove rightmost bubble)

@@ -219,7 +219,8 @@ pub const Ui = struct {
         self.drawText(chars, colors, top_left, col_min, col_max);
     }
 
-    pub fn drawOpenFileDialog(self: *Ui, dir: *const OpenFileDialog.Dir, tmp_allocator: Allocator) void {
+    pub fn drawOpenFileDialog(self: *Ui, dialog: *OpenFileDialog, tmp_allocator: Allocator) void {
+        var dir = dialog.getCurrentDir();
         const scale = self.screen.scale;
         const font = self.screen.font;
 
@@ -229,12 +230,7 @@ pub const Ui = struct {
 
         const screen = self.screen.getRect();
         const width = std.math.clamp(screen.w / 3, min_width, max_width);
-        var dialog_box_rect = Rect{
-            .x = (screen.w - width) / 2,
-            .y = 100,
-            .w = width,
-            .h = max_height,
-        };
+        var dialog_box_rect = Rect{ .x = (screen.w - width) / 2, .y = 100, .w = width, .h = max_height };
 
         // Determine the height of the dialog box
         const margin = 10 * scale;
@@ -242,7 +238,13 @@ pub const Ui = struct {
         const input_rect_height = font.line_height + 2 * padding + 2 * margin + 2;
         const entry_height = font.line_height + 2 * padding;
         const max_entries = @floatToInt(usize, dialog_box_rect.h / entry_height);
-        const num_entries = std.math.clamp(dir.totalEntries(), 0, max_entries);
+
+        var filtered_entries = std.ArrayList(OpenFileDialog.Entry).init(tmp_allocator);
+        var dir_iterator = dir.filteredEntries(dialog.filter_text.items, tmp_allocator);
+        while (dir_iterator.next()) |entry| {
+            filtered_entries.append(entry) catch u.oom();
+        }
+        const num_entries = std.math.clamp(1, filtered_entries.items.len, max_entries);
 
         const actual_height = entry_height * @intToFloat(f32, num_entries) + input_rect_height;
         dialog_box_rect.h = actual_height;
@@ -254,44 +256,33 @@ pub const Ui = struct {
             10,
         );
 
+        const adjust_y = 2 * scale; // to align text within boxes
+
         // Draw input box
         var input_rect = dialog_box_rect.splitTop(input_rect_height, 0).shrinkEvenly(margin);
         self.drawSolidRect(input_rect, style.colors.BACKGROUND_DARK);
         input_rect = input_rect.shrinkEvenly(1);
         self.drawSolidRect(input_rect, style.colors.BACKGROUND);
         input_rect = input_rect.shrinkEvenly(padding);
+        self.drawLabel(dialog.filter_text.items, .{ .x = input_rect.x, .y = input_rect.y + adjust_y }, style.colors.DEFAULT);
 
-        // Draw dirs
-        var i: usize = 0;
-        var r = Rect{ .x = dialog_box_rect.x, .y = dialog_box_rect.y, .w = dialog_box_rect.w, .h = entry_height };
-        for (dir.dirs.items) |entry| {
+        // Draw entries
+        for (filtered_entries.items) |entry, i| {
+            const r = Rect{
+                .x = dialog_box_rect.x,
+                .y = dialog_box_rect.y + @intToFloat(f32, i) * entry_height,
+                .w = dialog_box_rect.w,
+                .h = entry_height,
+            };
             if (i == dir.selected) {
                 self.drawSolidRect(r, style.colors.BACKGROUND_BRIGHT);
             }
-            const adjust_y = 2 * scale; // to align with the box
-            const name = u.bytesToChars(entry.name.items, tmp_allocator) catch unreachable;
+            const name = u.bytesToChars(entry.getName(), tmp_allocator) catch unreachable;
             self.drawLabel(
                 name,
                 Vec2{ .x = r.x + margin + padding, .y = r.y + padding + adjust_y },
                 style.colors.PUNCTUATION,
             );
-            r.y += entry_height;
-            i += 1;
-        }
-        // Draw files
-        for (dir.files.items) |entry| {
-            if (i == dir.selected) {
-                self.drawSolidRect(r, style.colors.BACKGROUND_BRIGHT);
-            }
-            const adjust_y = 2 * scale; // to align with the box
-            const name = u.bytesToChars(entry.name.items, tmp_allocator) catch unreachable;
-            self.drawLabel(
-                name,
-                Vec2{ .x = r.x + margin + padding, .y = r.y + padding + adjust_y },
-                style.colors.PUNCTUATION,
-            );
-            r.y += entry_height;
-            i += 1;
         }
     }
 

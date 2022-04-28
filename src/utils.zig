@@ -22,6 +22,10 @@ pub const Rect = struct {
         return self;
     }
 
+    pub fn topLeft(self: Rect) Vec2 {
+        return Vec2{ .x = self.x, .y = self.y };
+    }
+
     pub fn shrink(self: Rect, left: f32, top: f32, right: f32, bottom: f32) Rect {
         assert(self.w >= left + right);
         assert(self.h >= top + bottom);

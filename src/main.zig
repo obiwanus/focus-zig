@@ -214,37 +214,15 @@ pub fn main() !void {
             for (g_events.items) |event| {
                 switch (event) {
                     .char_entered => |char| {
-                        _ = char;
-                        // TODO
+                        dialog.charEntered(char);
                     },
                     .key_pressed => |kp| {
                         if (kp.key == .escape or (kp.mods.control and kp.key == .p)) {
                             // Close dialog
                             dialog.deinit();
                             open_file_dialog = null;
-                            continue;
-                        }
-                        var dir = dialog.getCurrentDir();
-                        if (kp.key == .up) {
-                            dir.selected -|= 1;
-                        }
-                        if (kp.key == .down) {
-                            dir.selected += 1;
-                            const num_entries = dir.totalEntries();
-                            if (dir.selected >= num_entries) {
-                                dir.selected = num_entries -| 1;
-                            }
-                        }
-                        if (kp.key == .enter) {
-                            const entry = dir.selectedEntry();
-                            switch (entry) {
-                                .dir => |d| {
-                                    u.print("Open dir: {s}\n", .{d.name.items});
-                                },
-                                .file => |f| {
-                                    u.print("Open file: {s}\n", .{f.name.items});
-                                },
-                            }
+                        } else {
+                            dialog.keyPress(kp.key, kp.mods);
                         }
                     },
                     else => {},
@@ -343,7 +321,7 @@ pub fn main() !void {
         }
 
         if (open_file_dialog) |*dialog| {
-            ui.drawOpenFileDialog(dialog.getCurrentDir(), frame_allocator);
+            ui.drawOpenFileDialog(dialog, frame_allocator);
         }
 
         ui.drawDebugPanel(frame_number);
