@@ -224,13 +224,13 @@ pub const Ui = struct {
         const scale = self.screen.scale;
         const font = self.screen.font;
 
-        const min_width = 500 * scale;
+        const min_width = 400 * scale;
         const max_width = 1500 * scale;
         const max_height = 800 * scale;
 
         const screen = self.screen.getRect();
-        const width = std.math.clamp(screen.w / 3, min_width, max_width);
-        var dialog_rect = Rect{ .x = (screen.w - width) / 2, .y = 100, .w = width, .h = max_height };
+        const dialog_width = std.math.clamp(screen.w / 3, min_width, max_width);
+        var dialog_rect = Rect{ .x = (screen.w - dialog_width) / 2, .y = 100, .w = dialog_width, .h = max_height };
 
         // Determine the height of the dialog box
         const margin = 10 * scale;
@@ -255,31 +255,67 @@ pub const Ui = struct {
         const adjust_y = 2 * scale; // to align text within boxes
 
         // Draw input box
-        var input_rect = dialog_rect.splitTop(input_rect_height, 0).shrinkEvenly(margin);
-        self.drawSolidRect(input_rect, style.colors.BACKGROUND_DARK);
-        input_rect = input_rect.shrinkEvenly(1);
-        self.drawSolidRect(input_rect, style.colors.BACKGROUND);
-        input_rect = input_rect.shrinkEvenly(padding);
+        {
+            var input_rect = dialog_rect.splitTop(input_rect_height, 0).shrinkEvenly(margin);
+            self.drawSolidRect(input_rect, style.colors.BACKGROUND_DARK);
+            input_rect = input_rect.shrinkEvenly(1);
+            self.drawSolidRect(input_rect, style.colors.BACKGROUND);
+            input_rect = input_rect.shrinkEvenly(padding);
 
-        // Draw open directories
-        for (dialog.open_dirs.items) |d| {
-            const w = @intToFloat(f32, d.name.items.len) * font.xadvance + 2 * padding;
-            var r = input_rect.splitLeft(w, padding);
-            self.drawSolidRect(r, style.colors.CURSOR_INACTIVE);
-            const text_rect = r.shrink(padding, adjust_y, padding, 0);
-            const name = u.bytesToChars(d.name.items, tmp_allocator) catch unreachable;
-            self.drawLabel(name, text_rect.topLeft(), style.colors.PUNCTUATION);
+            // Draw open directories
+            const filter_text_min_width = 10 * font.xadvance; // can't go smaller than that
+            const dir_list_max_width = input_rect.w - filter_text_min_width;
+            var num_dirs: usize = 0;
+            var list_width: f32 = 0;
+            var dir_list_truncated: bool = false;
+            while (num_dirs < dialog.open_dirs.items.len) : (num_dirs += 1) {
+                const d = dialog.open_dirs.items[dialog.open_dirs.items.len - 1 - num_dirs]; // iterate backwards
+                list_width += padding; // between bubbles
+                const dir_width = padding * 2 + @intToFloat(f32, d.name.items.len) * font.xadvance;
+                list_width += dir_width;
+                if (list_width > dir_list_max_width) {
+                    // Pop a dir from the left
+                    num_dirs -= 1;
+                    list_width -= dir_width;
+                    // See if we have room for a "..." bubble
+                    if (list_width + 2 * padding + 3 * font.xadvance > dir_list_max_width) {
+                        // Pop another one
+                        num_dirs -= 1;
+                        // NOTE: a couple of corner cases here that we will ignore until they happen
+                    }
+                    dir_list_truncated = true;
+                    break;
+                }
+            }
+
+            if (dir_list_truncated) {
+                const w = 3 * font.xadvance + 2 * padding;
+                var r = input_rect.splitLeft(w, padding);
+                self.drawSolidRect(r, style.colors.CURSOR_INACTIVE);
+                const text_rect = r.shrink(padding, adjust_y, padding, 0);
+                const name = u.bytesToChars("...", tmp_allocator) catch unreachable;
+                self.drawLabel(name, text_rect.topLeft(), style.colors.PUNCTUATION);
+            }
+            const total_dirs = dialog.open_dirs.items.len;
+            for (dialog.open_dirs.items[total_dirs - num_dirs ..]) |d| {
+                const w = @intToFloat(f32, d.name.items.len) * font.xadvance + 2 * padding;
+                var r = input_rect.splitLeft(w, padding);
+                self.drawSolidRect(r, style.colors.CURSOR_INACTIVE);
+                const text_rect = r.shrink(padding, adjust_y, padding, 0);
+                const name = u.bytesToChars(d.name.items, tmp_allocator) catch unreachable;
+                self.drawLabel(name, text_rect.topLeft(), style.colors.PUNCTUATION);
+            }
+            self.drawLabel(dialog.filter_text.items, .{ .x = input_rect.x, .y = input_rect.y + adjust_y }, style.colors.PUNCTUATION);
+
+            // Draw cursor
+            const cursor_rect = Rect{
+                .x = input_rect.x + @intToFloat(f32, dialog.filter_text.items.len) * font.xadvance,
+                .y = input_rect.y,
+                .w = font.xadvance,
+                .h = font.line_height,
+            };
+            self.drawSolidRect(cursor_rect, style.colors.CURSOR_ACTIVE);
         }
-        self.drawLabel(dialog.filter_text.items, .{ .x = input_rect.x, .y = input_rect.y + adjust_y }, style.colors.DEFAULT);
-
-        // Draw cursor
-        const cursor_rect = Rect{
-            .x = input_rect.x + @intToFloat(f32, dialog.filter_text.items.len) * font.xadvance,
-            .y = input_rect.y,
-            .w = font.xadvance,
-            .h = font.line_height,
-        };
-        self.drawSolidRect(cursor_rect, style.colors.CURSOR_ACTIVE);
 
         // Draw entries
         const visible_entries = if (filtered_entries.len > max_entries)

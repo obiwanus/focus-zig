@@ -268,15 +268,6 @@ pub const FilteredEntriesIterator = struct {
                 }
             }
         }
-
-        // var i: usize = 0;
-        // while (i < self.filter_text.len) : (i += 1) {
-        //     if (std.mem.indexOfPos(u.Char, name, pos, self.filter_text[i .. i + 1])) |index| {
-        //         pos = index + 1;
-        //     } else {
-        //         return false;
-        //     }
-        // }
         return true;
     }
 };

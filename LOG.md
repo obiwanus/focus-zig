@@ -1,8 +1,7 @@
 # TODO
 - Limit the number of chars you can see in the input box
-    - Make a relative limit to the input box and allocate the rest to directories
+    + Show only the rightmost dirs in the dir list
     - Show only the rightmost chars in the input box
-    - Show only the rightmost dirs in the dir list
 - Make the window scroll
 - Add a scrollbar
 - Support 0, 1, 2 editors
