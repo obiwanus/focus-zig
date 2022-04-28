@@ -230,24 +230,24 @@ pub const Ui = struct {
 
         const screen = self.screen.getRect();
         const width = std.math.clamp(screen.w / 4, min_width, max_width);
-        var dialog_box_rect = Rect{ .x = (screen.w - width) / 2, .y = 100, .w = width, .h = max_height };
+        var dialog_rect = Rect{ .x = (screen.w - width) / 2, .y = 100, .w = width, .h = max_height };
 
         // Determine the height of the dialog box
         const margin = 10 * scale;
         const padding = 5 * scale;
         const input_rect_height = font.line_height + 2 * padding + 2 * margin + 2;
         const entry_height = font.line_height + 2 * padding;
-        const max_entries = @floatToInt(usize, dialog_box_rect.h / entry_height);
+        const max_entries = @floatToInt(usize, dialog_rect.h / entry_height);
 
         const filtered_entries = dir.filteredEntries(dialog.filter_text.items, tmp_allocator);
         const num_entries = std.math.clamp(1, filtered_entries.len, max_entries);
 
         const actual_height = entry_height * @intToFloat(f32, num_entries) + input_rect_height;
-        dialog_box_rect.h = actual_height;
+        dialog_rect.h = actual_height;
 
         // Draw background
         self.drawSolidRectWithShadow(
-            dialog_box_rect,
+            dialog_rect,
             style.colors.BACKGROUND_LIGHT,
             10,
         );
@@ -255,7 +255,7 @@ pub const Ui = struct {
         const adjust_y = 2 * scale; // to align text within boxes
 
         // Draw input box
-        var input_rect = dialog_box_rect.splitTop(input_rect_height, 0).shrinkEvenly(margin);
+        var input_rect = dialog_rect.splitTop(input_rect_height, 0).shrinkEvenly(margin);
         self.drawSolidRect(input_rect, style.colors.BACKGROUND_DARK);
         input_rect = input_rect.shrinkEvenly(1);
         self.drawSolidRect(input_rect, style.colors.BACKGROUND);
@@ -272,9 +272,9 @@ pub const Ui = struct {
         // Draw entries
         for (filtered_entries) |entry, i| {
             const r = Rect{
-                .x = dialog_box_rect.x,
-                .y = dialog_box_rect.y + @intToFloat(f32, i) * entry_height,
-                .w = dialog_box_rect.w,
+                .x = dialog_rect.x,
+                .y = dialog_rect.y + @intToFloat(f32, i) * entry_height,
+                .w = dialog_rect.w,
                 .h = entry_height,
             };
             if (i == dir.selected) {
@@ -286,6 +286,13 @@ pub const Ui = struct {
                 Vec2{ .x = r.x + margin + padding, .y = r.y + padding + adjust_y },
                 style.colors.PUNCTUATION,
             );
+        }
+
+        // Draw placeholder if no entries are present
+        if (filtered_entries.len == 0) {
+            dialog_rect = dialog_rect.shrink(margin + padding, padding, 0, padding);
+            const placeholder = u.bytesToChars("...", tmp_allocator) catch unreachable;
+            self.drawLabel(placeholder, .{ .x = dialog_rect.x, .y = dialog_rect.y + adjust_y }, style.colors.COMMENT);
         }
     }
 
