@@ -74,21 +74,26 @@ pub fn deinit(self: *Self) void {
     self.filter_text.deinit();
 }
 
-pub fn getCurrentDir(self: *Self) *Dir {
+pub fn getCurrentDirMut(self: *Self) *Dir {
     if (self.current_dir) |current_dir| return current_dir;
     return &self.root;
 }
 
-pub fn keyPress(self: *Self, key: glfw.Key, mods: glfw.Mods) void {
+pub fn getCurrentDir(self: Self) *const Dir {
+    if (self.current_dir) |current_dir| return current_dir;
+    return &self.root;
+}
+
+pub fn keyPress(self: *Self, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allocator) void {
     _ = mods;
-    var dir = self.getCurrentDir();
+    var dir = self.getCurrentDirMut();
     switch (key) {
         .up => {
             dir.selected -|= 1;
         },
         .down => {
             dir.selected += 1;
-            const num_entries = dir.totalEntries();
+            const num_entries = dir.filteredEntries(self.filter_text.items, tmp_allocator).len;
             if (dir.selected >= num_entries) {
                 dir.selected = num_entries -| 1;
             }
@@ -117,7 +122,7 @@ pub fn keyPress(self: *Self, key: glfw.Key, mods: glfw.Mods) void {
 
 pub fn charEntered(self: *Self, char: u.Char) void {
     self.filter_text.append(char) catch u.oom();
-    self.getCurrentDir().selected = 0;
+    self.getCurrentDirMut().selected = 0;
 }
 
 pub const Entry = union(enum) {
@@ -194,20 +199,9 @@ pub const Dir = struct {
         } else unreachable;
     }
 
-    pub fn totalEntries(self: Dir) usize {
-        return self.dirs.items.len + self.files.items.len;
-    }
-
-    // pub fn selectedEntry(self: *Dir) Entry {
-    //     if (self.selected < self.dirs.items.len) {
-    //         return Entry{ .dir = &self.dirs.items[self.selected] };
-    //     }
-    //     u.assert(self.selected < self.totalEntries());
-    //     return Entry{ .file = &self.files.items[self.selected - self.dirs.items.len] };
-    // }
-
     pub fn getEntry(self: Dir, i: usize) ?Entry {
-        if (i >= self.totalEntries()) return null;
+        const total_entries = self.dirs.items.len + self.files.items.len;
+        if (i >= total_entries) return null;
         if (i < self.dirs.items.len) {
             return Entry{ .dir = &self.dirs.items[i] };
         } else {
@@ -215,13 +209,18 @@ pub const Dir = struct {
         }
     }
 
-    // The returned iterator is valid while tmp_allocator and filter_text are valid
-    pub fn filteredEntries(self: Dir, filter_text: []const u.Char, tmp_allocator: Allocator) FilteredEntriesIterator {
-        return FilteredEntriesIterator{
+    /// Don't store them anywhere
+    pub fn filteredEntries(self: Dir, filter_text: []const u.Char, tmp_allocator: Allocator) []Entry {
+        var entries = std.ArrayList(Entry).init(tmp_allocator);
+        var dir_iterator = FilteredEntriesIterator{
             .dir = &self,
             .filter_text = filter_text,
             .tmp_allocator = tmp_allocator,
         };
+        while (dir_iterator.next()) |entry| {
+            entries.append(entry) catch u.oom();
+        }
+        return entries.toOwnedSlice();
     }
 };
 

@@ -4,11 +4,12 @@
     + Use this text for filtering
     + Match the dialog height with the number of entries
     + Draw a cursor
-    - Don't move the selected index past the filtered entries
+    + Don't move the selected index past the filtered entries
     - Draw a placeholder when no entries are present
     - Support case-insensitive search for English chars
 - Use tab or enter to enter directories
     - Display directories in bubbles
+- Limit the number of chars you can see in the input box
 - Use backspace to go up a directory (remove rightmost bubble)
 - Make the window scroll
 - Add a scrollbar

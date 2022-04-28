@@ -222,7 +222,7 @@ pub fn main() !void {
                             dialog.deinit();
                             open_file_dialog = null;
                         } else {
-                            dialog.keyPress(kp.key, kp.mods);
+                            dialog.keyPress(kp.key, kp.mods, frame_allocator);
                         }
                     },
                     else => {},

@@ -229,7 +229,7 @@ pub const Ui = struct {
         const max_height = 800 * scale;
 
         const screen = self.screen.getRect();
-        const width = std.math.clamp(screen.w / 3, min_width, max_width);
+        const width = std.math.clamp(screen.w / 4, min_width, max_width);
         var dialog_box_rect = Rect{ .x = (screen.w - width) / 2, .y = 100, .w = width, .h = max_height };
 
         // Determine the height of the dialog box
@@ -239,12 +239,8 @@ pub const Ui = struct {
         const entry_height = font.line_height + 2 * padding;
         const max_entries = @floatToInt(usize, dialog_box_rect.h / entry_height);
 
-        var filtered_entries = std.ArrayList(OpenFileDialog.Entry).init(tmp_allocator);
-        var dir_iterator = dir.filteredEntries(dialog.filter_text.items, tmp_allocator);
-        while (dir_iterator.next()) |entry| {
-            filtered_entries.append(entry) catch u.oom();
-        }
-        const num_entries = std.math.clamp(1, filtered_entries.items.len, max_entries);
+        const filtered_entries = dir.filteredEntries(dialog.filter_text.items, tmp_allocator);
+        const num_entries = std.math.clamp(1, filtered_entries.len, max_entries);
 
         const actual_height = entry_height * @intToFloat(f32, num_entries) + input_rect_height;
         dialog_box_rect.h = actual_height;
@@ -274,7 +270,7 @@ pub const Ui = struct {
         self.drawSolidRect(cursor_rect, style.colors.CURSOR_ACTIVE);
 
         // Draw entries
-        for (filtered_entries.items) |entry, i| {
+        for (filtered_entries) |entry, i| {
             const r = Rect{
                 .x = dialog_box_rect.x,
                 .y = dialog_box_rect.y + @intToFloat(f32, i) * entry_height,
