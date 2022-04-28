@@ -1,7 +1,5 @@
 # TODO
-- Limit the number of chars you can see in the input box
-    + Show only the rightmost dirs in the dir list
-    - Show only the rightmost chars in the input box
+- Fix filtering by uppercase letters
 - Make the window scroll
 - Add a scrollbar
 - Support 0, 1, 2 editors
@@ -23,6 +21,9 @@
 - Search within buffer
 
 # DONE
++ Limit the number of chars you can see in the input box
+    + Show only the rightmost dirs in the dir list
+    + Show only the rightmost chars in the input box
 + Use tab or enter to enter directories
     + Display directories in bubbles
         + Replace current_dir with a dir stack

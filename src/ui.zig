@@ -289,6 +289,7 @@ pub const Ui = struct {
             }
 
             if (dir_list_truncated) {
+                // Draw the truncation bubble first
                 const w = 3 * font.xadvance + 2 * padding;
                 var r = input_rect.splitLeft(w, padding);
                 self.drawSolidRect(r, style.colors.CURSOR_INACTIVE);
@@ -305,11 +306,26 @@ pub const Ui = struct {
                 const name = u.bytesToChars(d.name.items, tmp_allocator) catch unreachable;
                 self.drawLabel(name, text_rect.topLeft(), style.colors.PUNCTUATION);
             }
-            self.drawLabel(dialog.filter_text.items, .{ .x = input_rect.x, .y = input_rect.y + adjust_y }, style.colors.PUNCTUATION);
+
+            // Draw filter text
+            const filter_text_max_chars = @floatToInt(usize, input_rect.w / font.xadvance) - 1;
+            if (dialog.filter_text.items.len > filter_text_max_chars) {
+                // Draw truncated version
+                self.drawLabel(&[_]u.Char{ '.', '.' }, .{ .x = input_rect.x, .y = input_rect.y + adjust_y }, style.colors.PUNCTUATION);
+                self.drawLabel(
+                    dialog.filter_text.items[dialog.filter_text.items.len - filter_text_max_chars + 2 ..],
+                    .{ .x = input_rect.x + 2 * font.xadvance, .y = input_rect.y + adjust_y },
+                    style.colors.PUNCTUATION,
+                );
+            } else {
+                // Draw full version
+                self.drawLabel(dialog.filter_text.items, .{ .x = input_rect.x, .y = input_rect.y + adjust_y }, style.colors.PUNCTUATION);
+            }
 
             // Draw cursor
+            const cursor_char_pos = @intToFloat(f32, std.math.clamp(dialog.filter_text.items.len, 0, filter_text_max_chars));
             const cursor_rect = Rect{
-                .x = input_rect.x + @intToFloat(f32, dialog.filter_text.items.len) * font.xadvance,
+                .x = input_rect.x + cursor_char_pos * font.xadvance,
                 .y = input_rect.y,
                 .w = font.xadvance,
                 .h = font.line_height,
@@ -469,7 +485,7 @@ pub const Ui = struct {
         }
     }
 
-    fn drawLabel(self: *Ui, chars: []u.Char, top_left: Vec2, color: Color) void {
+    fn drawLabel(self: *Ui, chars: []const u.Char, top_left: Vec2, color: Color) void {
         const font = self.screen.font;
         var pos = Vec2{ .x = top_left.x, .y = top_left.y + font.baseline };
         for (chars) |char| {
