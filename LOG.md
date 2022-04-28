@@ -1,19 +1,11 @@
 # TODO
-- Use tab or enter to enter directories
-    - Display directories in bubbles
-        + Replace current_dir with a dir stack
-        + Fix the file tree
-        - Display the directory stack
 - Limit the number of chars you can see in the input box
     - Make a relative limit to the input box and allocate the rest to directories
     - Show only the rightmost chars in the input box
     - Show only the rightmost dirs in the dir list
-- Use backspace to go up a directory (remove rightmost bubble)
 - Make the window scroll
 - Add a scrollbar
 - Support 0, 1, 2 editors
-    + Rewrite the layout system - first get rects, then draw into them
-    - Switch between 1 and 2 editors
 - Fix editing near the end of the buffer (crashes on insert)
 - Multiple cursors
 - [optimisation] Highlighting syntax:
@@ -32,6 +24,12 @@
 - Search within buffer
 
 # DONE
++ Use tab or enter to enter directories
+    + Display directories in bubbles
+        + Replace current_dir with a dir stack
+        + Fix the file tree
+        + Display the directory stack
++ Use backspace to go up a directory (remove rightmost bubble)
 + Allow to filter files and directories using fuzzy search
     + Enter text into the input box
     + Use this text for filtering

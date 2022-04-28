@@ -229,7 +229,7 @@ pub const Ui = struct {
         const max_height = 800 * scale;
 
         const screen = self.screen.getRect();
-        const width = std.math.clamp(screen.w / 4, min_width, max_width);
+        const width = std.math.clamp(screen.w / 3, min_width, max_width);
         var dialog_rect = Rect{ .x = (screen.w - width) / 2, .y = 100, .w = width, .h = max_height };
 
         // Determine the height of the dialog box
@@ -260,12 +260,19 @@ pub const Ui = struct {
         input_rect = input_rect.shrinkEvenly(1);
         self.drawSolidRect(input_rect, style.colors.BACKGROUND);
         input_rect = input_rect.shrinkEvenly(padding);
+
+        // Draw open directories
         for (dialog.open_dirs.items) |d| {
             const w = @intToFloat(f32, d.name.items.len) * font.xadvance + 2 * padding;
-            const r = input_rect.splitLeft(w, padding);
+            var r = input_rect.splitLeft(w, padding);
             self.drawSolidRect(r, style.colors.CURSOR_INACTIVE);
+            const text_rect = r.shrink(padding, adjust_y, padding, 0);
+            const name = u.bytesToChars(d.name.items, tmp_allocator) catch unreachable;
+            self.drawLabel(name, text_rect.topLeft(), style.colors.PUNCTUATION);
         }
         self.drawLabel(dialog.filter_text.items, .{ .x = input_rect.x, .y = input_rect.y + adjust_y }, style.colors.DEFAULT);
+
+        // Draw cursor
         const cursor_rect = Rect{
             .x = input_rect.x + @intToFloat(f32, dialog.filter_text.items.len) * font.xadvance,
             .y = input_rect.y,
