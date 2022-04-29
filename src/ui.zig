@@ -334,18 +334,21 @@ pub const Ui = struct {
         }
 
         // Draw entries
-        const visible_entries = if (filtered_entries.len > max_entries)
-            filtered_entries[0..max_entries]
-        else
-            filtered_entries;
-        for (visible_entries) |entry, i| {
+        var visible_start: usize = 0;
+        var visible_end: usize = if (filtered_entries.len > max_entries) max_entries else filtered_entries.len;
+        if (dir.selected >= max_entries) {
+            visible_start = dir.selected - visible_end + 1;
+            visible_end = dir.selected + 1;
+        }
+
+        for (filtered_entries[visible_start..visible_end]) |entry, i| {
             const r = Rect{
                 .x = dialog_rect.x,
                 .y = dialog_rect.y + @intToFloat(f32, i) * entry_height,
                 .w = dialog_rect.w,
                 .h = entry_height,
             };
-            if (i == dir.selected) {
+            if (visible_start + i == dir.selected) {
                 self.drawSolidRect(r, style.colors.BACKGROUND_BRIGHT);
             }
             const name = u.bytesToChars(entry.getName(), tmp_allocator) catch unreachable;

@@ -70,7 +70,7 @@ pub fn deinit(self: *Self) void {
     self.filter_text.deinit();
     self.open_dirs.deinit();
 
-    // TODO: free the tree properly
+    // TODO: see if we can use a memory arena after all
 }
 
 pub fn getCurrentDir(self: *Self) *Dir {

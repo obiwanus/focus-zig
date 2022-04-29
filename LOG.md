@@ -1,6 +1,6 @@
 # TODO
-- Make the window scroll
 - Add a scrollbar
+- Open files in the left editor
 - Support 0, 1, 2 editors
 - Fix editing near the end of the buffer (crashes on insert)
 - Multiple cursors
@@ -9,6 +9,8 @@
     - Measure how expensive it is to rehighlight everything
 - [bug] Colors are off when non-ascii bytes are present (tokenizer doesn't support utf-8)
 - [tech-debt] When scanning the root folder, ignore the ignored folders right away (modify dir walker)
+- [tech-debt] When building a directory tree, see if we can use a memory arena
+              (maybe don't use array lists and instead just allocate slices of exact size from the arena)
 
 # WHAT NEEDS TO WORK BEFORE I CAN START USING IT
 - Open files
@@ -20,6 +22,7 @@
 - Search within buffer
 
 # DONE
++ Make the window scroll
 + Fix filtering by uppercase letters
 + Limit the number of chars you can see in the input box
     + Show only the rightmost dirs in the dir list
