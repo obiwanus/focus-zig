@@ -17,7 +17,7 @@ const Swapchain = focus.vulkan.swapchain.Swapchain;
 const UiPipeline = pipeline.UiPipeline;
 const Ui = focus.ui.Ui;
 const Screen = focus.ui.Screen;
-const Editor = focus.editor.Editor;
+const EditorManager = focus.editors.EditorManager;
 const OpenFileDialog = focus.dialogs.OpenFile;
 
 var GPA = std.heap.GeneralPurposeAllocator(.{ .never_unmap = false }){};
@@ -27,12 +27,6 @@ const FONT_NAME = "fonts/FiraCode-Retina.ttf";
 const FONT_SIZE = 18; // for scale = 1.0
 
 var g_events: std.ArrayList(Event) = undefined;
-
-const EditorLayout = enum {
-    none,
-    single,
-    side_by_side,
-};
 
 pub fn main() !void {
     // Static arena lives until the end of the program
@@ -143,12 +137,8 @@ pub fn main() !void {
     var ui = try Ui.init(gpa, &vc);
     defer ui.deinit(&vc);
 
-    var active_animation = false;
-
-    var layout_mode: EditorLayout = .none;
-    var editor1: ?Editor = null;
-    // var editor2: ?Editor = null;
-    var active_editor: ?*Editor = null;
+    var editors = EditorManager.init(gpa);
+    defer editors.deinit();
 
     g_events.append(.redraw_requested) catch u.oom();
 
@@ -198,7 +188,7 @@ pub fn main() !void {
         try glfw.pollEvents();
 
         // Otherwise sleep until something happens
-        while (g_events.items.len == 0 and !active_animation and !window.shouldClose()) {
+        while (g_events.items.len == 0 and !editors.haveActiveScrollAnimation() and !window.shouldClose()) {
             try glfw.waitEvents();
         }
 
@@ -222,19 +212,12 @@ pub fn main() !void {
                             const action = dialog.keyPress(kp.key, kp.mods, frame_allocator);
                             if (action) |a| {
                                 switch (a) {
-                                    .open_file_left => |f| {
-                                        if (layout_mode == .none) layout_mode = .single;
-                                        if (editor1) |editor| editor.deinit();
-                                        editor1 = try Editor.init(gpa, f.path.items);
-                                        active_editor = &editor1.?;
-                                        dialog.deinit();
-                                        open_file_dialog = null;
-                                    },
-                                    .open_file_right => |f| {
-                                        //
-                                        _ = f;
-                                    },
+                                    .open_file_left => |f| editors.openFileLeft(f.path.items),
+                                    .open_file_right => |f| editors.openFileRight(f.path.items),
                                 }
+                                // On any action close the dialog
+                                dialog.deinit();
+                                open_file_dialog = null;
                             }
                         }
                     },
@@ -246,7 +229,7 @@ pub fn main() !void {
             for (g_events.items) |event| {
                 switch (event) {
                     .char_entered => |char| {
-                        if (active_editor) |editor| editor.typeChar(char);
+                        if (editors.activeEditor()) |editor| editor.typeChar(char);
                     },
                     .key_pressed => |kp| {
                         if (kp.mods.control and kp.key == .p) {
@@ -254,7 +237,7 @@ pub fn main() !void {
                             continue;
                         }
                         // TODO: switch editors
-                        if (active_editor) |editor| editor.keyPress(kp.key, kp.mods);
+                        if (editors.activeEditor()) |editor| editor.keyPress(kp.key, kp.mods);
                     },
                     else => {},
                 }
@@ -272,73 +255,19 @@ pub fn main() !void {
         try uniform_buffer.copyToGPU(&vc);
 
         // Draw UI
-        ui.startFrame(screen);
+        {
+            ui.startFrame(screen);
 
-        const margin_h = 30 * screen.scale;
-        const margin_v = 15 * screen.scale;
+            editors.updateAndDrawAll(&ui, clock_ms);
 
-        switch (layout_mode) {
-            .none => {
-                // Layout rects to prepare for drawing
-                var area = screen.getRect();
-                const footer_rect = area.splitBottom(screen.font.line_height + 4, 0);
-                ui.drawSolidRect(footer_rect, style.colors.BACKGROUND_BRIGHT);
-            },
-            .single => if (active_editor) |editor| {
-                // Layout rects to prepare for drawing
-                var area = screen.getRect();
-                const footer_rect = area.splitBottom(screen.font.line_height + 4, 0);
-                const editor_rect = area.shrink(margin_h, margin_v, margin_h, 0);
+            if (open_file_dialog) |*dialog| {
+                ui.drawOpenFileDialog(dialog, frame_allocator);
+            }
 
-                // Retain info about dimensions
-                editor.lines_per_screen = @floatToInt(usize, editor_rect.h / screen.font.line_height);
-                editor.cols_per_screen = @floatToInt(usize, editor_rect.w / screen.font.xadvance);
+            // ui.drawDebugPanel(frame_number);
 
-                // Update internal data if necessary
-                if (editor.dirty) editor.syncInternalData();
-                editor.updateCursor();
-                editor.moveViewportToCursor(screen.font); // depends on lines_per_screen etc
-                active_animation = editor.animateScrolling(clock_ms);
-
-                ui.drawEditor(editor, editor_rect, true);
-
-                ui.drawSolidRectWithShadow(footer_rect, style.colors.BACKGROUND_BRIGHT, 5);
-            },
-            .side_by_side => {
-                // // Layout rects to prepare for drawing
-                // var area = screen.getRect();
-                // const footer_rect = area.splitBottom(screen.font.line_height + 4, 0);
-                // area = area.shrink(margin_h, margin_v, margin_h, 0);
-                // const editor1_rect = area.splitLeft(area.w / 2, margin_h).shrink(0, 0, margin_h, 0);
-                // const editor2_rect = area;
-
-                // // Retain info about dimensions
-                // active_editor.lines_per_screen = @floatToInt(usize, editor1_rect.h / screen.font.line_height);
-                // active_editor.cols_per_screen = @floatToInt(usize, editor1_rect.w / screen.font.xadvance);
-
-                // // Update internal data if necessary
-                // if (editor1.dirty) editor1.syncInternalData();
-                // if (editor2.dirty) editor2.syncInternalData();
-                // active_editor.updateCursor();
-                // active_editor.moveViewportToCursor(screen.font); // depends on lines_per_screen etc
-                // active_animation = active_editor.animateScrolling(clock_ms);
-
-                // ui.drawEditor(editor1, editor1_rect, active_editor == &editor1);
-                // ui.drawEditor(editor2, editor2_rect, active_editor == &editor2);
-
-                // ui.drawSolidRectWithShadow(footer_rect, style.colors.BACKGROUND_BRIGHT, 5);
-                // const screen_rect = screen.getRect();
-                // const splitter_rect = screen_rect.shrink(screen_rect.w / 2 - 1, 0, screen_rect.w / 2 - 1, 0);
-                // ui.drawSolidRect(splitter_rect, style.colors.BACKGROUND_BRIGHT);
-            },
+            try ui.endFrame(&vc, main_cmd_pool);
         }
-
-        if (open_file_dialog) |*dialog| {
-            ui.drawOpenFileDialog(dialog, frame_allocator);
-        }
-
-        ui.drawDebugPanel(frame_number);
-        try ui.endFrame(&vc, main_cmd_pool);
 
         // Record the main command buffer
         {

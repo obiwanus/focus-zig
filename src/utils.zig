@@ -103,11 +103,16 @@ pub fn charsToBytes(chars: []const Char, allocator: Allocator) ![]u8 {
     return bytes.toOwnedSlice();
 }
 
-pub fn readEntireFile(filename: []const u8, allocator: Allocator) ![]u8 {
-    const file = try std.fs.cwd().openFile(filename, .{ .read = true });
+pub fn readEntireFile(file_path: []const u8, allocator: Allocator) ![]u8 {
+    const file = try std.fs.cwd().openFile(file_path, .{ .read = true });
     defer file.close();
 
-    return file.reader().readAllAlloc(allocator, 10 * 1024 * 1024); // max 10 Mb
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 Mb
+    const result = file.reader().readAllAlloc(allocator, MAX_FILE_SIZE) catch |e| switch (e) {
+        error.StreamTooLong => return e,
+        else => oom(), // we want to die on OOM but we want to know if the error is different
+    };
+    return result;
 }
 
 pub fn oom() noreturn {

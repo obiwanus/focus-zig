@@ -103,7 +103,11 @@ pub fn keyPress(self: *Self, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allo
                         self.filter_text.shrinkRetainingCapacity(0);
                     },
                     .file => |f| if (key == .enter) {
-                        return Action{ .open_file_left = f };
+                        if (mods.control) {
+                            return Action{ .open_file_right = f };
+                        } else {
+                            return Action{ .open_file_left = f };
+                        }
                     },
                 }
             }

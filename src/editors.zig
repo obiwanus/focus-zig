@@ -3,13 +3,137 @@ const glfw = @import("glfw");
 
 const focus = @import("focus.zig");
 const u = focus.utils;
+const style = focus.style;
 
 const Allocator = std.mem.Allocator;
 const Vec2 = u.Vec2;
+const Rect = u.Rect;
 const Font = focus.fonts.Font;
 const TextColor = focus.style.TextColor;
+const Ui = focus.ui.Ui;
 
 const TAB_SIZE = 4;
+
+const EditorLayout = enum {
+    none,
+    single,
+    side_by_side,
+};
+
+pub const EditorManager = struct {
+    allocator: Allocator,
+    open_editors: std.ArrayList(Editor),
+    left: ?usize = null,
+    right: ?usize = null,
+    active: ?usize = null,
+
+    pub fn init(allocator: Allocator) EditorManager {
+        return .{
+            .allocator = allocator,
+            .open_editors = std.ArrayList(Editor).initCapacity(allocator, 10) catch u.oom(),
+        };
+    }
+
+    pub fn deinit(self: EditorManager) void {
+        for (self.open_editors.items) |editor| {
+            editor.deinit();
+        }
+    }
+
+    pub fn updateAndDrawAll(self: *EditorManager, ui: *Ui, clock_ms: f64) void {
+        // Always try to update all open editors
+        for (self.open_editors.items) |*editor| {
+            if (editor.dirty) editor.syncInternalData();
+        }
+
+        // The editors always take the entire screen area
+        var area = ui.screen.getRect();
+
+        // Lay out the editors in rects and draw each
+        switch (self.layout()) {
+            .single => {
+                self.leftEditor().updateAndDraw(ui, area, clock_ms, true);
+            },
+            .side_by_side => {
+                const left_rect = area.splitLeft(area.w / 2 - 1, 1);
+                const right_rect = area;
+
+                self.leftEditor().updateAndDraw(ui, left_rect, clock_ms, self.isLeftActive());
+                self.rightEditor().updateAndDraw(ui, right_rect, clock_ms, self.isRightActive());
+
+                const splitter_rect = Rect{ .x = area.x - 2, .y = area.y, .w = 2, .h = area.h };
+                ui.drawSolidRect(splitter_rect, style.colors.BACKGROUND_BRIGHT);
+            },
+            else => {},
+        }
+    }
+
+    pub fn openFileLeft(self: *EditorManager, path: []const u8) void {
+        const editor = if (self.editorExistsForFile(path)) |editor| editor else self.openNewEditor(path);
+        self.left = editor;
+        self.active = editor;
+    }
+
+    pub fn openFileRight(self: *EditorManager, path: []const u8) void {
+        const editor = if (self.editorExistsForFile(path)) |editor| editor else self.openNewEditor(path);
+        if (self.left == null) {
+            self.left = editor;
+        } else {
+            self.right = editor;
+        }
+        self.active = editor;
+    }
+
+    pub fn haveActiveScrollAnimation(self: *EditorManager) bool {
+        if (self.activeEditor()) |editor| {
+            return editor.scroll_animation != null;
+        }
+        return false;
+    }
+
+    fn editorExistsForFile(self: EditorManager, path: []const u8) ?usize {
+        for (self.open_editors.items) |editor, i| {
+            if (std.mem.eql(u8, path, editor.file_path)) return i;
+        }
+        return null;
+    }
+
+    fn openNewEditor(self: *EditorManager, path: []const u8) usize {
+        const new_editor = Editor.init(self.allocator, path) catch unreachable;
+        self.open_editors.append(new_editor) catch u.oom();
+        return self.open_editors.items.len - 1;
+    }
+
+    fn layout(self: EditorManager) EditorLayout {
+        if (self.left != null and self.right != null) return .side_by_side;
+        if (self.left != null) return .single;
+        u.assert(self.right == null);
+        return .none;
+    }
+
+    pub fn activeEditor(self: *EditorManager) ?*Editor {
+        if (self.active) |active| {
+            return &self.open_editors.items[active];
+        }
+        return null;
+    }
+
+    fn leftEditor(self: *EditorManager) *Editor {
+        return &self.open_editors.items[self.left.?];
+    }
+
+    fn rightEditor(self: *EditorManager) *Editor {
+        return &self.open_editors.items[self.right.?];
+    }
+
+    fn isLeftActive(self: EditorManager) bool {
+        return self.left != null and self.active != null and self.left.? == self.active.?;
+    }
+
+    fn isRightActive(self: EditorManager) bool {
+        return self.right != null and self.active != null and self.right.? == self.active.?;
+    }
+};
 
 const Cursor = struct {
     pos: usize = 0,
@@ -48,6 +172,8 @@ pub const Editor = struct {
     // TODO: implement 2 editors using the same buffer
 
     // buffer
+    allocator: Allocator,
+    file_path: []const u8,
     bytes: std.ArrayList(u8),
     chars: std.ArrayList(u.Char),
     colors: std.ArrayList(TextColor),
@@ -63,11 +189,11 @@ pub const Editor = struct {
     scroll: Vec2, // how many px we have scrolled to the left and to the top
     scroll_animation: ?ScrollAnimation = null,
 
-    pub fn init(allocator: Allocator, filename: []const u8) !Editor {
-        const file_contents = try u.readEntireFile(filename, allocator);
+    pub fn init(allocator: Allocator, file_path: []const u8) !Editor {
+        const file_contents = try u.readEntireFile(file_path, allocator);
         defer allocator.free(file_contents);
-        var bytes = try std.ArrayList(u8).initCapacity(allocator, file_contents.len);
-        bytes.appendSliceAssumeCapacity(file_contents);
+        var bytes = std.ArrayList(u8).init(allocator);
+        bytes.appendSlice(file_contents) catch u.oom();
 
         // For simplicity we assume that a codepoint equals a character (though it's not true).
         // If we ever encounter multi-codepoint characters, we can revisit this
@@ -86,6 +212,8 @@ pub const Editor = struct {
         try lines.append(0); // first line is always at the buffer start
 
         return Editor{
+            .allocator = allocator,
+            .file_path = allocator.dupe(u8, file_path) catch u.oom(),
             .bytes = bytes,
             .chars = chars,
             .colors = colors,
@@ -100,6 +228,34 @@ pub const Editor = struct {
         self.chars.deinit();
         self.colors.deinit();
         self.lines.deinit();
+        self.allocator.free(self.file_path);
+    }
+
+    pub fn updateAndDraw(self: *Editor, ui: *Ui, rect: Rect, clock_ms: f64, is_active: bool) void {
+        const scale = ui.screen.scale;
+        const char_size = ui.screen.font.charSize();
+        const margin = Vec2{ .x = 30 * scale, .y = 15 * scale };
+
+        var area = rect.copy();
+        const footer_rect = area.splitBottom(char_size.y + 4, 0);
+        area = area.shrink(margin.x, margin.y, margin.x, 0);
+
+        // Retain info about size - we only know it now
+        self.lines_per_screen = @floatToInt(usize, area.h / char_size.y);
+        self.cols_per_screen = @floatToInt(usize, area.w / char_size.x);
+
+        self.updateCursorLineAndCol();
+        self.moveViewportToCursor(char_size); // depends on lines_per_screen etc
+        self.animateScrolling(clock_ms);
+
+        // Draw the text
+        {
+            // TODO:
+            ui.drawEditor(self, area, is_active);
+        }
+
+        // Draw footer
+        ui.drawSolidRectWithShadow(footer_rect, style.colors.BACKGROUND_BRIGHT, 5);
     }
 
     /// Inserts a char at the cursor
@@ -237,15 +393,12 @@ pub const Editor = struct {
         };
     }
 
-    pub fn animateScrolling(self: *Editor, clock_ms: f64) bool {
+    pub fn animateScrolling(self: *Editor, clock_ms: f64) void {
         if (self.scroll_animation) |animation| {
             self.scroll = animation.getValue(clock_ms);
             if (animation.isFinished(clock_ms)) {
                 self.scroll_animation = null;
             }
-            return true;
-        } else {
-            return false;
         }
     }
 
@@ -274,21 +427,19 @@ pub const Editor = struct {
         return indent;
     }
 
-    pub fn updateCursor(self: *Editor) void {
+    fn updateCursorLineAndCol(self: *Editor) void {
         self.cursor.line = for (self.lines.items) |line_start, line| {
             if (self.cursor.pos < line_start) {
-                break line - 1;
-            } else if (self.cursor.pos == line_start) {
-                break line; // for one-line files
+                break line -| 1;
             }
         } else self.lines.items.len;
         self.cursor.col = self.cursor.pos - self.lines.items[self.cursor.line];
     }
 
-    pub fn moveViewportToCursor(self: *Editor, font: Font) void {
+    fn moveViewportToCursor(self: *Editor, char_size: Vec2) void {
         // Current scroll offset in characters
-        var viewport_top = @floatToInt(usize, self.scroll.y / font.line_height);
-        var viewport_left = @floatToInt(usize, self.scroll.x / font.xadvance);
+        var viewport_top = @floatToInt(usize, self.scroll.y / char_size.y);
+        var viewport_left = @floatToInt(usize, self.scroll.x / char_size.x);
 
         // Allowed cursor positions within viewport
         const padding = 4;
@@ -309,11 +460,11 @@ pub const Editor = struct {
             viewport_left += (self.cursor.col -| col_max);
         }
 
-        self.scroll.y = @intToFloat(f32, viewport_top) * font.line_height;
-        self.scroll.x = @intToFloat(f32, viewport_left) * font.xadvance;
+        self.scroll.y = @intToFloat(f32, viewport_top) * char_size.y;
+        self.scroll.x = @intToFloat(f32, viewport_left) * char_size.x;
     }
 
-    pub fn syncInternalData(self: *Editor) void {
+    fn syncInternalData(self: *Editor) void {
         self.recalculateLines();
         self.recalculateBytes();
         self.highlightCode();

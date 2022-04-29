@@ -9,7 +9,7 @@ pub const utils = @import("utils.zig");
 pub const style = @import("style.zig");
 pub const fonts = @import("fonts.zig");
 pub const ui = @import("ui.zig");
-pub const editor = @import("editor.zig");
+pub const editors = @import("editors.zig");
 
 pub const vulkan = struct {
     pub const utils = @import("vulkan/utils.zig");

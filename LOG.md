@@ -1,5 +1,6 @@
 # TODO
 - Display info in the footer
+    - Fix the shadow and the positioning of the splitter
     - Open buffer file path
     - Line and column
 - Support 0, 1, 2 editors

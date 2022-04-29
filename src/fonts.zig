@@ -108,6 +108,10 @@ pub const Font = struct {
         );
         return quad;
     }
+
+    pub fn charSize(self: Font) u.Vec2 {
+        return .{ .x = self.xadvance, .y = self.line_height };
+    }
 };
 
 const CharRange = struct {
