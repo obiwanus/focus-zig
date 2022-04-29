@@ -103,6 +103,13 @@ pub fn charsToBytes(chars: []const Char, allocator: Allocator) ![]u8 {
     return bytes.toOwnedSlice();
 }
 
+pub fn readEntireFile(filename: []const u8, allocator: Allocator) ![]u8 {
+    const file = try std.fs.cwd().openFile(filename, .{ .read = true });
+    defer file.close();
+
+    return file.reader().readAllAlloc(allocator, 10 * 1024 * 1024); // max 10 Mb
+}
+
 pub fn oom() noreturn {
     @panic("Out of memory");
 }

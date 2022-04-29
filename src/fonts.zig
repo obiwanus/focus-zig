@@ -28,7 +28,7 @@ pub const Font = struct {
         var pixels = try allocator.alloc(u8, ATLAS_WIDTH * ATLAS_HEIGHT);
         defer allocator.free(pixels); // after they are uploaded we don't need them
 
-        const font_data = try readEntireFile(filename, allocator);
+        const font_data = try u.readEntireFile(filename, allocator);
         defer allocator.free(font_data);
 
         var pack_context = try stbtt.packBegin(pixels, ATLAS_WIDTH, ATLAS_HEIGHT, 0, 5, null);
@@ -129,13 +129,6 @@ const FontTexture = struct {
     memory: vk.DeviceMemory,
     view: vk.ImageView,
 };
-
-fn readEntireFile(filename: []const u8, allocator: Allocator) ![]u8 {
-    const file = try std.fs.cwd().openFile(filename, .{ .read = true });
-    defer file.close();
-
-    return file.reader().readAllAlloc(allocator, 10 * 1024 * 1024); // max 10 Mb
-}
 
 fn createFontTexture(vc: *const VulkanContext, pixels: []u8, width: u32, height: u32, pool: vk.CommandPool) !FontTexture {
     // Create a staging buffer

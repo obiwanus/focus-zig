@@ -102,11 +102,6 @@ pub fn main() !void {
     screen.font = try Font.init(&vc, gpa, FONT_NAME, FONT_SIZE * screen.scale, main_cmd_pool);
     defer screen.font.deinit(&vc);
 
-    var editor1 = try Editor.init(gpa, "main.zig");
-    defer editor1.deinit();
-    var editor2 = try Editor.init(gpa, "ui.zig");
-    defer editor2.deinit();
-
     var swapchain = try Swapchain.init(&vc, static_allocator, screen.size);
     defer swapchain.deinit();
 
@@ -149,15 +144,17 @@ pub fn main() !void {
     defer ui.deinit(&vc);
 
     var active_animation = false;
-    var active_editor: *Editor = &editor1;
+
+    var layout_mode: EditorLayout = .none;
+    var editor1: ?Editor = null;
+    // var editor2: ?Editor = null;
+    var active_editor: ?*Editor = null;
+
     g_events.append(.redraw_requested) catch u.oom();
 
     var frame_number: usize = 0;
     const app_start_ms = std.time.nanoTimestamp();
     var clock_ms: f64 = 0;
-
-    var layout_mode: EditorLayout = .side_by_side;
-    // var layout_mode: EditorLayout = .single;
 
     var open_file_dialog: ?OpenFileDialog = null;
 
@@ -222,7 +219,23 @@ pub fn main() !void {
                             dialog.deinit();
                             open_file_dialog = null;
                         } else {
-                            dialog.keyPress(kp.key, kp.mods, frame_allocator);
+                            const action = dialog.keyPress(kp.key, kp.mods, frame_allocator);
+                            if (action) |a| {
+                                switch (a) {
+                                    .open_file_left => |f| {
+                                        if (layout_mode == .none) layout_mode = .single;
+                                        if (editor1) |editor| editor.deinit();
+                                        editor1 = try Editor.init(gpa, f.path.items);
+                                        active_editor = &editor1.?;
+                                        dialog.deinit();
+                                        open_file_dialog = null;
+                                    },
+                                    .open_file_right => |f| {
+                                        //
+                                        _ = f;
+                                    },
+                                }
+                            }
                         }
                     },
                     else => {},
@@ -233,7 +246,7 @@ pub fn main() !void {
             for (g_events.items) |event| {
                 switch (event) {
                     .char_entered => |char| {
-                        active_editor.typeChar(char);
+                        if (active_editor) |editor| editor.typeChar(char);
                     },
                     .key_pressed => |kp| {
                         if (kp.mods.control and kp.key == .p) {
@@ -241,7 +254,7 @@ pub fn main() !void {
                             continue;
                         }
                         // TODO: switch editors
-                        active_editor.keyPress(kp.key, kp.mods);
+                        if (active_editor) |editor| editor.keyPress(kp.key, kp.mods);
                     },
                     else => {},
                 }
@@ -271,52 +284,52 @@ pub fn main() !void {
                 const footer_rect = area.splitBottom(screen.font.line_height + 4, 0);
                 ui.drawSolidRect(footer_rect, style.colors.BACKGROUND_BRIGHT);
             },
-            .single => {
+            .single => if (active_editor) |editor| {
                 // Layout rects to prepare for drawing
                 var area = screen.getRect();
                 const footer_rect = area.splitBottom(screen.font.line_height + 4, 0);
-                const editor1_rect = area.shrink(margin_h, margin_v, margin_h, 0);
+                const editor_rect = area.shrink(margin_h, margin_v, margin_h, 0);
 
                 // Retain info about dimensions
-                active_editor.lines_per_screen = @floatToInt(usize, editor1_rect.h / screen.font.line_height);
-                active_editor.cols_per_screen = @floatToInt(usize, editor1_rect.w / screen.font.xadvance);
+                editor.lines_per_screen = @floatToInt(usize, editor_rect.h / screen.font.line_height);
+                editor.cols_per_screen = @floatToInt(usize, editor_rect.w / screen.font.xadvance);
 
                 // Update internal data if necessary
-                if (editor1.dirty) editor1.syncInternalData();
-                active_editor.updateCursor();
-                active_editor.moveViewportToCursor(screen.font); // depends on lines_per_screen etc
-                active_animation = active_editor.animateScrolling(clock_ms);
+                if (editor.dirty) editor.syncInternalData();
+                editor.updateCursor();
+                editor.moveViewportToCursor(screen.font); // depends on lines_per_screen etc
+                active_animation = editor.animateScrolling(clock_ms);
 
-                ui.drawEditor(editor1, editor1_rect, true);
+                ui.drawEditor(editor, editor_rect, true);
 
                 ui.drawSolidRectWithShadow(footer_rect, style.colors.BACKGROUND_BRIGHT, 5);
             },
             .side_by_side => {
-                // Layout rects to prepare for drawing
-                var area = screen.getRect();
-                const footer_rect = area.splitBottom(screen.font.line_height + 4, 0);
-                area = area.shrink(margin_h, margin_v, margin_h, 0);
-                const editor1_rect = area.splitLeft(area.w / 2, margin_h).shrink(0, 0, margin_h, 0);
-                const editor2_rect = area;
+                // // Layout rects to prepare for drawing
+                // var area = screen.getRect();
+                // const footer_rect = area.splitBottom(screen.font.line_height + 4, 0);
+                // area = area.shrink(margin_h, margin_v, margin_h, 0);
+                // const editor1_rect = area.splitLeft(area.w / 2, margin_h).shrink(0, 0, margin_h, 0);
+                // const editor2_rect = area;
 
-                // Retain info about dimensions
-                active_editor.lines_per_screen = @floatToInt(usize, editor1_rect.h / screen.font.line_height);
-                active_editor.cols_per_screen = @floatToInt(usize, editor1_rect.w / screen.font.xadvance);
+                // // Retain info about dimensions
+                // active_editor.lines_per_screen = @floatToInt(usize, editor1_rect.h / screen.font.line_height);
+                // active_editor.cols_per_screen = @floatToInt(usize, editor1_rect.w / screen.font.xadvance);
 
-                // Update internal data if necessary
-                if (editor1.dirty) editor1.syncInternalData();
-                if (editor2.dirty) editor2.syncInternalData();
-                active_editor.updateCursor();
-                active_editor.moveViewportToCursor(screen.font); // depends on lines_per_screen etc
-                active_animation = active_editor.animateScrolling(clock_ms);
+                // // Update internal data if necessary
+                // if (editor1.dirty) editor1.syncInternalData();
+                // if (editor2.dirty) editor2.syncInternalData();
+                // active_editor.updateCursor();
+                // active_editor.moveViewportToCursor(screen.font); // depends on lines_per_screen etc
+                // active_animation = active_editor.animateScrolling(clock_ms);
 
-                ui.drawEditor(editor1, editor1_rect, active_editor == &editor1);
-                ui.drawEditor(editor2, editor2_rect, active_editor == &editor2);
+                // ui.drawEditor(editor1, editor1_rect, active_editor == &editor1);
+                // ui.drawEditor(editor2, editor2_rect, active_editor == &editor2);
 
-                ui.drawSolidRectWithShadow(footer_rect, style.colors.BACKGROUND_BRIGHT, 5);
-                const screen_rect = screen.getRect();
-                const splitter_rect = screen_rect.shrink(screen_rect.w / 2 - 1, 0, screen_rect.w / 2 - 1, 0);
-                ui.drawSolidRect(splitter_rect, style.colors.BACKGROUND_BRIGHT);
+                // ui.drawSolidRectWithShadow(footer_rect, style.colors.BACKGROUND_BRIGHT, 5);
+                // const screen_rect = screen.getRect();
+                // const splitter_rect = screen_rect.shrink(screen_rect.w / 2 - 1, 0, screen_rect.w / 2 - 1, 0);
+                // ui.drawSolidRect(splitter_rect, style.colors.BACKGROUND_BRIGHT);
             },
         }
 

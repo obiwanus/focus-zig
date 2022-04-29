@@ -63,10 +63,11 @@ pub const Editor = struct {
     scroll: Vec2, // how many px we have scrolled to the left and to the top
     scroll_animation: ?ScrollAnimation = null,
 
-    pub fn init(allocator: Allocator, comptime file_name: []const u8) !Editor {
-        const initial = @embedFile(file_name);
-        var bytes = std.ArrayList(u8).init(allocator);
-        try bytes.appendSlice(initial);
+    pub fn init(allocator: Allocator, filename: []const u8) !Editor {
+        const file_contents = try u.readEntireFile(filename, allocator);
+        defer allocator.free(file_contents);
+        var bytes = try std.ArrayList(u8).initCapacity(allocator, file_contents.len);
+        bytes.appendSliceAssumeCapacity(file_contents);
 
         // For simplicity we assume that a codepoint equals a character (though it's not true).
         // If we ever encounter multi-codepoint characters, we can revisit this

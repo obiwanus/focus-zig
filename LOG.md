@@ -1,5 +1,7 @@
 # TODO
-- Open files in the left editor
+- Display info in the footer
+    - Open buffer file path
+    - Line and column
 - Support 0, 1, 2 editors
 - Fix editing near the end of the buffer (crashes on insert)
 - Multiple cursors
@@ -21,6 +23,7 @@
 - Search within buffer
 
 # DONE
++ Open files in the left editor
 + Add a scrollbar
 + Make the window scroll
 + Fix filtering by uppercase letters

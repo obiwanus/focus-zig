@@ -79,7 +79,7 @@ pub fn getCurrentDir(self: *Self) *Dir {
     return self.open_dirs.items[num_open_dirs - 1];
 }
 
-pub fn keyPress(self: *Self, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allocator) void {
+pub fn keyPress(self: *Self, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allocator) ?Action {
     _ = mods;
     var dir = self.getCurrentDir();
     switch (key) {
@@ -102,8 +102,8 @@ pub fn keyPress(self: *Self, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allo
                         self.open_dirs.append(d.*) catch u.oom();
                         self.filter_text.shrinkRetainingCapacity(0);
                     },
-                    .file => |f| {
-                        u.print("Open file: {s}\n", .{f.name.items});
+                    .file => |f| if (key == .enter) {
+                        return Action{ .open_file_left = f };
                     },
                 }
             }
@@ -117,12 +117,18 @@ pub fn keyPress(self: *Self, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allo
         },
         else => {},
     }
+    return null;
 }
 
 pub fn charEntered(self: *Self, char: u.Char) void {
     self.filter_text.append(char) catch u.oom();
     self.getCurrentDir().selected = 0;
 }
+
+pub const Action = union(enum) {
+    open_file_left: *const File,
+    open_file_right: *const File,
+};
 
 pub const Entry = union(enum) {
     dir: *Dir,

@@ -161,7 +161,7 @@ pub const Ui = struct {
         return @intCast(u32, self.indices.items.len);
     }
 
-    pub fn drawEditor(self: *Ui, editor: Editor, rect: Rect, is_active: bool) void {
+    pub fn drawEditor(self: *Ui, editor: *const Editor, rect: Rect, is_active: bool) void {
         const font = self.screen.font;
 
         // How many lines/cols fit inside the rect
