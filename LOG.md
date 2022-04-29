@@ -1,5 +1,4 @@
 # TODO
-- Add a scrollbar
 - Open files in the left editor
 - Support 0, 1, 2 editors
 - Fix editing near the end of the buffer (crashes on insert)
@@ -22,6 +21,7 @@
 - Search within buffer
 
 # DONE
++ Add a scrollbar
 + Make the window scroll
 + Fix filtering by uppercase letters
 + Limit the number of chars you can see in the input box

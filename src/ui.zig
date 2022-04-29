@@ -224,13 +224,10 @@ pub const Ui = struct {
         const scale = self.screen.scale;
         const font = self.screen.font;
 
-        const min_width = 400 * scale;
-        const max_width = 1500 * scale;
-        const max_height = 800 * scale;
-
         const screen = self.screen.getRect();
-        const dialog_width = std.math.clamp(screen.w / 3, min_width, max_width);
-        var dialog_rect = Rect{ .x = (screen.w - dialog_width) / 2, .y = 100, .w = dialog_width, .h = max_height };
+        const dialog_width = std.math.clamp(screen.w / 3, 400.0 * scale, 1500.0 * scale);
+        const dialog_height = std.math.clamp(screen.h / 1.5, 200.0 * scale, 800.0 * scale);
+        var dialog_rect = Rect{ .x = (screen.w - dialog_width) / 2, .y = 100, .w = dialog_width, .h = dialog_height };
 
         // Determine the height of the dialog box
         const margin = 10 * scale;
@@ -359,11 +356,33 @@ pub const Ui = struct {
             );
         }
 
+        // Draw shadow
+        if (dir.selected >= max_entries) {
+            const dark = Color{ .r = 0, .g = 0, .b = 0, .a = 0.2 };
+            const transparent = Color{ .r = 0, .g = 0, .b = 0, .a = 0 };
+            const r = dialog_rect.splitTop(padding, 0);
+            self.drawRect(r, dark, dark, transparent, transparent); // bottom
+        }
+
+        // Draw scrollbar
+        if (filtered_entries.len >= max_entries) {
+            const width = margin;
+            const height = dialog_rect.h * @intToFloat(f32, max_entries) / @intToFloat(f32, filtered_entries.len);
+            const offset = dialog_rect.h * @intToFloat(f32, visible_start) / @intToFloat(f32, filtered_entries.len);
+            const scrollbar = Rect{
+                .x = dialog_rect.r() - width,
+                .y = dialog_rect.y + offset,
+                .w = width,
+                .h = height,
+            };
+            self.drawSolidRect(scrollbar, style.colors.SCROLLBAR);
+        }
+
         // Draw placeholder if no entries are present
         if (filtered_entries.len == 0) {
-            dialog_rect = dialog_rect.shrink(margin + padding, padding, 0, padding);
+            const r = dialog_rect.shrink(margin + padding, padding, 0, padding);
             const placeholder = u.bytesToChars("...", tmp_allocator) catch unreachable;
-            self.drawLabel(placeholder, .{ .x = dialog_rect.x, .y = dialog_rect.y + adjust_y }, style.colors.COMMENT);
+            self.drawLabel(placeholder, .{ .x = r.x, .y = r.y + adjust_y }, style.colors.COMMENT);
         }
     }
 

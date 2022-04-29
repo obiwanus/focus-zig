@@ -26,6 +26,14 @@ pub const Rect = struct {
         return Vec2{ .x = self.x, .y = self.y };
     }
 
+    pub fn r(self: Rect) f32 {
+        return self.x + self.w;
+    }
+
+    pub fn b(self: Rect) f32 {
+        return self.y + self.h;
+    }
+
     pub fn shrink(self: Rect, left: f32, top: f32, right: f32, bottom: f32) Rect {
         assert(self.w >= left + right);
         assert(self.h >= top + bottom);
