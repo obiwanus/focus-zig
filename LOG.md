@@ -1,10 +1,10 @@
 # TODO
 - Display info in the footer
-    - Fix the shadow and the positioning of the splitter
+    + Fix the shadow and the positioning of the splitter
     - Open buffer file path
     - Line and column
+- Fix editing near the end of the buffer (crashes on insert, can't get to last line)
 - Support 0, 1, 2 editors
-- Fix editing near the end of the buffer (crashes on insert)
 - Multiple cursors
 - [optimisation] Highlighting syntax:
     - Implement a few languages, not just Zig

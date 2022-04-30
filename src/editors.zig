@@ -255,7 +255,8 @@ pub const Editor = struct {
         }
 
         // Draw footer
-        ui.drawSolidRectWithShadow(footer_rect, style.colors.BACKGROUND_BRIGHT, 5);
+        ui.drawSolidRect(footer_rect, style.colors.BACKGROUND_BRIGHT);
+        ui.drawTopShadow(footer_rect, 5);
     }
 
     /// Inserts a char at the cursor

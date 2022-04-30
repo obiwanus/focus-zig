@@ -36,6 +36,10 @@ pub const colors = struct {
     pub const ERROR = Color{ .r = 1.00, .g = 0.00, .b = 0.00, .a = 1.0 };
     pub const KEYWORD = Color{ .r = 0.902, .g = 0.493, .b = 0.457, .a = 1.0 };
 
+    // Special
+    pub const SHADOW_DARK = Color{ .r = 0, .g = 0, .b = 0, .a = 0.2 };
+    pub const SHADOW_TRANSPARENT = Color{ .r = 0, .g = 0, .b = 0, .a = 0 };
+
     pub const PALETTE = [_]Color{
         // Order must match TextColor
         DEFAULT,

@@ -418,8 +418,8 @@ pub const Ui = struct {
 
     pub fn drawSolidRectWithShadow(self: *Ui, r: Rect, color: Color, shadow_size: f32) void {
         const size = shadow_size * self.screen.scale;
-        const dark = Color{ .r = 0, .g = 0, .b = 0, .a = 0.2 };
-        const transparent = Color{ .r = 0, .g = 0, .b = 0, .a = 0 };
+        const dark = style.colors.SHADOW_DARK;
+        const transparent = style.colors.SHADOW_TRANSPARENT;
         const pi = std.math.pi;
 
         // Draw main shadows
@@ -429,16 +429,23 @@ pub const Ui = struct {
         self.drawRect(Rect{ .x = r.x + r.w, .y = r.y, .w = size, .h = r.h }, dark, transparent, transparent, dark); // right
 
         // Draw corners
-        self.drawCircularShadow(.{ .x = r.x + r.w, .y = r.y }, size, pi / 2.0, pi, dark);
-        self.drawCircularShadow(.{ .x = r.x, .y = r.y }, size, pi, 3 * pi / 2.0, dark);
-        self.drawCircularShadow(.{ .x = r.x, .y = r.y + r.h }, size, 3 * pi / 2.0, 2.0 * pi, dark);
-        self.drawCircularShadow(.{ .x = r.x + r.w, .y = r.y + r.h }, size, 0, pi / 2.0, dark);
+        self.drawCircularShadow(.{ .x = r.x + r.w, .y = r.y }, size, pi / 2.0, pi);
+        self.drawCircularShadow(.{ .x = r.x, .y = r.y }, size, pi, 3 * pi / 2.0);
+        self.drawCircularShadow(.{ .x = r.x, .y = r.y + r.h }, size, 3 * pi / 2.0, 2.0 * pi);
+        self.drawCircularShadow(.{ .x = r.x + r.w, .y = r.y + r.h }, size, 0, pi / 2.0);
 
         self.drawSolidRect(r, color);
     }
 
-    fn drawCircularShadow(self: *Ui, center: Vec2, radius: f32, start_angle: f32, end_angle: f32, dark: Color) void {
+    pub fn drawTopShadow(self: *Ui, r: Rect, size: f32) void {
+        const dark = style.colors.SHADOW_DARK;
+        const transparent = style.colors.SHADOW_TRANSPARENT;
+        self.drawRect(Rect{ .x = r.x, .y = r.y - size, .w = r.w, .h = size }, transparent, transparent, dark, dark);
+    }
+
+    fn drawCircularShadow(self: *Ui, center: Vec2, radius: f32, start_angle: f32, end_angle: f32) void {
         const v = @intCast(u32, self.vertices.items.len);
+        const dark = style.colors.SHADOW_DARK;
         const transparent = Color{ .r = 0, .g = 0, .b = 0, .a = 0 };
 
         // Central vertex
