@@ -24,6 +24,7 @@
 - Search within buffer
 
 # DONE
++ Switch between panes
 + Support 0, 1, 2 editors
 + Fix editing near the end of the buffer (crashes on insert, can't get to last line)
 + Open files in the left editor

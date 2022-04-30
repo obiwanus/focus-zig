@@ -234,15 +234,14 @@ pub fn main() !void {
             for (g_events.items) |event| {
                 switch (event) {
                     .char_entered => |char| {
-                        if (editors.activeEditor()) |editor| editor.typeChar(char);
+                        editors.charEntered(char);
                     },
                     .key_pressed => |kp| {
                         if (kp.mods.control and kp.key == .p) {
                             open_file_dialog = try OpenFileDialog.init(gpa);
                             continue;
                         }
-                        // TODO: switch editors
-                        if (editors.activeEditor()) |editor| editor.keyPress(kp.key, kp.mods);
+                        editors.keyPress(kp.key, kp.mods);
                     },
                     else => {},
                 }

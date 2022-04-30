@@ -84,6 +84,27 @@ pub const EditorManager = struct {
         self.active = editor;
     }
 
+    pub fn charEntered(self: *EditorManager, char: u.Char) void {
+        if (self.activeEditor()) |editor| editor.typeChar(char);
+    }
+
+    pub fn keyPress(self: *EditorManager, key: glfw.Key, mods: glfw.Mods) void {
+        if (mods.control and mods.alt) {
+            switch (key) {
+                .left => {
+                    self.active = self.left;
+                    return;
+                },
+                .right => {
+                    if (self.right) |right| self.active = right;
+                    return;
+                },
+                else => {},
+            }
+        }
+        if (self.activeEditor()) |editor| editor.keyPress(key, mods);
+    }
+
     pub fn haveActiveScrollAnimation(self: *EditorManager) bool {
         if (self.activeEditor()) |editor| {
             return editor.scroll_animation != null;
@@ -306,16 +327,14 @@ pub const Editor = struct {
         ui.drawTopShadow(footer_rect, 5);
     }
 
-    /// Inserts a char at the cursor
-    pub fn typeChar(self: *Editor, char: u.Char) void {
+    fn typeChar(self: *Editor, char: u.Char) void {
         self.chars.insert(self.cursor.pos, char) catch u.oom();
         self.cursor.pos += 1;
         self.cursor.col_wanted = null;
         self.dirty = true;
     }
 
-    /// Processes a key press event
-    pub fn keyPress(self: *Editor, key: glfw.Key, mods: glfw.Mods) void {
+    fn keyPress(self: *Editor, key: glfw.Key, mods: glfw.Mods) void {
         self.dirty = true;
 
         switch (key) {
