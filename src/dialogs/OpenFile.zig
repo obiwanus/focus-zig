@@ -7,7 +7,6 @@ const u = focus.utils;
 
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
-const ArenaAllocator = std.heap.ArenaAllocator; // couldn't get it to work
 
 const Self = @This();
 
@@ -69,6 +68,22 @@ pub fn deinit(self: *Self) void {
     self.open_dirs.deinit();
 
     // TODO: see if we can use a memory arena after all
+}
+
+pub fn navigateToDir(self: *Self, path: []const u8) void {
+    var iter = u.pathChunksIterator(path);
+    var current_dir = &self.root;
+    while (iter.next()) |chunk| {
+        for (current_dir.dirs.items) |*dir| {
+            if (std.mem.eql(u8, dir.name.items, chunk)) {
+                self.open_dirs.append(dir) catch u.oom();
+                current_dir = dir;
+                break;
+            }
+        } else {
+            return; // couldn't find dir
+        }
+    }
 }
 
 pub fn getCurrentDir(self: *Self) *Dir {

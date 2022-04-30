@@ -239,6 +239,10 @@ pub fn main() !void {
                     .key_pressed => |kp| {
                         if (kp.mods.control and kp.key == .p) {
                             open_file_dialog = try OpenFileDialog.init(gpa);
+                            if (editors.getActiveEditorFilePath()) |path| {
+                                // Open files relavitely to the currently active buffer
+                                open_file_dialog.?.navigateToDir(path);
+                            }
                             continue;
                         }
                         editors.keyPress(kp.key, kp.mods);

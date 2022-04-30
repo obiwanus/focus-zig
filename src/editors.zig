@@ -147,6 +147,11 @@ pub const EditorManager = struct {
         return null;
     }
 
+    pub fn getActiveEditorFilePath(self: *EditorManager) ?[]const u8 {
+        const active_editor = self.activeEditor() orelse return null;
+        return active_editor.file_path;
+    }
+
     fn leftEditor(self: *EditorManager) *Editor {
         return &self.open_editors.items[self.left.?];
     }

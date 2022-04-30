@@ -1,5 +1,4 @@
 # TODO
-- Open files relatively to the currently active buffer
 - Open 2 editors with the same buffer (if opening side by side)
 - [bug] Fix cursor positioning on horizontal scroll
 - Multiple cursors
@@ -21,6 +20,7 @@
 - Undo/redo
 
 # DONE
++ Open files relatively to the currently active buffer
 + Save modified buffer
 + Display info in the footer
     + Fix the shadow and the positioning of the splitter
