@@ -1,9 +1,5 @@
 # TODO
-- Display info in the footer
-    + Fix the shadow and the positioning of the splitter
-    + Open buffer file path
-    + Line and column
-    - Whether a buffer is modified
+- Save modified buffer
 - Open files relatively to the currently active buffer
 - Open 2 editors with the same buffer (if opening side by side)
 - [bug] Fix cursor positioning on horizontal scroll
@@ -26,6 +22,11 @@
 - Search within buffer
 
 # DONE
++ Display info in the footer
+    + Fix the shadow and the positioning of the splitter
+    + Open buffer file path
+    + Line and column
+    + Whether a buffer is modified
 + Switch between panes
 + Support 0, 1, 2 editors
 + Fix editing near the end of the buffer (crashes on insert, can't get to last line)

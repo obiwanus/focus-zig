@@ -200,6 +200,7 @@ pub const Editor = struct {
     colors: std.ArrayList(TextColor),
     lines: std.ArrayList(usize),
     dirty: bool = true, // needs syncing internal structures
+    modified: bool = false, // hasn't been saved to disk
 
     // Updated every time we draw UI (because that's when we know the layout and therefore size)
     lines_per_screen: usize = 60,
@@ -338,7 +339,11 @@ pub const Editor = struct {
             const path_chars = u.bytesToChars(self.file_path[0 .. self.file_path.len - name.len], tmp_allocator) catch unreachable;
             ui.drawLabel(path_chars, .{ .x = r.x, .y = text_y }, style.colors.COMMENT);
             const name_chars = u.bytesToChars(name, tmp_allocator) catch unreachable;
-            ui.drawLabel(name_chars, .{ .x = r.x + @intToFloat(f32, path_chars.len) * char_size.x, .y = text_y }, style.colors.PUNCTUATION);
+            ui.drawLabel(
+                name_chars,
+                .{ .x = r.x + @intToFloat(f32, path_chars.len) * char_size.x, .y = text_y },
+                if (self.modified) style.colors.STRING else style.colors.PUNCTUATION,
+            );
 
             // Line:col
             const line_col = std.fmt.allocPrint(tmp_allocator, "{}:{}", .{ self.cursor.line, self.cursor.col }) catch u.oom();
@@ -353,11 +358,11 @@ pub const Editor = struct {
         self.cursor.pos += 1;
         self.cursor.col_wanted = null;
         self.dirty = true;
+        self.modified = true;
     }
 
     fn keyPress(self: *Editor, key: glfw.Key, mods: glfw.Mods) void {
-        self.dirty = true;
-
+        // Things that don't modify the buffer
         switch (key) {
             .left => {
                 self.cursor.pos -|= 1;
@@ -391,6 +396,12 @@ pub const Editor = struct {
                 self.cursor.pos = self.lines.items[self.cursor.line + 1] - 1;
                 self.cursor.col_wanted = std.math.maxInt(usize);
             },
+            else => {},
+        }
+
+        // Things that modify the buffer
+        self.dirty = true;
+        switch (key) {
             .tab => {
                 const SPACES = [1]u.Char{' '} ** TAB_SIZE;
                 const to_next_tabstop = TAB_SIZE - self.cursor.col % TAB_SIZE;
@@ -470,6 +481,9 @@ pub const Editor = struct {
                 self.dirty = false; // nothing needs to be done
             },
         }
+
+        // Need to make sure there are no early returns from this function
+        if (self.dirty) self.modified = true;
     }
 
     pub fn setNewScrollTarget(self: *Editor, target: f32, clock_ms: f64) void {
