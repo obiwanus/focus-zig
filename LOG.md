@@ -1,5 +1,4 @@
 # TODO
-- Save modified buffer
 - Open files relatively to the currently active buffer
 - Open 2 editors with the same buffer (if opening side by side)
 - [bug] Fix cursor positioning on horizontal scroll
@@ -14,14 +13,15 @@
 
 # WHAT NEEDS TO WORK BEFORE I CAN START USING IT
 + Open files
-- Save files
-- Create new files
++ Save files
 - Switch between open files
-- Undo/redo
+- Create new files
 - Select text, copy/cut/paste/duplicate
 - Search within buffer
+- Undo/redo
 
 # DONE
++ Save modified buffer
 + Display info in the footer
     + Fix the shadow and the positioning of the splitter
     + Open buffer file path

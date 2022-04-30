@@ -120,6 +120,13 @@ pub fn readEntireFile(file_path: []const u8, allocator: Allocator) ![]u8 {
     return result;
 }
 
+pub fn writeEntireFile(file_path: []const u8, buffer: []const u8) !void {
+    const file = try std.fs.cwd().createFile(file_path, .{ .truncate = true });
+    defer file.close();
+
+    try file.writeAll(buffer);
+}
+
 pub fn oom() noreturn {
     @panic("Out of memory");
 }

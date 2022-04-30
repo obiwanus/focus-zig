@@ -362,45 +362,9 @@ pub const Editor = struct {
     }
 
     fn keyPress(self: *Editor, key: glfw.Key, mods: glfw.Mods) void {
-        // Things that don't modify the buffer
-        switch (key) {
-            .left => {
-                self.cursor.pos -|= 1;
-                self.cursor.col_wanted = null;
-            },
-            .right => {
-                if (self.cursor.pos < self.chars.items.len - 1) {
-                    self.cursor.pos += 1;
-                    self.cursor.col_wanted = null;
-                }
-            },
-            .up => {
-                const offset: usize = if (mods.control) 5 else 1;
-                self.moveCursorToLine(self.cursor.line -| offset);
-            },
-            .down => {
-                const offset: usize = if (mods.control) 5 else 1;
-                self.moveCursorToLine(self.cursor.line + offset);
-            },
-            .page_up => {
-                self.moveCursorToLine(self.cursor.line -| self.lines_per_screen);
-            },
-            .page_down => {
-                self.moveCursorToLine(self.cursor.line + self.lines_per_screen);
-            },
-            .home => {
-                self.cursor.pos = self.lines.items[self.cursor.line];
-                self.cursor.col_wanted = null;
-            },
-            .end => {
-                self.cursor.pos = self.lines.items[self.cursor.line + 1] - 1;
-                self.cursor.col_wanted = std.math.maxInt(usize);
-            },
-            else => {},
-        }
+        self.dirty = true;
 
         // Things that modify the buffer
-        self.dirty = true;
         switch (key) {
             .tab => {
                 const SPACES = [1]u.Char{' '} ** TAB_SIZE;
@@ -482,8 +446,47 @@ pub const Editor = struct {
             },
         }
 
+        // Things that don't modify the buffer
+        switch (key) {
+            .left => {
+                self.cursor.pos -|= 1;
+                self.cursor.col_wanted = null;
+            },
+            .right => {
+                if (self.cursor.pos < self.chars.items.len - 1) {
+                    self.cursor.pos += 1;
+                    self.cursor.col_wanted = null;
+                }
+            },
+            .up => {
+                const offset: usize = if (mods.control) 5 else 1;
+                self.moveCursorToLine(self.cursor.line -| offset);
+            },
+            .down => {
+                const offset: usize = if (mods.control) 5 else 1;
+                self.moveCursorToLine(self.cursor.line + offset);
+            },
+            .page_up => {
+                self.moveCursorToLine(self.cursor.line -| self.lines_per_screen);
+            },
+            .page_down => {
+                self.moveCursorToLine(self.cursor.line + self.lines_per_screen);
+            },
+            .home => {
+                self.cursor.pos = self.lines.items[self.cursor.line];
+                self.cursor.col_wanted = null;
+            },
+            .end => {
+                self.cursor.pos = self.lines.items[self.cursor.line + 1] - 1;
+                self.cursor.col_wanted = std.math.maxInt(usize);
+            },
+            else => {},
+        }
+
         // Need to make sure there are no early returns from this function
         if (self.dirty) self.modified = true;
+
+        if (mods.control and key == .s and self.modified) self.saveToDisk() catch unreachable; // TODO: handle
     }
 
     pub fn setNewScrollTarget(self: *Editor, target: f32, clock_ms: f64) void {
@@ -566,6 +569,14 @@ pub const Editor = struct {
         self.scroll.x = @intToFloat(f32, viewport_left) * char_size.x;
     }
 
+    fn saveToDisk(self: *Editor) !void {
+        if (!self.modified) return;
+        self.recalculateBytes();
+        if (self.bytes.items[self.bytes.items.len -| 1] != '\n') self.bytes.append('\n') catch u.oom();
+        try u.writeEntireFile(self.file_path, self.bytes.items);
+        self.modified = false;
+    }
+
     fn syncInternalData(self: *Editor) void {
         self.recalculateLines();
         self.recalculateBytes();
@@ -594,7 +605,6 @@ pub const Editor = struct {
             cursor += @intCast(usize, num_bytes);
         }
         self.bytes.shrinkRetainingCapacity(cursor);
-        self.bytes.append(0) catch u.oom(); // so we can pass it to tokenizer
     }
 
     fn highlightCode(self: *Editor) void {
@@ -604,9 +614,11 @@ pub const Editor = struct {
         var colors = self.colors.items;
         std.mem.set(TextColor, colors, .comment);
 
+        self.bytes.append(0) catch u.oom(); // null-terminate
+
         // NOTE: we're tokenizing the whole source file. At least for zig this can be optimised,
         // but we're not doing it just yet
-        const source_bytes = self.bytes.items[0 .. self.bytes.items.len - 1 :0]; // has to be null-terminated
+        const source_bytes = self.bytes.items[0 .. self.bytes.items.len - 1 :0];
         var tokenizer = std.zig.Tokenizer.init(source_bytes);
         while (true) {
             var token = tokenizer.next();
@@ -624,5 +636,7 @@ pub const Editor = struct {
             };
             std.mem.set(TextColor, colors[token.loc.start..token.loc.end], token_color);
         }
+
+        _ = self.bytes.pop(); // un-null-terminate
     }
 };
