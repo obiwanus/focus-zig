@@ -3,8 +3,7 @@
     + Fix the shadow and the positioning of the splitter
     - Open buffer file path
     - Line and column
-- Fix editing near the end of the buffer (crashes on insert, can't get to last line)
-- Support 0, 1, 2 editors
+- Open files relatively to the currently active buffer
 - Multiple cursors
 - [optimisation] Highlighting syntax:
     - Implement a few languages, not just Zig
@@ -15,7 +14,7 @@
               (maybe don't use array lists and instead just allocate slices of exact size from the arena)
 
 # WHAT NEEDS TO WORK BEFORE I CAN START USING IT
-- Open files
++ Open files
 - Save files
 - Create new files
 - Switch between open files
@@ -24,6 +23,8 @@
 - Search within buffer
 
 # DONE
++ Support 0, 1, 2 editors
++ Fix editing near the end of the buffer (crashes on insert, can't get to last line)
 + Open files in the left editor
 + Add a scrollbar
 + Make the window scroll

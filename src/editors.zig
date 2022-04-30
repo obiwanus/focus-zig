@@ -433,7 +433,7 @@ pub const Editor = struct {
             if (self.cursor.pos < line_start) {
                 break line -| 1;
             }
-        } else self.lines.items.len;
+        } else self.lines.items.len -| 1;
         self.cursor.col = self.cursor.pos - self.lines.items[self.cursor.line];
     }
 
@@ -479,7 +479,9 @@ pub const Editor = struct {
                 self.lines.append(i + 1) catch u.oom();
             }
         }
-        self.lines.append(self.chars.items.len) catch u.oom();
+        if (self.chars.items[self.chars.items.len -| 1] != '\n') {
+            self.lines.append(self.chars.items.len) catch u.oom();
+        }
     }
 
     fn recalculateBytes(self: *Editor) void {
