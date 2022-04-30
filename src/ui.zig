@@ -290,11 +290,7 @@ pub const Ui = struct {
                 self.drawSolidRect(r, style.colors.BACKGROUND_BRIGHT);
             }
             const name = u.bytesToChars(entry.getName(), tmp_allocator) catch unreachable;
-            self.drawLabel(
-                name,
-                Vec2{ .x = r.x + margin + padding, .y = r.y + padding + adjust_y },
-                style.colors.PUNCTUATION,
-            );
+            self.drawLabel(name, .{ .x = r.x + margin + padding, .y = r.y + padding + adjust_y }, style.colors.PUNCTUATION);
         }
 
         // Draw shadow
@@ -455,7 +451,7 @@ pub const Ui = struct {
         }
     }
 
-    fn drawLabel(self: *Ui, chars: []const u.Char, top_left: Vec2, color: Color) void {
+    pub fn drawLabel(self: *Ui, chars: []const u.Char, top_left: Vec2, color: Color) void {
         const font = self.screen.font;
         var pos = Vec2{ .x = top_left.x, .y = top_left.y + font.baseline };
         for (chars) |char| {

@@ -40,7 +40,7 @@ pub const EditorManager = struct {
         }
     }
 
-    pub fn updateAndDrawAll(self: *EditorManager, ui: *Ui, clock_ms: f64) void {
+    pub fn updateAndDrawAll(self: *EditorManager, ui: *Ui, clock_ms: f64, tmp_allocator: Allocator) void {
         // Always try to update all open editors
         for (self.open_editors.items) |*editor| {
             if (editor.dirty) editor.syncInternalData();
@@ -52,14 +52,14 @@ pub const EditorManager = struct {
         // Lay out the editors in rects and draw each
         switch (self.layout()) {
             .single => {
-                self.leftEditor().updateAndDraw(ui, area, clock_ms, true);
+                self.leftEditor().updateAndDraw(ui, area, clock_ms, true, tmp_allocator);
             },
             .side_by_side => {
                 const left_rect = area.splitLeft(area.w / 2 - 1, 1);
                 const right_rect = area;
 
-                self.leftEditor().updateAndDraw(ui, left_rect, clock_ms, self.isLeftActive());
-                self.rightEditor().updateAndDraw(ui, right_rect, clock_ms, self.isRightActive());
+                self.leftEditor().updateAndDraw(ui, left_rect, clock_ms, self.isLeftActive(), tmp_allocator);
+                self.rightEditor().updateAndDraw(ui, right_rect, clock_ms, self.isRightActive(), tmp_allocator);
 
                 const splitter_rect = Rect{ .x = area.x - 2, .y = area.y, .w = 2, .h = area.h };
                 ui.drawSolidRect(splitter_rect, style.colors.BACKGROUND_BRIGHT);
@@ -252,13 +252,13 @@ pub const Editor = struct {
         self.allocator.free(self.file_path);
     }
 
-    pub fn updateAndDraw(self: *Editor, ui: *Ui, rect: Rect, clock_ms: f64, is_active: bool) void {
+    pub fn updateAndDraw(self: *Editor, ui: *Ui, rect: Rect, clock_ms: f64, is_active: bool, tmp_allocator: Allocator) void {
         const scale = ui.screen.scale;
         const char_size = ui.screen.font.charSize();
         const margin = Vec2{ .x = 30 * scale, .y = 15 * scale };
 
         var area = rect.copy();
-        const footer_rect = area.splitBottom(char_size.y + 4, 0);
+        var footer_rect = area.splitBottom(char_size.y + 2 * 4 * scale, 0);
         area = area.shrink(margin.x, margin.y, margin.x, 0);
 
         // Retain info about size - we only know it now
@@ -323,8 +323,29 @@ pub const Editor = struct {
         }
 
         // Draw footer
-        ui.drawSolidRect(footer_rect, style.colors.BACKGROUND_BRIGHT);
-        ui.drawTopShadow(footer_rect, 5);
+        {
+            var r = footer_rect;
+            const text_y = r.y + 6 * scale;
+            ui.drawSolidRect(footer_rect, style.colors.BACKGROUND_BRIGHT);
+            ui.drawTopShadow(footer_rect, 5);
+            _ = r.splitLeft(margin.x, 0);
+
+            // File path and name
+            var name: []const u8 = undefined;
+            var path_chunks_iter = u.pathChunksIterator(self.file_path);
+            while (path_chunks_iter.next()) |chunk| name = chunk;
+
+            const path_chars = u.bytesToChars(self.file_path[0 .. self.file_path.len - name.len], tmp_allocator) catch unreachable;
+            ui.drawLabel(path_chars, .{ .x = r.x, .y = text_y }, style.colors.COMMENT);
+            const name_chars = u.bytesToChars(name, tmp_allocator) catch unreachable;
+            ui.drawLabel(name_chars, .{ .x = r.x + @intToFloat(f32, path_chars.len) * char_size.x, .y = text_y }, style.colors.PUNCTUATION);
+
+            // Line:col
+            const line_col = std.fmt.allocPrint(tmp_allocator, "{}:{}", .{ self.cursor.line, self.cursor.col }) catch u.oom();
+            const line_col_chars = u.bytesToChars(line_col, tmp_allocator) catch unreachable;
+            const line_col_rect = r.splitRight(margin.x + @intToFloat(f32, line_col_chars.len) * char_size.x, margin.x);
+            ui.drawLabel(line_col_chars, .{ .x = line_col_rect.x, .y = text_y }, style.colors.PUNCTUATION);
+        }
     }
 
     fn typeChar(self: *Editor, char: u.Char) void {

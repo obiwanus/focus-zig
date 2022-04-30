@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const Allocator = std.mem.Allocator;
 
@@ -121,4 +122,9 @@ pub fn readEntireFile(file_path: []const u8, allocator: Allocator) ![]u8 {
 
 pub fn oom() noreturn {
     @panic("Out of memory");
+}
+
+pub fn pathChunksIterator(path: []const u8) std.mem.SplitIterator(u8) {
+    const delimiter = if (builtin.os.tag == .windows) "\\" else "/";
+    return std.mem.split(u8, path, delimiter);
 }

@@ -262,7 +262,7 @@ pub fn main() !void {
         {
             ui.startFrame(screen);
 
-            editors.updateAndDrawAll(&ui, clock_ms);
+            editors.updateAndDrawAll(&ui, clock_ms, frame_allocator);
 
             if (open_file_dialog) |*dialog| {
                 ui.drawOpenFileDialog(dialog, frame_allocator);

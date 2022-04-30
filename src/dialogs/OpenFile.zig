@@ -1,5 +1,5 @@
 const std = @import("std");
-const builtin = @import("builtin");
+
 const glfw = @import("glfw");
 
 const focus = @import("../focus.zig");
@@ -14,8 +14,6 @@ const Self = @This();
 root: Dir,
 open_dirs: ArrayList(*Dir),
 filter_text: ArrayList(u.Char),
-
-const delimiter = if (builtin.os.tag == .windows) "\\" else "/";
 
 pub fn init(allocator: Allocator) !Self {
     var dir = try std.fs.cwd().openDir(".", .{ .iterate = true });
@@ -34,7 +32,7 @@ pub fn init(allocator: Allocator) !Self {
         switch (entry.kind) {
             .File => {
                 // Split path into chunks
-                var iter = std.mem.split(u8, entry.path, delimiter);
+                var iter = u.pathChunksIterator(entry.path);
                 var path_chunks: [50][]const u8 = undefined; // (surely 50 should be enough)
                 var i: usize = 0;
                 while (iter.next()) |chunk| {
