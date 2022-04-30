@@ -180,12 +180,12 @@ pub const Dir = struct {
 
     pub fn printTree(self: Dir, level: usize) void {
         const indent = " " ** 100;
-        u.print("{s}[{s}]\n", .{ indent[0 .. 4 * level], self.name.items });
+        u.println("{s}[{s}]", .{ indent[0 .. 4 * level], self.name.items });
         for (self.dirs.items) |dir| {
             dir.printTree(level + 1);
         }
         for (self.files.items) |f| {
-            u.print("{s} {s} \n", .{ indent[0 .. 4 * (level + 1)], f.name.items });
+            u.println("{s} {s} ", .{ indent[0 .. 4 * (level + 1)], f.name.items });
         }
     }
 

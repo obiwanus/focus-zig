@@ -4,6 +4,7 @@
     - Open buffer file path
     - Line and column
 - Open files relatively to the currently active buffer
+- [bug] Fix cursor positioning on horizontal scroll
 - Multiple cursors
 - [optimisation] Highlighting syntax:
     - Implement a few languages, not just Zig

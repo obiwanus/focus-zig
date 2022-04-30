@@ -7,6 +7,10 @@ pub const Char = u21;
 pub const assert = std.debug.assert;
 pub const print = std.debug.print;
 
+pub fn println(comptime fmt: []const u8, args: anytype) void {
+    print(fmt ++ "\n", args);
+}
+
 pub const Vec2 = extern struct {
     x: f32 = 0,
     y: f32 = 0,
