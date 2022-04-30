@@ -212,8 +212,13 @@ pub fn main() !void {
                             const action = dialog.keyPress(kp.key, kp.mods, frame_allocator);
                             if (action) |a| {
                                 switch (a) {
-                                    .open_file_left => |f| editors.openFileLeft(f.path.items),
-                                    .open_file_right => |f| editors.openFileRight(f.path.items),
+                                    .open_file => |open_file| {
+                                        if ((editors.isLeftActive() and !open_file.on_the_side) or (editors.isRightActive() and open_file.on_the_side)) {
+                                            editors.openFileLeft(open_file.path);
+                                        } else {
+                                            editors.openFileRight(open_file.path);
+                                        }
+                                    },
                                 }
                                 // On any action close the dialog
                                 dialog.deinit();

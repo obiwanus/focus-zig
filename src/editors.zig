@@ -91,6 +91,14 @@ pub const EditorManager = struct {
         return false;
     }
 
+    pub fn isLeftActive(self: EditorManager) bool {
+        return self.left != null and self.active != null and self.left.? == self.active.?;
+    }
+
+    pub fn isRightActive(self: EditorManager) bool {
+        return self.right != null and self.active != null and self.right.? == self.active.?;
+    }
+
     fn editorExistsForFile(self: EditorManager, path: []const u8) ?usize {
         for (self.open_editors.items) |editor, i| {
             if (std.mem.eql(u8, path, editor.file_path)) return i;
@@ -124,14 +132,6 @@ pub const EditorManager = struct {
 
     fn rightEditor(self: *EditorManager) *Editor {
         return &self.open_editors.items[self.right.?];
-    }
-
-    fn isLeftActive(self: EditorManager) bool {
-        return self.left != null and self.active != null and self.left.? == self.active.?;
-    }
-
-    fn isRightActive(self: EditorManager) bool {
-        return self.right != null and self.active != null and self.right.? == self.active.?;
     }
 };
 
@@ -250,8 +250,55 @@ pub const Editor = struct {
 
         // Draw the text
         {
-            // TODO:
-            ui.drawEditor(self, area, is_active);
+            // First and last visible lines
+            // TODO: check how it behaves when scale changes
+            const line_min = @floatToInt(usize, self.scroll.y / char_size.y) -| 1;
+            var line_max = line_min + self.lines_per_screen + 3;
+            if (line_max >= self.lines.items.len) {
+                line_max = self.lines.items.len - 1;
+            }
+            const col_min = @floatToInt(usize, self.scroll.x / char_size.x);
+            const col_max = col_min + self.cols_per_screen;
+
+            // Offset from canonical position (for smooth scrolling)
+            const offset = Vec2{
+                .x = self.scroll.x - @intToFloat(f32, col_min) * char_size.x,
+                .y = self.scroll.y - @intToFloat(f32, line_min) * char_size.y,
+            };
+
+            const start_char = self.lines.items[line_min];
+            const end_char = self.lines.items[line_max];
+
+            const chars = self.chars.items[start_char..end_char];
+            const colors = self.colors.items[start_char..end_char];
+            const top_left = Vec2{ .x = area.x - offset.x, .y = area.y - offset.y };
+
+            // Draw cursor first
+            const size = Vec2{ .x = char_size.x, .y = ui.screen.font.letter_height };
+            const advance = Vec2{ .x = char_size.x, .y = char_size.y };
+            const padding = Vec2{ .x = 0, .y = 4 };
+            const cursor_offset = Vec2{
+                .x = @intToFloat(f32, self.cursor.col),
+                .y = @intToFloat(f32, self.cursor.line -| line_min),
+            };
+            const highlight_rect = Rect{
+                .x = area.x - 4,
+                .y = area.y - offset.y + cursor_offset.y * advance.y - padding.y,
+                .w = area.w + 8,
+                .h = size.y + 2 * padding.y,
+            };
+            ui.drawSolidRect(highlight_rect, style.colors.BACKGROUND_HIGHLIGHT);
+            const cursor_rect = Rect{
+                .x = area.x - offset.x + cursor_offset.x * advance.x - padding.x,
+                .y = area.y - offset.y + cursor_offset.y * advance.y - padding.y,
+                .w = size.x + 2 * padding.x,
+                .h = size.y + 2 * padding.y,
+            };
+            const color = if (is_active) style.colors.CURSOR_ACTIVE else style.colors.CURSOR_INACTIVE;
+            ui.drawSolidRect(cursor_rect, color);
+
+            // Then draw text on top
+            ui.drawText(chars, colors, top_left, col_min, col_max);
         }
 
         // Draw footer

@@ -103,11 +103,12 @@ pub fn keyPress(self: *Self, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allo
                         self.filter_text.shrinkRetainingCapacity(0);
                     },
                     .file => |f| if (key == .enter) {
-                        if (mods.control) {
-                            return Action{ .open_file_right = f };
-                        } else {
-                            return Action{ .open_file_left = f };
-                        }
+                        return Action{
+                            .open_file = .{
+                                .path = f.path.items,
+                                .on_the_side = mods.control,
+                            },
+                        };
                     },
                 }
             }
@@ -130,8 +131,10 @@ pub fn charEntered(self: *Self, char: u.Char) void {
 }
 
 pub const Action = union(enum) {
-    open_file_left: *const File,
-    open_file_right: *const File,
+    open_file: struct {
+        path: []const u8,
+        on_the_side: bool = false,
+    },
 };
 
 pub const Entry = union(enum) {

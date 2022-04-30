@@ -9,7 +9,6 @@ const style = focus.style;
 const Allocator = std.mem.Allocator;
 const Font = focus.fonts.Font;
 const VulkanContext = focus.vulkan.context.VulkanContext;
-const Editor = focus.editors.Editor;
 const TextColor = style.TextColor;
 const Color = style.Color;
 const Vec2 = u.Vec2;
@@ -159,64 +158,6 @@ pub const Ui = struct {
 
     pub fn indexCount(self: Ui) u32 {
         return @intCast(u32, self.indices.items.len);
-    }
-
-    pub fn drawEditor(self: *Ui, editor: *const Editor, rect: Rect, is_active: bool) void {
-        const font = self.screen.font;
-
-        // How many lines/cols fit inside the rect
-        const total_lines = @floatToInt(usize, rect.h / font.line_height);
-        const total_cols = @floatToInt(usize, rect.w / font.xadvance);
-
-        // First and last visible lines
-        // TODO: check how it behaves when scale changes
-        const line_min = @floatToInt(usize, editor.scroll.y / font.line_height) -| 1;
-        var line_max = line_min + total_lines + 3;
-        if (line_max >= editor.lines.items.len) {
-            line_max = editor.lines.items.len - 1;
-        }
-        const col_min = @floatToInt(usize, editor.scroll.x / font.xadvance);
-        const col_max = col_min + total_cols;
-
-        // Offset from canonical position (for smooth scrolling)
-        const offset = Vec2{
-            .x = editor.scroll.x - @intToFloat(f32, col_min) * font.xadvance,
-            .y = editor.scroll.y - @intToFloat(f32, line_min) * font.line_height,
-        };
-
-        const start_char = editor.lines.items[line_min];
-        const end_char = editor.lines.items[line_max];
-
-        const chars = editor.chars.items[start_char..end_char];
-        const colors = editor.colors.items[start_char..end_char];
-        const top_left = Vec2{ .x = rect.x - offset.x, .y = rect.y - offset.y };
-
-        // Draw cursor first
-        const size = Vec2{ .x = font.xadvance, .y = font.letter_height };
-        const advance = Vec2{ .x = font.xadvance, .y = font.line_height };
-        const padding = Vec2{ .x = 0, .y = 4 };
-        const cursor_offset = Vec2{
-            .x = @intToFloat(f32, editor.cursor.col),
-            .y = @intToFloat(f32, editor.cursor.line -| line_min),
-        };
-        const highlight_rect = Rect{
-            .x = rect.x - 4,
-            .y = rect.y - offset.y + cursor_offset.y * advance.y - padding.y,
-            .w = rect.w + 8,
-            .h = size.y + 2 * padding.y,
-        };
-        self.drawSolidRect(highlight_rect, style.colors.BACKGROUND_HIGHLIGHT);
-        const cursor_rect = Rect{
-            .x = rect.x - offset.x + cursor_offset.x * advance.x - padding.x,
-            .y = rect.y - offset.y + cursor_offset.y * advance.y - padding.y,
-            .w = size.x + 2 * padding.x,
-            .h = size.y + 2 * padding.y,
-        };
-        const color = if (is_active) style.colors.CURSOR_ACTIVE else style.colors.CURSOR_INACTIVE;
-        self.drawSolidRect(cursor_rect, color);
-
-        // Then draw text on top
-        self.drawText(chars, colors, top_left, col_min, col_max);
     }
 
     pub fn drawOpenFileDialog(self: *Ui, dialog: *OpenFileDialog, tmp_allocator: Allocator) void {
@@ -492,7 +433,7 @@ pub const Ui = struct {
         self.indices.appendSlice(&indices) catch u.oom();
     }
 
-    fn drawText(self: *Ui, chars: []u.Char, colors: []TextColor, top_left: Vec2, col_min: usize, col_max: usize) void {
+    pub fn drawText(self: *Ui, chars: []u.Char, colors: []TextColor, top_left: Vec2, col_min: usize, col_max: usize) void {
         const font = self.screen.font;
         var pos = Vec2{ .x = top_left.x, .y = top_left.y + font.baseline };
         var col: usize = 0;
