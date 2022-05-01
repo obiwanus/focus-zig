@@ -1,6 +1,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+const glfw = @import("glfw");
+
 const Allocator = std.mem.Allocator;
 
 pub const Char = u21;
@@ -125,6 +127,10 @@ pub fn writeEntireFile(file_path: []const u8, buffer: []const u8) !void {
     defer file.close();
 
     try file.writeAll(buffer);
+}
+
+pub fn modsOnlyCtrl(m: glfw.Mods) bool {
+    return m.control and !(m.shift or m.alt or m.super);
 }
 
 pub fn oom() noreturn {

@@ -213,13 +213,8 @@ pub fn main() !void {
                             const action = dialog.keyPress(kp.key, kp.mods, frame_allocator);
                             if (action) |a| {
                                 switch (a) {
-                                    .open_file => |open_file| {
-                                        if ((editors.isLeftActive() and !open_file.on_the_side) or (editors.isRightActive() and open_file.on_the_side) or editors.active == null) {
-                                            editors.openFileLeft(open_file.path);
-                                        } else {
-                                            editors.openFileRight(open_file.path);
-                                        }
-                                    },
+                                    .open_file => |of| editors.openFile(of.path, of.on_the_side),
+                                    // no more actions yet
                                 }
                                 // On any action close the dialog
                                 dialog.deinit();
@@ -238,7 +233,7 @@ pub fn main() !void {
                         editors.charEntered(char);
                     },
                     .key_pressed => |kp| {
-                        if (kp.mods.control and kp.key == .p) {
+                        if (u.modsOnlyCtrl(kp.mods) and kp.key == .p) {
                             open_file_dialog = try OpenFileDialog.init(gpa);
                             if (editors.getActiveEditorFilePath()) |path| {
                                 // Open files relavitely to the currently active buffer

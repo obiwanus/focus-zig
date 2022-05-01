@@ -1,7 +1,10 @@
 # TODO
-- Have a shortcut for duplicating an editor on the side
 - Close active pane
+    + Don't ever have only right active
+    -
 - Remove superfluous editors when they become invisible
+    - Have a special case check for when we already have the target buffer open in the target pane, and
+    - Remove the check for 2 editors since there will only be one otherwise
 - [bug] Make it possible to go to the last line after the last '\n'
 - [bug] Fix cursor positioning on horizontal scroll
 - When opening an existing editor, refresh the file from the disk
@@ -28,6 +31,7 @@
 - Undo/redo
 
 # DONE
++ Have a shortcut for duplicating an editor on the side
 + When editing a buffer, adjust the cursor in the inactive editor accordingly
 + Open 2 editors with the same buffer (if opening side by side)
     + Create text buffers separately from editors
