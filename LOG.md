@@ -1,6 +1,13 @@
 # TODO
-- Open 2 editors with the same buffer (if opening side by side)
+- When editing a buffer, adjust the cursor in the inactive editor accordingly
+- Have a shortcut for duplicating an editor on the side
+- [bug] Make it possible to go to the last line after the last '\n'
 - [bug] Fix cursor positioning on horizontal scroll
+- When opening an existing editor, refresh the file from the disk
+    - If not modified, just replace the buffer contents
+    - If modified, right now just mark as conflict and don't touch the buffer
+    - If deleted, mark as deleted and don't touch the buffer
+- Setup file system monitoring if possible
 - Multiple cursors
 - [optimisation] Highlighting syntax:
     - Implement a few languages, not just Zig
@@ -20,6 +27,10 @@
 - Undo/redo
 
 # DONE
++ Open 2 editors with the same buffer (if opening side by side)
+    + Create text buffers separately from editors
+    + When selecting a file for which we already have an open buffer on the side, create another editor for the buffer
+    + When opening a file, if an editor for that file is already open in the target pane, just switch to that pane
 + Open files relatively to the currently active buffer
 + Save modified buffer
 + Display info in the footer

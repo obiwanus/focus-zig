@@ -17,7 +17,7 @@ const Swapchain = focus.vulkan.swapchain.Swapchain;
 const UiPipeline = pipeline.UiPipeline;
 const Ui = focus.ui.Ui;
 const Screen = focus.ui.Screen;
-const EditorManager = focus.editors.EditorManager;
+const Editors = focus.Editors;
 const OpenFileDialog = focus.dialogs.OpenFile;
 
 var GPA = std.heap.GeneralPurposeAllocator(.{ .never_unmap = false }){};
@@ -69,7 +69,8 @@ pub fn main() !void {
     const monitor_pos = try monitor.getPosInt();
 
     // Move window to the biggest monitor and maximise
-    try window.setPosInt(monitor_pos.x, monitor_pos.y);
+    _ = monitor_pos;
+    // try window.setPosInt(monitor_pos.x, monitor_pos.y);
     try window.maximize();
     defer window.destroy();
 
@@ -137,7 +138,7 @@ pub fn main() !void {
     var ui = try Ui.init(gpa, &vc);
     defer ui.deinit(&vc);
 
-    var editors = EditorManager.init(gpa);
+    var editors = Editors.init(gpa);
     defer editors.deinit();
 
     g_events.append(.redraw_requested) catch u.oom();
@@ -213,9 +214,11 @@ pub fn main() !void {
                             if (action) |a| {
                                 switch (a) {
                                     .open_file => |open_file| {
-                                        if ((editors.isLeftActive() and !open_file.on_the_side) or (editors.isRightActive() and open_file.on_the_side)) {
+                                        if ((editors.isLeftActive() and !open_file.on_the_side) or (editors.isRightActive() and open_file.on_the_side) or editors.active == null) {
+                                            u.println("openFileLeft: {s}", .{open_file.path});
                                             editors.openFileLeft(open_file.path);
                                         } else {
+                                            u.println("openFileRight: {s}", .{open_file.path});
                                             editors.openFileRight(open_file.path);
                                         }
                                     },
