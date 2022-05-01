@@ -317,7 +317,17 @@ pub const Editor = struct {
         self.lines_per_screen = @floatToInt(usize, area.h / char_size.y);
         self.cols_per_screen = @floatToInt(usize, area.w / char_size.x);
 
-        self.updateCursorLineAndCol(buf);
+        // Update cursor line, col and pos
+        {
+            if (self.cursor.pos >= buf.chars.items.len) self.cursor.pos = buf.chars.items.len -| 1;
+            self.cursor.line = for (buf.lines.items) |line_start, line| {
+                if (self.cursor.pos < line_start) {
+                    break line -| 1;
+                }
+            } else buf.lines.items.len -| 1;
+            self.cursor.col = self.cursor.pos - buf.lines.items[self.cursor.line];
+        }
+
         self.moveViewportToCursor(char_size); // depends on lines_per_screen etc
         self.animateScrolling(clock_ms);
 
@@ -430,10 +440,7 @@ pub const Editor = struct {
                 var indent = blk: {
                     var indent: usize = 0;
                     var cursor: usize = buf.lines.items[self.cursor.line];
-                    while (buf.chars.items[cursor] == ' ') {
-                        indent += 1;
-                        cursor += 1;
-                    }
+                    while (buf.chars.items[cursor] == ' ') : (cursor += 1) indent += 1;
                     break :blk indent;
                 };
                 var char_buf: [1024]u.Char = undefined;
@@ -581,15 +588,6 @@ pub const Editor = struct {
         const new_line_pos = std.math.min(wanted_pos, chars_on_target_line);
         self.cursor.col_wanted = if (new_line_pos < wanted_pos) wanted_pos else null; // reset or remember wanted position
         self.cursor.pos = buf.lines.items[target_line] + new_line_pos;
-    }
-
-    fn updateCursorLineAndCol(self: *Editor, buf: *Buffer) void {
-        self.cursor.line = for (buf.lines.items) |line_start, line| {
-            if (self.cursor.pos < line_start) {
-                break line -| 1;
-            }
-        } else buf.lines.items.len -| 1;
-        self.cursor.col = self.cursor.pos - buf.lines.items[self.cursor.line];
     }
 
     fn moveViewportToCursor(self: *Editor, char_size: Vec2) void {

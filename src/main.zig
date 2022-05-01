@@ -215,10 +215,8 @@ pub fn main() !void {
                                 switch (a) {
                                     .open_file => |open_file| {
                                         if ((editors.isLeftActive() and !open_file.on_the_side) or (editors.isRightActive() and open_file.on_the_side) or editors.active == null) {
-                                            u.println("openFileLeft: {s}", .{open_file.path});
                                             editors.openFileLeft(open_file.path);
                                         } else {
-                                            u.println("openFileRight: {s}", .{open_file.path});
                                             editors.openFileRight(open_file.path);
                                         }
                                     },

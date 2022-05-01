@@ -1,6 +1,7 @@
 # TODO
-- When editing a buffer, adjust the cursor in the inactive editor accordingly
 - Have a shortcut for duplicating an editor on the side
+- Close active pane
+- Remove superfluous editors when they become invisible
 - [bug] Make it possible to go to the last line after the last '\n'
 - [bug] Fix cursor positioning on horizontal scroll
 - When opening an existing editor, refresh the file from the disk
@@ -27,6 +28,7 @@
 - Undo/redo
 
 # DONE
++ When editing a buffer, adjust the cursor in the inactive editor accordingly
 + Open 2 editors with the same buffer (if opening side by side)
     + Create text buffers separately from editors
     + When selecting a file for which we already have an open buffer on the side, create another editor for the buffer
