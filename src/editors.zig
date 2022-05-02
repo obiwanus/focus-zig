@@ -86,11 +86,9 @@ pub fn keyPress(self: *Self, key: glfw.Key, mods: glfw.Mods) void {
         switch (key) {
             .left => {
                 self.switchToLeft();
-                return;
             },
             .right => {
                 self.switchToRight();
-                return;
             },
             .p => if (self.activeEditor()) |editor| {
                 // Duplicate current editor on the other side
@@ -99,8 +97,15 @@ pub fn keyPress(self: *Self, key: glfw.Key, mods: glfw.Mods) void {
             },
             else => {},
         }
+    } else if (mods.control and key == .w) {
+        if (mods.shift) {
+            self.closeOtherPane();
+        } else {
+            self.closeActivePane();
+        }
+    } else if (self.activeEditor()) |editor| {
+        editor.keyPress(self.getBuffer(editor.buffer), key, mods);
     }
-    if (self.activeEditor()) |editor| editor.keyPress(self.getBuffer(editor.buffer), key, mods);
 }
 
 pub fn haveActiveScrollAnimation(self: *Self) bool {
@@ -212,6 +217,28 @@ fn switchToLeft(self: *Self) void {
 
 fn switchToRight(self: *Self) void {
     if (self.layout == .side_by_side) self.layout.side_by_side.active = self.layout.side_by_side.right;
+}
+
+fn closeActivePane(self: *Self) void {
+    switch (self.layout) {
+        .none => {},
+        .single => |_| self.layout = .none,
+        .side_by_side => |e| {
+            const other = if (e.active == e.left) e.right else e.left;
+            self.layout = .{ .single = other };
+        },
+    }
+}
+
+fn closeOtherPane(self: *Self) void {
+    switch (self.layout) {
+        .none => {},
+        .single => |_| self.layout = .none,
+        .side_by_side => |e| {
+            const active = if (e.active == e.left) e.left else e.right;
+            self.layout = .{ .single = active };
+        },
+    }
 }
 
 fn getBuffer(self: *Self, buffer: usize) *Buffer {

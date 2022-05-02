@@ -1,8 +1,4 @@
 # TODO
-- Close active pane
-    + Don't ever have only right active
-    + Keep one open editor even when closed
-    + Fix the bug with replacing visible editor
 - [bug] Make it possible to go to the last line after the last '\n'
 - [bug] Fix cursor positioning on horizontal scroll
 - [bug] Can't open stb_truetype/build.zig
@@ -30,6 +26,10 @@
 - Undo/redo
 
 # DONE
++ Close active pane
+    + Don't ever have only right active
+    + Keep one open editor even when closed
+    + Fix the bug with replacing visible editor
 + Have a shortcut for duplicating an editor on the side
 + When editing a buffer, adjust the cursor in the inactive editor accordingly
 + Open 2 editors with the same buffer (if opening side by side)
