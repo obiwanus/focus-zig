@@ -444,7 +444,7 @@ pub const Editor = struct {
     }
 
     fn typeChar(self: *Editor, char: u.Char, buf: *Buffer) void {
-        const last_char = buf.chars.items.len - 1;
+        const last_char = buf.chars.items.len -| 1;
         if (self.cursor.pos <= last_char) {
             buf.chars.insert(self.cursor.pos, char) catch u.oom();
         } else {
@@ -462,12 +462,11 @@ pub const Editor = struct {
         buf.dirty = true;
 
         // Things that modify the buffer
-        const cursor_at_last_char = self.cursor.pos >= buf.chars.items.len;
         switch (key) {
             .tab => {
                 const SPACES = [1]u.Char{' '} ** tab_size;
                 const to_next_tabstop = tab_size - self.cursor.col % tab_size;
-                if (cursor_at_last_char) {
+                if (self.cursor.pos >= buf.chars.items.len) {
                     buf.chars.appendSlice(SPACES[0..to_next_tabstop]) catch u.oom();
                 } else {
                     buf.chars.insertSlice(self.cursor.pos, SPACES[0..to_next_tabstop]) catch u.oom();
@@ -488,7 +487,7 @@ pub const Editor = struct {
                     std.mem.set(u.Char, char_buf[0..indent], ' ');
                     char_buf[indent] = '\n';
                     self.cursor.pos = buf.lines.items[self.cursor.line];
-                    if (cursor_at_last_char) {
+                    if (self.cursor.pos >= buf.chars.items.len) {
                         buf.chars.appendSlice(char_buf[0 .. indent + 1]) catch u.oom();
                     } else {
                         buf.chars.insertSlice(self.cursor.pos, char_buf[0 .. indent + 1]) catch u.oom();
@@ -498,35 +497,46 @@ pub const Editor = struct {
                     // Insert line below
                     std.mem.set(u.Char, char_buf[0..indent], ' ');
                     char_buf[indent] = '\n';
-                    self.cursor.pos = buf.lines.items[self.cursor.line + 1];
-                    if (cursor_at_last_char) {
+                    self.cursor.pos = if (self.cursor.line < buf.lines.items.len - 1)
+                        buf.lines.items[self.cursor.line + 1]
+                    else
+                        buf.chars.items.len;
+                    if (self.cursor.pos >= buf.chars.items.len) {
                         buf.chars.appendSlice(char_buf[0 .. indent + 1]) catch u.oom();
+                        self.cursor.pos += indent + 1;
                     } else {
                         buf.chars.insertSlice(self.cursor.pos, char_buf[0 .. indent + 1]) catch u.oom();
+                        self.cursor.pos += indent;
                     }
-                    self.cursor.pos += indent;
                 } else {
                     // Break the line normally
-                    const prev_char = buf.chars.items[self.cursor.pos -| 1];
-                    const next_char: ?u.Char = if (!cursor_at_last_char) buf.chars.items[self.cursor.pos] else null;
-                    if (prev_char == '{' and next_char != null and next_char.? == '\n') {
+                    const prev_char = if (buf.chars.items.len > 0) buf.chars.items[self.cursor.pos -| 1] else null;
+                    const next_char = if (self.cursor.pos < buf.chars.items.len) buf.chars.items[self.cursor.pos] else null;
+
+                    const opening_block = prev_char != null and prev_char.? == '{' and (next_char == null or next_char != null and next_char.? == '\n');
+                    if (opening_block) {
                         indent += tab_size;
                     }
 
                     char_buf[0] = '\n';
                     std.mem.set(u.Char, char_buf[1 .. indent + 1], ' ');
-                    if (cursor_at_last_char) {
+                    if (self.cursor.pos >= buf.chars.items.len) {
                         buf.chars.appendSlice(char_buf[0 .. indent + 1]) catch u.oom();
                     } else {
                         buf.chars.insertSlice(self.cursor.pos, char_buf[0 .. indent + 1]) catch u.oom();
                     }
                     self.cursor.pos += 1 + indent;
 
-                    if (prev_char == '{' and next_char != null and next_char.? == '\n') {
+                    if (opening_block) {
                         // Insert a closing brace
                         indent -= tab_size;
-                        buf.chars.insertSlice(self.cursor.pos, char_buf[0 .. indent + 1]) catch u.oom();
-                        buf.chars.insert(self.cursor.pos + indent + 1, '}') catch u.oom();
+                        if (next_char == null) {
+                            buf.chars.appendSlice(char_buf[0 .. indent + 1]) catch u.oom();
+                            buf.chars.append('}') catch u.oom();
+                        } else {
+                            buf.chars.insertSlice(self.cursor.pos, char_buf[0 .. indent + 1]) catch u.oom();
+                            buf.chars.insert(self.cursor.pos + indent + 1, '}') catch u.oom();
+                        }
                     }
                 }
                 self.cursor.col_wanted = null;
@@ -558,7 +568,7 @@ pub const Editor = struct {
                 }
                 self.cursor.col_wanted = null;
             },
-            .delete => if (buf.chars.items.len > 1 and self.cursor.pos < buf.chars.items.len - 1) {
+            .delete => if (buf.chars.items.len >= 1 and self.cursor.pos < buf.chars.items.len) {
                 _ = buf.chars.orderedRemove(self.cursor.pos);
                 self.cursor.col_wanted = null;
             },
@@ -598,7 +608,7 @@ pub const Editor = struct {
                 self.cursor.col_wanted = null;
             },
             .end => {
-                if (self.cursor.line < buf.lines.items.len - 1) {
+                if (self.cursor.line < buf.lines.items.len -| 1) {
                     self.cursor.pos = buf.lines.items[self.cursor.line + 1] - 1;
                 } else {
                     // last line
@@ -717,7 +727,7 @@ pub const Buffer = struct {
 
             // NOTE: we're tokenizing the whole source file. At least for zig this can be optimised,
             // but we're not doing it just yet
-            const source_bytes = self.bytes.items[0 .. self.bytes.items.len - 1 :0];
+            const source_bytes = self.bytes.items[0..self.bytes.items.len -| 1 :0];
             var tokenizer = std.zig.Tokenizer.init(source_bytes);
             while (true) {
                 var token = tokenizer.next();
