@@ -70,7 +70,7 @@ pub const TextColor = enum(u8) {
     const TYPE_KEYWORDS = [_][]const u8{ "bool", "usize", "type" };
     const VALUE_KEYWORDS = [_][]const u8{ "true", "false", "undefined", "null" };
 
-    pub fn getForIdentifier(ident: []Char, next_char: Char) TextColor {
+    pub fn getForIdentifier(ident: []Char, next_char: ?Char) TextColor {
         if (ident.len == 0) return .default;
         const starts_with_capital_letter = switch (ident[0]) {
             'A'...'Z' => true,
@@ -86,7 +86,7 @@ pub const TextColor = enum(u8) {
                 }
             }
         }
-        if (next_char == '(') return .function;
+        if (next_char != null and next_char.? == '(') return .function;
         if ((ident[0] == 'u' or ident[0] == 'i' or ident[0] == 'f') and ident.len > 1 and ident.len <= 4) {
             const only_digits = for (ident[1..]) |c| {
                 switch (c) {

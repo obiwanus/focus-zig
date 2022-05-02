@@ -351,7 +351,7 @@ pub const Editor = struct {
 
         // Update cursor line, col and pos
         {
-            if (self.cursor.pos >= buf.chars.items.len) self.cursor.pos = buf.chars.items.len -| 1;
+            if (self.cursor.pos > buf.chars.items.len) self.cursor.pos = buf.chars.items.len;
             self.cursor.line = for (buf.lines.items) |line_start, line| {
                 if (self.cursor.pos < line_start) {
                     break line -| 1;
@@ -368,10 +368,7 @@ pub const Editor = struct {
             // First and last visible lines
             // TODO: check how it behaves when scale changes
             const line_min = @floatToInt(usize, self.scroll.y / char_size.y) -| 1;
-            var line_max = line_min + self.lines_per_screen + 3;
-            if (line_max >= buf.lines.items.len) {
-                line_max = buf.lines.items.len - 1;
-            }
+            const line_max = line_min + self.lines_per_screen + 3;
             const col_min = @floatToInt(usize, self.scroll.x / char_size.x);
             const col_max = col_min + self.cols_per_screen;
 
@@ -382,7 +379,7 @@ pub const Editor = struct {
             };
 
             const start_char = buf.lines.items[line_min];
-            const end_char = buf.lines.items[line_max];
+            const end_char = if (line_max >= buf.lines.items.len) buf.chars.items.len else buf.lines.items[line_max];
 
             const chars = buf.chars.items[start_char..end_char];
             const colors = buf.colors.items[start_char..end_char];
@@ -447,7 +444,12 @@ pub const Editor = struct {
     }
 
     fn typeChar(self: *Editor, char: u.Char, buf: *Buffer) void {
-        buf.chars.insert(self.cursor.pos, char) catch u.oom();
+        const last_char = buf.chars.items.len - 1;
+        if (self.cursor.pos <= last_char) {
+            buf.chars.insert(self.cursor.pos, char) catch u.oom();
+        } else {
+            buf.chars.append(char) catch u.oom();
+        }
         self.cursor.pos += 1;
         self.cursor.col_wanted = null;
         buf.dirty = true;
@@ -460,11 +462,16 @@ pub const Editor = struct {
         buf.dirty = true;
 
         // Things that modify the buffer
+        const cursor_at_last_char = self.cursor.pos >= buf.chars.items.len;
         switch (key) {
             .tab => {
                 const SPACES = [1]u.Char{' '} ** tab_size;
                 const to_next_tabstop = tab_size - self.cursor.col % tab_size;
-                buf.chars.insertSlice(self.cursor.pos, SPACES[0..to_next_tabstop]) catch u.oom();
+                if (cursor_at_last_char) {
+                    buf.chars.appendSlice(SPACES[0..to_next_tabstop]) catch u.oom();
+                } else {
+                    buf.chars.insertSlice(self.cursor.pos, SPACES[0..to_next_tabstop]) catch u.oom();
+                }
                 self.cursor.pos += to_next_tabstop;
                 self.cursor.col_wanted = null;
             },
@@ -472,7 +479,7 @@ pub const Editor = struct {
                 var indent = blk: {
                     var indent: usize = 0;
                     var cursor: usize = buf.lines.items[self.cursor.line];
-                    while (buf.chars.items[cursor] == ' ') : (cursor += 1) indent += 1;
+                    while (cursor < buf.chars.items.len and buf.chars.items[cursor] == ' ') : (cursor += 1) indent += 1;
                     break :blk indent;
                 };
                 var char_buf: [1024]u.Char = undefined;
@@ -481,27 +488,41 @@ pub const Editor = struct {
                     std.mem.set(u.Char, char_buf[0..indent], ' ');
                     char_buf[indent] = '\n';
                     self.cursor.pos = buf.lines.items[self.cursor.line];
-                    buf.chars.insertSlice(self.cursor.pos, char_buf[0 .. indent + 1]) catch u.oom();
+                    if (cursor_at_last_char) {
+                        buf.chars.appendSlice(char_buf[0 .. indent + 1]) catch u.oom();
+                    } else {
+                        buf.chars.insertSlice(self.cursor.pos, char_buf[0 .. indent + 1]) catch u.oom();
+                    }
                     self.cursor.pos += indent;
                 } else if (mods.control) {
                     // Insert line below
                     std.mem.set(u.Char, char_buf[0..indent], ' ');
                     char_buf[indent] = '\n';
                     self.cursor.pos = buf.lines.items[self.cursor.line + 1];
-                    buf.chars.insertSlice(self.cursor.pos, char_buf[0 .. indent + 1]) catch u.oom();
+                    if (cursor_at_last_char) {
+                        buf.chars.appendSlice(char_buf[0 .. indent + 1]) catch u.oom();
+                    } else {
+                        buf.chars.insertSlice(self.cursor.pos, char_buf[0 .. indent + 1]) catch u.oom();
+                    }
                     self.cursor.pos += indent;
                 } else {
                     // Break the line normally
                     const prev_char = buf.chars.items[self.cursor.pos -| 1];
-                    const next_char = buf.chars.items[self.cursor.pos]; // TODO: fix when near the end
-                    if (prev_char == '{' and next_char == '\n') {
+                    const next_char: ?u.Char = if (!cursor_at_last_char) buf.chars.items[self.cursor.pos] else null;
+                    if (prev_char == '{' and next_char != null and next_char.? == '\n') {
                         indent += tab_size;
                     }
+
                     char_buf[0] = '\n';
                     std.mem.set(u.Char, char_buf[1 .. indent + 1], ' ');
-                    buf.chars.insertSlice(self.cursor.pos, char_buf[0 .. indent + 1]) catch u.oom();
+                    if (cursor_at_last_char) {
+                        buf.chars.appendSlice(char_buf[0 .. indent + 1]) catch u.oom();
+                    } else {
+                        buf.chars.insertSlice(self.cursor.pos, char_buf[0 .. indent + 1]) catch u.oom();
+                    }
                     self.cursor.pos += 1 + indent;
-                    if (prev_char == '{' and next_char == '\n') {
+
+                    if (prev_char == '{' and next_char != null and next_char.? == '\n') {
                         // Insert a closing brace
                         indent -= tab_size;
                         buf.chars.insertSlice(self.cursor.pos, char_buf[0 .. indent + 1]) catch u.oom();
@@ -553,7 +574,7 @@ pub const Editor = struct {
                 self.cursor.col_wanted = null;
             },
             .right => {
-                if (self.cursor.pos < buf.chars.items.len - 1) {
+                if (self.cursor.pos < buf.chars.items.len) {
                     self.cursor.pos += 1;
                     self.cursor.col_wanted = null;
                 }
@@ -577,7 +598,12 @@ pub const Editor = struct {
                 self.cursor.col_wanted = null;
             },
             .end => {
-                self.cursor.pos = buf.lines.items[self.cursor.line + 1] - 1;
+                if (self.cursor.line < buf.lines.items.len - 1) {
+                    self.cursor.pos = buf.lines.items[self.cursor.line + 1] - 1;
+                } else {
+                    // last line
+                    self.cursor.pos = buf.chars.items.len;
+                }
                 self.cursor.col_wanted = std.math.maxInt(usize);
             },
             else => {},
@@ -608,15 +634,13 @@ pub const Editor = struct {
     }
 
     fn moveCursorToLine(self: *Editor, line: usize, buf: *Buffer) void {
-        const target_line = if (line > buf.lines.items.len - 2)
-            buf.lines.items.len - 2
+        const last_line = buf.lines.items.len - 1;
+        const target_line = std.math.clamp(line, 0, last_line);
+        const chars_on_target_line = if (target_line < last_line)
+            buf.lines.items[target_line + 1] - buf.lines.items[target_line] -| 1
         else
-            line;
-        const chars_on_target_line = buf.lines.items[target_line + 1] - buf.lines.items[target_line] -| 1;
-        const wanted_pos = if (self.cursor.col_wanted) |wanted|
-            wanted
-        else
-            self.cursor.col;
+            buf.chars.items.len - buf.lines.items[target_line];
+        const wanted_pos = self.cursor.col_wanted orelse self.cursor.col;
         const new_line_pos = std.math.min(wanted_pos, chars_on_target_line);
         self.cursor.col_wanted = if (new_line_pos < wanted_pos) wanted_pos else null; // reset or remember wanted position
         self.cursor.pos = buf.lines.items[target_line] + new_line_pos;
@@ -678,9 +702,6 @@ pub const Buffer = struct {
                     self.lines.append(i + 1) catch u.oom();
                 }
             }
-            if (self.chars.items[self.chars.items.len -| 1] != '\n') {
-                self.lines.append(self.chars.items.len) catch u.oom();
-            }
         }
 
         // Highlight code
@@ -705,7 +726,7 @@ pub const Buffer = struct {
                     .invalid => .@"error",
                     .string_literal, .multiline_string_literal_line, .char_literal => .string,
                     .builtin => .function,
-                    .identifier => TextColor.getForIdentifier(self.chars.items[token.loc.start..token.loc.end], self.chars.items[token.loc.end]),
+                    .identifier => TextColor.getForIdentifier(self.chars.items[token.loc.start..token.loc.end], if (token.loc.end < self.chars.items.len) self.chars.items[token.loc.end] else null),
                     .integer_literal, .float_literal => .value,
                     .doc_comment, .container_doc_comment => .comment,
                     .keyword_addrspace, .keyword_align, .keyword_allowzero, .keyword_and, .keyword_anyframe, .keyword_anytype, .keyword_asm, .keyword_async, .keyword_await, .keyword_break, .keyword_callconv, .keyword_catch, .keyword_comptime, .keyword_const, .keyword_continue, .keyword_defer, .keyword_else, .keyword_enum, .keyword_errdefer, .keyword_error, .keyword_export, .keyword_extern, .keyword_fn, .keyword_for, .keyword_if, .keyword_inline, .keyword_noalias, .keyword_noinline, .keyword_nosuspend, .keyword_opaque, .keyword_or, .keyword_orelse, .keyword_packed, .keyword_pub, .keyword_resume, .keyword_return, .keyword_linksection, .keyword_struct, .keyword_suspend, .keyword_switch, .keyword_test, .keyword_threadlocal, .keyword_try, .keyword_union, .keyword_unreachable, .keyword_usingnamespace, .keyword_var, .keyword_volatile, .keyword_while => .keyword,

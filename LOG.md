@@ -1,7 +1,6 @@
 # TODO
-- [bug] Make it possible to go to the last line after the last '\n'
-- [bug] Fix cursor positioning on horizontal scroll
 - [bug] Can't open stb_truetype/build.zig
+- [bug] Fix cursor positioning on horizontal scroll
 - When opening an existing editor, refresh the file from the disk
     - If not modified, just replace the buffer contents
     - If modified, right now just mark as conflict and don't touch the buffer
@@ -26,6 +25,7 @@
 - Undo/redo
 
 # DONE
++ [bug] Make it possible to go to the last line after the last '\n'
 + Close active pane
     + Don't ever have only right active
     + Keep one open editor even when closed

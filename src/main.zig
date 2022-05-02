@@ -69,8 +69,7 @@ pub fn main() !void {
     const monitor_pos = try monitor.getPosInt();
 
     // Move window to the biggest monitor and maximise
-    _ = monitor_pos;
-    // try window.setPosInt(monitor_pos.x, monitor_pos.y);
+    try window.setPosInt(monitor_pos.x, monitor_pos.y);
     try window.maximize();
     defer window.destroy();
 
