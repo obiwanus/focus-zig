@@ -21,7 +21,7 @@ pub const colors = struct {
     pub const BACKGROUND_LIGHT = Color{ .r = 0.102, .g = 0.158, .b = 0.195, .a = 1.0 };
     pub const BACKGROUND_BRIGHT = Color{ .r = 0.131, .g = 0.202, .b = 0.25, .a = 1.0 };
     pub const CURSOR_ACTIVE = Color{ .r = 0.2, .g = 0.8, .b = 0.8, .a = 0.6 };
-    pub const CURSOR_INACTIVE = Color{ .r = 0.4, .g = 0.8, .b = 0.8, .a = 0.3 };
+    pub const CURSOR_INACTIVE = Color{ .r = 0.6, .g = 0.6, .b = 0.6, .a = 0.2 };
     pub const SCROLLBAR = Color{ .r = 0.065, .g = 0.101, .b = 0.125, .a = 0.5 };
 
     // Code
@@ -37,8 +37,8 @@ pub const colors = struct {
     pub const KEYWORD = Color{ .r = 0.902, .g = 0.493, .b = 0.457, .a = 1.0 };
 
     // Special
-    pub const SHADOW_DARK = Color{ .r = 0, .g = 0, .b = 0, .a = 0.2 };
-    pub const SHADOW_TRANSPARENT = Color{ .r = 0, .g = 0, .b = 0, .a = 0 };
+    pub const SHADOW_DARK = Color{ .r = 0.057, .g = 0.089, .b = 0.11, .a = 0.2 };
+    pub const SHADOW_TRANSPARENT = Color{ .r = 0.057, .g = 0.089, .b = 0.11, .a = 0 };
 
     pub const PALETTE = [_]Color{
         // Order must match TextColor

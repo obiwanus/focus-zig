@@ -380,6 +380,12 @@ pub const Ui = struct {
         self.drawRect(Rect{ .x = r.x, .y = r.y - size, .w = r.w, .h = size }, transparent, transparent, dark, dark);
     }
 
+    pub fn drawRightShadow(self: *Ui, r: Rect, size: f32) void {
+        const dark = style.colors.SHADOW_DARK;
+        const transparent = style.colors.SHADOW_TRANSPARENT;
+        self.drawRect(Rect{ .x = r.x + r.w, .y = r.y, .w = size, .h = r.h }, dark, transparent, transparent, dark);
+    }
+
     fn drawCircularShadow(self: *Ui, center: Vec2, radius: f32, start_angle: f32, end_angle: f32) void {
         const v = @intCast(u32, self.vertices.items.len);
         const dark = style.colors.SHADOW_DARK;

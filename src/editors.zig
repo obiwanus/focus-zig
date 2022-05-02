@@ -390,7 +390,7 @@ pub const Editor = struct {
             const advance = Vec2{ .x = char_size.x, .y = char_size.y };
             const padding = Vec2{ .x = 0, .y = 4 };
             const cursor_offset = Vec2{
-                .x = @intToFloat(f32, self.cursor.col),
+                .x = @intToFloat(f32, self.cursor.col -| col_min),
                 .y = @intToFloat(f32, self.cursor.line -| line_min),
             };
             const highlight_rect = Rect{
@@ -411,6 +411,9 @@ pub const Editor = struct {
 
             // Then draw text on top
             ui.drawText(chars, colors, top_left, col_min, col_max);
+
+            // If some text on the left is invisible, add shadow
+            if (col_min > 0) ui.drawRightShadow(Rect{ .x = highlight_rect.x - 1, .y = area.y, .w = 1, .h = area.h }, 7 * scale);
         }
 
         // Draw footer
