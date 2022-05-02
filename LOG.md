@@ -15,7 +15,7 @@
 # WHAT NEEDS TO WORK BEFORE I CAN START USING IT
 + Open files
 + Save files
-- Switch between open files
++ Switch between open files
 - Create new files
 - Select text, copy/cut/paste/duplicate
 - Search within buffer

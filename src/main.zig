@@ -41,16 +41,6 @@ pub fn main() !void {
     try glfw.init(.{});
     defer glfw.terminate();
 
-    const window = try glfw.Window.create(1000, 1000, APP_NAME, null, null, .{
-        .client_api = .no_api,
-        .focused = true,
-        // .maximized = false,
-        // .decorated = false,  // NOTE: there's a bug which causes the window to be bigger than the monitor
-        //                      // (or causes it to report a bigger size than it actually is)
-        .scale_to_monitor = true,
-        .srgb_capable = true,
-    });
-
     // Choose the biggest monitor and get its position
     const monitors = try glfw.Monitor.getAll(gpa);
     const monitor: glfw.Monitor = x: {
@@ -67,6 +57,17 @@ pub fn main() !void {
         break :x biggest.?;
     };
     const monitor_pos = try monitor.getPosInt();
+
+    // Create window
+    const window = try glfw.Window.create(1000, 1000, APP_NAME, null, null, .{
+        .client_api = .no_api,
+        .focused = true,
+        // .maximized = false,
+        // .decorated = false,  // NOTE: there's a bug which causes the window to be bigger than the monitor
+        //                      // (or causes it to report a bigger size than it actually is)
+        .scale_to_monitor = true,
+        .srgb_capable = true,
+    });
 
     // Move window to the biggest monitor and maximise
     try window.setPosInt(monitor_pos.x, monitor_pos.y);
