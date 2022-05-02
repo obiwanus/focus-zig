@@ -110,32 +110,63 @@ pub fn haveActiveScrollAnimation(self: *Self) bool {
     return false;
 }
 
+pub fn activeEditor(self: *Self) ?*Editor {
+    switch (self.layout) {
+        .none => return null,
+        .single => |e| return &self.open_editors.items[e],
+        .side_by_side => |e| return &self.open_editors.items[e.active],
+    }
+}
+
+pub fn getActiveEditorFilePath(self: *Self) ?[]const u8 {
+    const active_editor = self.activeEditor() orelse return null;
+    return self.getBuffer(active_editor.buffer).file_path;
+}
+
+fn printState(self: *Self) void {
+    u.print("Buffers: ", .{});
+    for (self.open_buffers.items) |buffer, i| {
+        u.print("{}:{s} |", .{ i, buffer.file_path });
+    }
+    u.println("", .{});
+
+    u.print("Editors: ", .{});
+    for (self.open_editors.items) |editor, i| {
+        u.print("{}:{} |", .{ i, editor.buffer });
+    }
+    u.println("", .{});
+
+    u.print("Layout: ", .{});
+    switch (self.layout) {
+        .none => u.println("none", .{}),
+        .single => |e| u.println("single - {}", .{e}),
+        .side_by_side => |e| u.println("side by side. left = {}, right = {}, active = {}", .{ e.left, e.right, e.active }),
+    }
+}
+
 pub fn openFile(self: *Self, path: []const u8, on_the_side: bool) void {
-    const buffer = if (self.findOpenBuffer(path)) |buffer| buffer else self.openNewBuffer(path);
+    const buffer = self.findOpenBuffer(path) orelse self.openNewBuffer(path);
     switch (self.layout) {
         .none => {
             // Create a new editor and switch to single layout
-            const new_editor = self.createNewEditor(buffer);
-            self.layout = .{ .single = new_editor };
+            const editor = self.findOrCreateNewEditor(buffer);
+            self.layout = .{ .single = editor };
         },
         .single => |e| {
+            var editor = self.findOrCreateNewEditor(buffer);
             if (on_the_side) {
-                // Always switch to a new editor
-                const new_editor = self.createNewEditor(buffer);
-                self.layout = .{ .side_by_side = .{ .left = e, .right = new_editor, .active = new_editor } };
+                // Open new editor on the right
+                if (editor == e) editor = self.findAnotherEditorForBuffer(buffer, e) orelse self.createNewEditor(buffer);
+                self.layout = .{ .side_by_side = .{ .left = e, .right = editor, .active = editor } };
             } else {
-                // If already editing this buffer, nothing to do
-                if (self.open_editors.items[e].buffer == buffer) return;
-
                 // Replace the current editor
-                const new_editor = self.createNewEditor(buffer);
-                self.layout = .{ .single = new_editor };
-                self.removeEditor(e);
+                self.layout = .{ .single = editor };
             }
         },
         .side_by_side => |e| {
             const target_is_left = (e.left == e.active and !on_the_side) or (e.right == e.active and on_the_side);
             const target = if (target_is_left) e.left else e.right;
+            const other = if (target_is_left) e.right else e.left;
 
             // If the target editor is already for this buffer, just switch
             if (self.open_editors.items[target].buffer == buffer) {
@@ -143,17 +174,36 @@ pub fn openFile(self: *Self, path: []const u8, on_the_side: bool) void {
                 return;
             }
 
-            // Otherwise, replace with a new editor
-            const new_editor = self.createNewEditor(buffer);
-            if (target_is_left) {
-                self.layout.side_by_side.left = new_editor;
+            // Otherwise, replace target with a new editor
+            var editor: usize = undefined;
+            if (self.open_editors.items[other].buffer == buffer) {
+                // Trying to open 2 editors for the same buffer side by side
+                editor = self.findAnotherEditorForBuffer(buffer, other) orelse self.createNewEditor(buffer);
             } else {
-                self.layout.side_by_side.right = new_editor;
+                editor = self.findOrCreateNewEditor(buffer);
             }
-            self.layout.side_by_side.active = new_editor;
-            self.removeEditor(target);
+            if (target_is_left) {
+                self.layout.side_by_side.left = editor;
+            } else {
+                self.layout.side_by_side.right = editor;
+            }
+            self.layout.side_by_side.active = editor;
         },
     }
+}
+
+fn findEditorForBuffer(self: Self, buffer: usize) ?usize {
+    for (self.open_editors.items) |e, i| if (e.buffer == buffer) return i;
+    return null;
+}
+
+fn findAnotherEditorForBuffer(self: Self, buffer: usize, editor: usize) ?usize {
+    for (self.open_editors.items) |e, i| if (e.buffer == buffer and i != editor) return i;
+    return null;
+}
+
+fn findOrCreateNewEditor(self: *Self, buffer: usize) usize {
+    return self.findEditorForBuffer(buffer) orelse self.createNewEditor(buffer);
 }
 
 fn switchToLeft(self: *Self) void {
@@ -214,37 +264,6 @@ fn createNewEditor(self: *Self, buffer: usize) usize {
     const new_editor = Editor{ .buffer = buffer };
     self.open_editors.append(new_editor) catch u.oom();
     return self.open_editors.items.len - 1;
-}
-
-fn removeEditor(self: *Self, editor: usize) void {
-    // Replace all references to the last element to its new id
-    const last = self.open_editors.items.len - 1;
-    switch (self.layout) {
-        .none => {},
-        .single => |e| if (e == last) {
-            self.layout.single = editor;
-        },
-        .side_by_side => |e| {
-            if (e.left == last) self.layout.side_by_side.left = editor;
-            if (e.right == last) self.layout.side_by_side.right = editor;
-            if (e.active == last) self.layout.side_by_side.active = editor;
-        },
-    }
-    // Now we can safely remove
-    _ = self.open_editors.swapRemove(editor);
-}
-
-pub fn activeEditor(self: *Self) ?*Editor {
-    switch (self.layout) {
-        .none => return null,
-        .single => |e| return &self.open_editors.items[e],
-        .side_by_side => |e| return &self.open_editors.items[e.active],
-    }
-}
-
-pub fn getActiveEditorFilePath(self: *Self) ?[]const u8 {
-    const active_editor = self.activeEditor() orelse return null;
-    return self.getBuffer(active_editor.buffer).file_path;
 }
 
 const Cursor = struct {
