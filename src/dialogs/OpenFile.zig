@@ -239,16 +239,34 @@ pub const Dir = struct {
 
     /// Don't store them anywhere
     pub fn filteredEntries(self: *Dir, filter_text: []const u.Char, tmp_allocator: Allocator) []Entry {
-        var entries = std.ArrayList(Entry).init(tmp_allocator);
+        var results = std.ArrayList(FilteredResult).init(tmp_allocator);
         var dir_iterator = FilteredEntriesIterator{
             .dir = self,
             .filter_text = filter_text,
             .tmp_allocator = tmp_allocator,
         };
-        while (dir_iterator.next()) |entry| {
-            entries.append(entry) catch u.oom();
+        while (dir_iterator.next()) |result| {
+            results.append(result) catch u.oom();
         }
+        std.sort.sort(FilteredResult, results.items, {}, FilteredResult.lessThan);
+        var entries = std.ArrayList(Entry).initCapacity(tmp_allocator, results.items.len) catch u.oom();
+        for (results.items) |result| entries.appendAssumeCapacity(result.entry);
         return entries.toOwnedSlice();
+    }
+};
+
+pub const FilteredResult = struct {
+    entry: Entry,
+    relevance: usize,
+
+    // For sorting
+    fn lessThan(_: void, lhs: FilteredResult, rhs: FilteredResult) bool {
+        if (lhs.relevance > rhs.relevance) return true;
+        // Directories first
+        if (lhs.entry == .dir and rhs.entry == .file) return true;
+        if (lhs.entry == .file and rhs.entry == .dir) return false;
+        // Then alphabetically
+        return std.mem.lessThan(u8, lhs.entry.getName(), rhs.entry.getName());
     }
 };
 
@@ -258,25 +276,32 @@ pub const FilteredEntriesIterator = struct {
     tmp_allocator: Allocator,
     i: usize = 0,
 
-    pub fn next(self: *FilteredEntriesIterator) ?Entry {
+    pub fn next(self: *FilteredEntriesIterator) ?FilteredResult {
         const entry = self.dir.getEntry(self.i) orelse return null;
         self.i += 1;
-        if (self.matchesFuzzyFilter(entry)) {
-            return entry;
+        const score = self.matchFuzzyFilter(entry);
+        if (score > 0) {
+            return FilteredResult{ .entry = entry, .relevance = score };
         } else {
             return self.next();
         }
     }
 
-    fn matchesFuzzyFilter(self: *FilteredEntriesIterator, entry: Entry) bool {
+    fn matchFuzzyFilter(self: *FilteredEntriesIterator, entry: Entry) usize {
+        if (self.filter_text.len == 0) return 1;
+
         const name = u.bytesToChars(entry.getName(), self.tmp_allocator) catch @panic("file name contains invalid utf8");
+        const max_length = 100; // matches after that length are not given score for simplicity
+        var total_score: usize = 0;
         var pos: usize = 0;
         for (self.filter_text) |char| {
             var new_pos = pos;
+            var score: usize = 0;
 
             // Try original char
             if (std.mem.indexOfPos(u.Char, name, pos, &[_]u.Char{char})) |index| {
                 new_pos = index + 1;
+                score = max_length -| index;
             }
             // Try switched case for latin chars
             const lowercase_latin = 'a' <= char and char <= 'z';
@@ -291,17 +316,19 @@ pub const FilteredEntriesIterator = struct {
                 if (std.mem.indexOfPos(u.Char, name, pos, &[_]u.Char{switched_case_char})) |index| {
                     if (new_pos == pos or new_pos > index + 1) {
                         new_pos = index + 1; // found an earlier match with the switched case
+                        score = max_length -| index -| 1; // giving less for switched case
                     }
                 }
             }
 
             if (pos == new_pos) {
-                return false; // found no match
+                return 0; // found no match
             } else {
+                total_score += score;
                 pos = new_pos; // carry on
             }
         }
-        return true;
+        return total_score;
     }
 };
 

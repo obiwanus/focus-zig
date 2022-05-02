@@ -481,7 +481,7 @@ pub const Editor = struct {
                 var indent = blk: {
                     var indent: usize = 0;
                     var cursor: usize = buf.lines.items[self.cursor.line];
-                    while (cursor < buf.chars.items.len and buf.chars.items[cursor] == ' ') : (cursor += 1) indent += 1;
+                    while (cursor < buf.chars.items.len and cursor < self.cursor.pos and buf.chars.items[cursor] == ' ') : (cursor += 1) indent += 1;
                     break :blk indent;
                 };
                 var char_buf: [1024]u.Char = undefined;

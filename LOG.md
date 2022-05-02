@@ -3,7 +3,6 @@
     - If not modified, just replace the buffer contents
     - If modified, right now just mark as conflict and don't touch the buffer
     - If deleted, mark as deleted and don't touch the buffer
-- Setup file system monitoring if possible
 - Multiple cursors
 - [optimisation] Highlighting syntax:
     - Implement a few languages, not just Zig
@@ -23,6 +22,8 @@
 - Undo/redo
 
 # DONE
++ Sort filtered files by most relevant
++ Fix auto-indentation
 + [bug] Fix cursor positioning on horizontal scroll
 + [bug] Can't open stb_truetype/build.zig
 + [bug] Make it possible to go to the last line after the last '\n'
