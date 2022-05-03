@@ -388,28 +388,67 @@ pub const Editor = struct {
             const col_min = @floatToInt(usize, self.scroll.x / char_size.x);
             const col_max = col_min + self.cols_per_screen;
 
+            const start_char = buf.lines.items[line_min];
+            const end_char = if (line_max >= buf.lines.items.len) buf.chars.items.len else buf.lines.items[line_max];
+            const chars = buf.chars.items[start_char..end_char];
+            const colors = buf.colors.items[start_char..end_char];
+
             // Offset from canonical position (for smooth scrolling)
             const offset = Vec2{
                 .x = self.scroll.x - @intToFloat(f32, col_min) * char_size.x,
                 .y = self.scroll.y - @intToFloat(f32, line_min) * char_size.y,
             };
 
-            const start_char = buf.lines.items[line_min];
-            const end_char = if (line_max >= buf.lines.items.len) buf.chars.items.len else buf.lines.items[line_max];
-
-            const chars = buf.chars.items[start_char..end_char];
-            const colors = buf.colors.items[start_char..end_char];
             const top_left = Vec2{ .x = area.x - offset.x, .y = area.y - offset.y };
+            const cursor_line = self.cursor.line -| line_min;
+            const cursor_col = self.cursor.col -| col_min;
+            const adjust_y = 2 * scale;
 
-            // // First draw selections
-            // {
-            //     const start_pos = self.cursor.pos -| 10;
-            //     const end_pos = self.cursor.pos + 10;
-            // }
-            // ui.drawSelection(selection);
+            // Highlight line with cursor
+            {
+                const highlight_rect = Rect{
+                    .x = top_left.x - 4,
+                    .y = top_left.y + @intToFloat(f32, cursor_line) * char_size.y - adjust_y,
+                    .w = area.w + 8,
+                    .h = char_size.y,
+                };
+                ui.drawSolidRect(highlight_rect, style.colors.BACKGROUND_HIGHLIGHT);
+            }
+
+            // First draw selections
+            {
+                const start_pos = self.cursor.pos;
+                const end_pos = self.cursor.pos + 50;
+
+                const start = CharPos.getFromBufferPos(buf.lines.items, start_pos);
+                const end = CharPos.getFromBufferPos(buf.lines.items, end_pos);
+
+                var line: usize = start.line;
+                while (line <= end.line) : (line += 1) {
+                    const start_col = if (line == start.line) start.col -| col_min else 0;
+                    const end_col = if (line == end.line)
+                        end.col -| col_min
+                    else
+                        // TODO: fix overflows
+                        buf.lines.items[line + 1] - buf.lines.items[line] - col_min;
+                    const r = Rect{
+                        .x = top_left.x + @intToFloat(f32, start_col) * char_size.x,
+                        .y = top_left.y + @intToFloat(f32, line -| line_min) * char_size.y - adjust_y,
+                        .w = @intToFloat(f32, end_col - start_col) * char_size.x,
+                        .h = char_size.y,
+                    };
+                    ui.drawSolidRect(r, style.colors.CURSOR_INACTIVE);
+                }
+            }
 
             // Then draw cursor
-            ui.drawCursor(top_left, area.w, self.cursor.line -| line_min, self.cursor.col -| col_min, is_active);
+            const cursor_rect = Rect{
+                .x = top_left.x + @intToFloat(f32, cursor_col) * char_size.x,
+                .y = top_left.y + @intToFloat(f32, cursor_line) * char_size.y - adjust_y,
+                .w = char_size.x,
+                .h = char_size.y,
+            };
+            ui.drawSolidRect(cursor_rect, if (is_active) style.colors.CURSOR_ACTIVE else style.colors.CURSOR_INACTIVE);
 
             // Then draw text on top
             ui.drawText(chars, colors, top_left, col_min, col_max);

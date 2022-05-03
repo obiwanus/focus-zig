@@ -1,7 +1,8 @@
 # TODO
 - Select text, copy/cut/paste/duplicate
-    - Draw a selection
+    + Draw a selection
     - Select using cursor
+    - Check for overflows
 - Multiple cursors
 - [optimisation] Highlighting syntax:
     - Implement a few languages, not just Zig
