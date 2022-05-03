@@ -706,8 +706,17 @@ pub const Buffer = struct {
         if (self.file == null or !self.modified) return;
         self.recalculateBytes();
         if (self.bytes.items[self.bytes.items.len -| 1] != '\n') self.bytes.append('\n') catch u.oom();
-        try u.writeEntireFile(self.file.?.path, self.bytes.items);
+
+        const file_path = self.file.?.path;
+        const file = try std.fs.cwd().createFile(file_path, .{ .truncate = true, .read = true });
+        defer file.close();
+        try file.writeAll(self.bytes.items);
+        const stat = file.stat() catch |err| u.panic("{} while getting stat on '{s}'", .{ err, file_path });
+        self.file.?.mtime = stat.mtime;
+
         self.modified = false;
+        self.modified_on_disk = false;
+        self.deleted = false;
     }
 
     fn refreshFromDisk(self: *Buffer, allocator: Allocator) void {

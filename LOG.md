@@ -19,6 +19,7 @@
 - Undo/redo
 
 # DONE
++ Update modified time when saving buffer to disk
 + From time to time refresh open buffers from disk
     + If not modified, just replace the buffer contents
     + If modified, right now just mark as conflict and don't touch the buffer
