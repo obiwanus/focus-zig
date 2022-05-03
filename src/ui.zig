@@ -416,22 +416,22 @@ pub const Ui = struct {
         }
     }
 
-    pub fn drawCursor(self: *Ui, area: Rect, offset: Vec2, line: usize, col: usize, is_active: bool) void {
+    pub fn drawCursor(self: *Ui, top_left: Vec2, area_width: f32, line: usize, col: usize, is_active: bool) void {
         const font = self.screen.font;
         const size = Vec2{ .x = font.xadvance, .y = font.letter_height };
         const advance = Vec2{ .x = font.xadvance, .y = font.line_height };
         const padding = Vec2{ .x = 0, .y = 4 };
         const cursor_offset = Vec2{ .x = @intToFloat(f32, col), .y = @intToFloat(f32, line) };
         const highlight_rect = Rect{
-            .x = area.x - 4,
-            .y = area.y - offset.y + cursor_offset.y * advance.y - padding.y,
-            .w = area.w + 8,
+            .x = top_left.x - 4,
+            .y = top_left.y + cursor_offset.y * advance.y - padding.y,
+            .w = area_width + 8,
             .h = size.y + 2 * padding.y,
         };
         self.drawSolidRect(highlight_rect, style.colors.BACKGROUND_HIGHLIGHT);
         const cursor_rect = Rect{
-            .x = area.x - offset.x + cursor_offset.x * advance.x - padding.x,
-            .y = area.y - offset.y + cursor_offset.y * advance.y - padding.y,
+            .x = top_left.x + cursor_offset.x * advance.x - padding.x,
+            .y = top_left.y + cursor_offset.y * advance.y - padding.y,
             .w = size.x + 2 * padding.x,
             .h = size.y + 2 * padding.y,
         };

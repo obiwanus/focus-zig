@@ -320,6 +320,31 @@ const ScrollAnimation = struct {
     }
 };
 
+pub const CharPos = struct {
+    line: usize,
+    col: usize,
+
+    pub fn getFromBufferPos(lines: []const usize, pos: usize) CharPos {
+        var left: usize = 0;
+        var right: usize = lines.len - 1;
+
+        const line = if (pos == lines[right])
+            right
+        else while (right - left > 1) {
+            const mid = left + (right - left) / 2;
+            const mid_value = lines[mid];
+            if (pos == mid_value) break mid;
+            if (pos < mid_value) {
+                right = mid;
+            } else {
+                left = mid;
+            }
+        } else left;
+        const col = pos - lines[line];
+        return .{ .line = line, .col = col };
+    }
+};
+
 pub const Editor = struct {
     buffer: usize,
 
@@ -346,12 +371,9 @@ pub const Editor = struct {
         // Update cursor line, col and pos
         {
             if (self.cursor.pos > buf.chars.items.len) self.cursor.pos = buf.chars.items.len;
-            self.cursor.line = for (buf.lines.items) |line_start, line| {
-                if (self.cursor.pos < line_start) {
-                    break line -| 1;
-                }
-            } else buf.lines.items.len -| 1;
-            self.cursor.col = self.cursor.pos - buf.lines.items[self.cursor.line];
+            const cursor = CharPos.getFromBufferPos(buf.lines.items, self.cursor.pos);
+            self.cursor.line = cursor.line;
+            self.cursor.col = cursor.col;
         }
 
         self.moveViewportToCursor(char_size); // depends on lines_per_screen etc
@@ -379,11 +401,15 @@ pub const Editor = struct {
             const colors = buf.colors.items[start_char..end_char];
             const top_left = Vec2{ .x = area.x - offset.x, .y = area.y - offset.y };
 
-            // First draw selections
+            // // First draw selections
+            // {
+            //     const start_pos = self.cursor.pos -| 10;
+            //     const end_pos = self.cursor.pos + 10;
+            // }
             // ui.drawSelection(selection);
 
             // Then draw cursor
-            ui.drawCursor(area, offset, self.cursor.line -| line_min, self.cursor.col -| col_min, is_active);
+            ui.drawCursor(top_left, area.w, self.cursor.line -| line_min, self.cursor.col -| col_min, is_active);
 
             // Then draw text on top
             ui.drawText(chars, colors, top_left, col_min, col_max);

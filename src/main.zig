@@ -191,15 +191,16 @@ pub fn main() !void {
 
         // Otherwise sleep until something happens
         while (g_events.items.len == 0 and !editors.haveActiveScrollAnimation() and !window.shouldClose()) {
-            try glfw.waitEventsTimeout(0.5);
+            try glfw.waitEvents();
+            // try glfw.waitEventsTimeout(0.5);
 
             // Monotonically increasing clock for animations
             clock_ms = @intToFloat(f64, std.time.nanoTimestamp() - app_start_ms) / 1_000_000;
 
-            // Always update at least once in 0.5 seconds
-            if (clock_ms - last_redraw_ms >= 500) {
-                g_events.append(.redraw_requested) catch u.oom();
-            }
+            // // Always update at least once in 0.5 seconds
+            // if (clock_ms - last_redraw_ms >= 500) {
+            //     g_events.append(.redraw_requested) catch u.oom();
+            // }
         }
         last_redraw_ms = clock_ms;
 
