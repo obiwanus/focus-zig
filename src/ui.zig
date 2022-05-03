@@ -386,7 +386,7 @@ pub const Ui = struct {
         self.drawRect(Rect{ .x = r.x + r.w, .y = r.y, .w = size, .h = r.h }, dark, transparent, transparent, dark);
     }
 
-    fn drawCircularShadow(self: *Ui, center: Vec2, radius: f32, start_angle: f32, end_angle: f32) void {
+    pub fn drawCircularShadow(self: *Ui, center: Vec2, radius: f32, start_angle: f32, end_angle: f32) void {
         const v = @intCast(u32, self.vertices.items.len);
         const dark = style.colors.SHADOW_DARK;
         const transparent = Color{ .r = 0, .g = 0, .b = 0, .a = 0 };
@@ -414,6 +414,29 @@ pub const Ui = struct {
             const indices = [_]u32{ v, v + i, v + i + 1 };
             self.indices.appendSlice(&indices) catch u.oom();
         }
+    }
+
+    pub fn drawCursor(self: *Ui, area: Rect, offset: Vec2, line: usize, col: usize, is_active: bool) void {
+        const font = self.screen.font;
+        const size = Vec2{ .x = font.xadvance, .y = font.letter_height };
+        const advance = Vec2{ .x = font.xadvance, .y = font.line_height };
+        const padding = Vec2{ .x = 0, .y = 4 };
+        const cursor_offset = Vec2{ .x = @intToFloat(f32, col), .y = @intToFloat(f32, line) };
+        const highlight_rect = Rect{
+            .x = area.x - 4,
+            .y = area.y - offset.y + cursor_offset.y * advance.y - padding.y,
+            .w = area.w + 8,
+            .h = size.y + 2 * padding.y,
+        };
+        self.drawSolidRect(highlight_rect, style.colors.BACKGROUND_HIGHLIGHT);
+        const cursor_rect = Rect{
+            .x = area.x - offset.x + cursor_offset.x * advance.x - padding.x,
+            .y = area.y - offset.y + cursor_offset.y * advance.y - padding.y,
+            .w = size.x + 2 * padding.x,
+            .h = size.y + 2 * padding.y,
+        };
+        const color = if (is_active) style.colors.CURSOR_ACTIVE else style.colors.CURSOR_INACTIVE;
+        self.drawSolidRect(cursor_rect, color);
     }
 
     /// Queues a rect with colors for each vertex

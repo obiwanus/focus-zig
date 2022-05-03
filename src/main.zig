@@ -275,7 +275,7 @@ pub fn main() !void {
                 ui.drawOpenFileDialog(dialog, frame_allocator);
             }
 
-            ui.drawDebugPanel(frame_number);
+            // ui.drawDebugPanel(frame_number);
 
             try ui.endFrame(&vc, main_cmd_pool);
         }

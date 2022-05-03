@@ -379,35 +379,17 @@ pub const Editor = struct {
             const colors = buf.colors.items[start_char..end_char];
             const top_left = Vec2{ .x = area.x - offset.x, .y = area.y - offset.y };
 
-            // Draw cursor first
-            const size = Vec2{ .x = char_size.x, .y = ui.screen.font.letter_height };
-            const advance = Vec2{ .x = char_size.x, .y = char_size.y };
-            const padding = Vec2{ .x = 0, .y = 4 };
-            const cursor_offset = Vec2{
-                .x = @intToFloat(f32, self.cursor.col -| col_min),
-                .y = @intToFloat(f32, self.cursor.line -| line_min),
-            };
-            const highlight_rect = Rect{
-                .x = area.x - 4,
-                .y = area.y - offset.y + cursor_offset.y * advance.y - padding.y,
-                .w = area.w + 8,
-                .h = size.y + 2 * padding.y,
-            };
-            ui.drawSolidRect(highlight_rect, style.colors.BACKGROUND_HIGHLIGHT);
-            const cursor_rect = Rect{
-                .x = area.x - offset.x + cursor_offset.x * advance.x - padding.x,
-                .y = area.y - offset.y + cursor_offset.y * advance.y - padding.y,
-                .w = size.x + 2 * padding.x,
-                .h = size.y + 2 * padding.y,
-            };
-            const color = if (is_active) style.colors.CURSOR_ACTIVE else style.colors.CURSOR_INACTIVE;
-            ui.drawSolidRect(cursor_rect, color);
+            // First draw selections
+            // ui.drawSelection(selection);
+
+            // Then draw cursor
+            ui.drawCursor(area, offset, self.cursor.line -| line_min, self.cursor.col -| col_min, is_active);
 
             // Then draw text on top
             ui.drawText(chars, colors, top_left, col_min, col_max);
 
             // If some text on the left is invisible, add shadow
-            if (col_min > 0) ui.drawRightShadow(Rect{ .x = highlight_rect.x - 1, .y = area.y, .w = 1, .h = area.h }, 7 * scale);
+            if (col_min > 0) ui.drawRightShadow(Rect{ .x = area.x - 5, .y = area.y - margin.y, .w = 1, .h = area.h + margin.y }, 7 * scale);
         }
 
         // Draw footer
