@@ -1,10 +1,10 @@
 # TODO
-- Display conflict information in the footer
 - Multiple cursors
 - [optimisation] Highlighting syntax:
     - Implement a few languages, not just Zig
     - Measure how expensive it is to rehighlight everything
 - [bug] Colors are off when non-ascii bytes are present (tokenizer doesn't support utf-8)
+- [ui]
 - [tech-debt] When scanning the root folder, ignore the ignored folders right away (modify dir walker)
 - [tech-debt] When building a directory tree, see if we can use a memory arena
               (maybe don't use array lists and instead just allocate slices of exact size from the arena)
@@ -19,6 +19,7 @@
 - Undo/redo
 
 # DONE
++ Display conflict information in the footer
 + Update modified time when saving buffer to disk
 + From time to time refresh open buffers from disk
     + If not modified, just replace the buffer contents

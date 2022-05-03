@@ -426,16 +426,31 @@ pub const Editor = struct {
 
                 const path_chars = u.bytesToChars(file.path[0 .. file.path.len - name.len], tmp_allocator) catch unreachable;
                 ui.drawLabel(path_chars, .{ .x = r.x, .y = text_y }, style.colors.COMMENT);
+
                 const name_chars = u.bytesToChars(name, tmp_allocator) catch unreachable;
-                ui.drawLabel(
-                    name_chars,
-                    .{ .x = r.x + @intToFloat(f32, path_chars.len) * char_size.x, .y = text_y },
-                    if (buf.modified) style.colors.STRING else style.colors.PUNCTUATION,
-                );
+                const name_color = if (buf.deleted or buf.modified_on_disk)
+                    style.colors.ERROR
+                else if (buf.modified)
+                    style.colors.WARNING
+                else
+                    style.colors.PUNCTUATION;
+                const name_pos = Vec2{ .x = r.x + @intToFloat(f32, path_chars.len) * char_size.x, .y = text_y };
+                ui.drawLabel(name_chars, name_pos, name_color);
+
+                if (buf.deleted) {
+                    // Strike through
+                    const strikethrough_rect = Rect{
+                        .x = name_pos.x,
+                        .y = name_pos.y + char_size.y / 2 - 2 * scale,
+                        .w = char_size.x * @intToFloat(f32, name_chars.len),
+                        .h = 2,
+                    };
+                    ui.drawSolidRect(strikethrough_rect, style.colors.ERROR);
+                }
             }
 
             // Line:col
-            const line_col = std.fmt.allocPrint(tmp_allocator, "{}:{}", .{ self.cursor.line, self.cursor.col }) catch u.oom();
+            const line_col = std.fmt.allocPrint(tmp_allocator, "{}:{}", .{ self.cursor.line + 1, self.cursor.col + 1 }) catch u.oom();
             const line_col_chars = u.bytesToChars(line_col, tmp_allocator) catch unreachable;
             const line_col_rect = r.splitRight(margin.x + @intToFloat(f32, line_col_chars.len) * char_size.x, margin.x);
             ui.drawLabel(line_col_chars, .{ .x = line_col_rect.x, .y = text_y }, style.colors.PUNCTUATION);
@@ -735,6 +750,8 @@ pub const Buffer = struct {
             }
         };
         defer file.close();
+
+        self.deleted = false; // since we're here it means it's not deleted
 
         const stat = file.stat() catch |err| u.panic("{} while getting stat on '{s}'", .{ err, file_path });
         if (stat.mtime != file_mtime) {
