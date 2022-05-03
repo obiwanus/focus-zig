@@ -24,8 +24,10 @@ layout: union(enum) {
         active: usize,
     },
 },
+last_buffer_update_ms: f64 = 0,
 
 const Self = @This();
+const BUFFER_REFRESH_TIMEOUT_MS = 500;
 
 pub fn init(allocator: Allocator) Self {
     return .{
@@ -42,11 +44,17 @@ pub fn deinit(self: Self) void {
         buf.chars.deinit();
         buf.colors.deinit();
         buf.lines.deinit();
-        self.allocator.free(buf.file_path);
+        if (buf.file) |file| self.allocator.free(file.path);
     }
 }
 
 pub fn updateAndDrawAll(self: *Self, ui: *Ui, clock_ms: f64, tmp_allocator: Allocator) void {
+    // Reload buffers from disk and check for conflicts
+    if (clock_ms - self.last_buffer_update_ms > BUFFER_REFRESH_TIMEOUT_MS) {
+        for (self.open_buffers.items) |*buf| buf.refreshFromDisk(self.allocator);
+        self.last_buffer_update_ms = clock_ms;
+    }
+
     // Always try to update all open buffers
     for (self.open_buffers.items) |*buf| {
         if (buf.dirty) buf.syncInternalData();
@@ -92,8 +100,7 @@ pub fn keyPress(self: *Self, key: glfw.Key, mods: glfw.Mods) void {
             },
             .p => if (self.activeEditor()) |editor| {
                 // Duplicate current editor on the other side
-                const file_path = self.getBuffer(editor.buffer).file_path;
-                self.openFile(file_path, true);
+                if (self.getBuffer(editor.buffer).file) |file| self.openFile(file.path, true);
             },
             else => {},
         }
@@ -125,7 +132,8 @@ pub fn activeEditor(self: *Self) ?*Editor {
 
 pub fn getActiveEditorFilePath(self: *Self) ?[]const u8 {
     const active_editor = self.activeEditor() orelse return null;
-    return self.getBuffer(active_editor.buffer).file_path;
+    const file = self.getBuffer(active_editor.buffer).file orelse return "[unsaved buffer]";
+    return file.path;
 }
 
 fn printState(self: *Self) void {
@@ -247,42 +255,28 @@ fn getBuffer(self: *Self, buffer: usize) *Buffer {
 
 fn findOpenBuffer(self: Self, path: []const u8) ?usize {
     for (self.open_buffers.items) |buffer, i| {
-        if (std.mem.eql(u8, path, buffer.file_path)) return i;
+        if (buffer.file) |file| {
+            if (std.mem.eql(u8, path, file.path)) return i;
+        }
     }
     return null;
 }
 
 fn openNewBuffer(self: *Self, path: []const u8) usize {
-    const new_buffer = blk: {
-        const file_contents = u.readEntireFile(path, self.allocator) catch @panic("couldn't read file");
-        defer self.allocator.free(file_contents);
-        var bytes = std.ArrayList(u8).init(self.allocator);
-        bytes.appendSlice(file_contents) catch u.oom();
-
-        // For simplicity we assume that a codepoint equals a character (though it's not true).
-        // If we ever encounter multi-codepoint characters, we can revisit this
-        var chars = std.ArrayList(u.Char).init(self.allocator);
-        chars.ensureTotalCapacity(bytes.items.len) catch u.oom();
-        const utf8_view = std.unicode.Utf8View.init(bytes.items) catch @panic("invalid utf-8");
-        var iterator = utf8_view.iterator();
-        while (iterator.nextCodepoint()) |char| {
-            chars.append(char) catch u.oom();
-        }
-
-        var colors = std.ArrayList(TextColor).init(self.allocator);
-        colors.ensureTotalCapacity(chars.items.len) catch u.oom();
-
-        var lines = std.ArrayList(usize).init(self.allocator);
-        lines.append(0) catch u.oom(); // first line is always at the buffer start
-
-        break :blk Buffer{
-            .file_path = self.allocator.dupe(u8, path) catch u.oom(),
-            .bytes = bytes,
-            .chars = chars,
-            .colors = colors,
-            .lines = lines,
-        };
+    var new_buffer = Buffer{
+        .file = null,
+        .bytes = std.ArrayList(u8).init(self.allocator),
+        .chars = std.ArrayList(u.Char).init(self.allocator),
+        .colors = std.ArrayList(TextColor).init(self.allocator),
+        .lines = std.ArrayList(usize).init(self.allocator),
     };
+    // [zig bug]: have to do it separately because otherwise 'path' becomes empty
+    new_buffer.file = .{
+        .path = self.allocator.dupe(u8, path) catch u.oom(),
+        .mtime = 0,
+    };
+    new_buffer.load(self.allocator);
+
     self.open_buffers.append(new_buffer) catch u.oom();
     return self.open_buffers.items.len - 1;
 }
@@ -425,18 +419,20 @@ pub const Editor = struct {
             _ = r.splitLeft(margin.x, 0);
 
             // File path and name
-            var name: []const u8 = undefined;
-            var path_chunks_iter = u.pathChunksIterator(buf.file_path);
-            while (path_chunks_iter.next()) |chunk| name = chunk;
+            if (buf.file) |file| {
+                var name: []const u8 = undefined;
+                var path_chunks_iter = u.pathChunksIterator(file.path);
+                while (path_chunks_iter.next()) |chunk| name = chunk;
 
-            const path_chars = u.bytesToChars(buf.file_path[0 .. buf.file_path.len - name.len], tmp_allocator) catch unreachable;
-            ui.drawLabel(path_chars, .{ .x = r.x, .y = text_y }, style.colors.COMMENT);
-            const name_chars = u.bytesToChars(name, tmp_allocator) catch unreachable;
-            ui.drawLabel(
-                name_chars,
-                .{ .x = r.x + @intToFloat(f32, path_chars.len) * char_size.x, .y = text_y },
-                if (buf.modified) style.colors.STRING else style.colors.PUNCTUATION,
-            );
+                const path_chars = u.bytesToChars(file.path[0 .. file.path.len - name.len], tmp_allocator) catch unreachable;
+                ui.drawLabel(path_chars, .{ .x = r.x, .y = text_y }, style.colors.COMMENT);
+                const name_chars = u.bytesToChars(name, tmp_allocator) catch unreachable;
+                ui.drawLabel(
+                    name_chars,
+                    .{ .x = r.x + @intToFloat(f32, path_chars.len) * char_size.x, .y = text_y },
+                    if (buf.modified) style.colors.STRING else style.colors.PUNCTUATION,
+                );
+            }
 
             // Line:col
             const line_col = std.fmt.allocPrint(tmp_allocator, "{}:{}", .{ self.cursor.line, self.cursor.col }) catch u.oom();
@@ -689,7 +685,8 @@ pub const Editor = struct {
 };
 
 pub const Buffer = struct {
-    file_path: []const u8,
+    file: ?File, // buffer may be tied to a file or may be just freestanding
+
     bytes: std.ArrayList(u8),
     chars: std.ArrayList(u.Char),
     colors: std.ArrayList(TextColor),
@@ -697,13 +694,88 @@ pub const Buffer = struct {
 
     dirty: bool = true, // needs syncing internal structures
     modified: bool = false, // hasn't been saved to disk
+    modified_on_disk: bool = false, //
+    deleted: bool = false, // was deleted from disk by someone else
+
+    const File = struct {
+        path: []const u8,
+        mtime: i128,
+    };
 
     fn saveToDisk(self: *Buffer) !void {
-        if (!self.modified) return;
+        if (self.file == null or !self.modified) return;
         self.recalculateBytes();
         if (self.bytes.items[self.bytes.items.len -| 1] != '\n') self.bytes.append('\n') catch u.oom();
-        try u.writeEntireFile(self.file_path, self.bytes.items);
+        try u.writeEntireFile(self.file.?.path, self.bytes.items);
         self.modified = false;
+    }
+
+    fn refreshFromDisk(self: *Buffer, allocator: Allocator) void {
+        if (self.file == null) return;
+
+        const file_path = self.file.?.path;
+        const file_mtime = self.file.?.mtime;
+
+        const file = std.fs.cwd().openFile(file_path, .{}) catch |err| {
+            switch (err) {
+                error.FileNotFound => {
+                    self.deleted = true;
+                    return;
+                },
+                else => u.panic("{} while refreshing from disk '{s}'\n", .{ err, file_path }),
+            }
+        };
+        defer file.close();
+
+        const stat = file.stat() catch |err| u.panic("{} while getting stat on '{s}'", .{ err, file_path });
+        if (stat.mtime != file_mtime) {
+            // File has been modified on disk
+            if (self.modified) {
+                self.modified_on_disk = true; // mark conflict
+                return;
+            }
+            // Reload buffer if not modified
+            self.load(allocator);
+        }
+    }
+
+    fn load(self: *Buffer, allocator: Allocator) void {
+        const file_path = self.file.?.path;
+        const file = std.fs.cwd().openFile(file_path, .{ .read = true }) catch u.panic("Can't open '{s}'", .{file_path});
+        defer file.close();
+
+        const stat = file.stat() catch |err| u.panic("{} while getting stat on '{s}'", .{ err, file_path });
+        self.file.?.mtime = stat.mtime;
+
+        const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 Mb
+        const file_contents = file.reader().readAllAlloc(allocator, MAX_FILE_SIZE) catch |e| switch (e) {
+            error.StreamTooLong => u.panic("File '{s}' is more than 10 Mb in size", .{file_path}),
+            else => u.oom(),
+        };
+        defer allocator.free(file_contents);
+
+        self.bytes.shrinkRetainingCapacity(0);
+        self.bytes.appendSlice(file_contents) catch u.oom();
+
+        // For simplicity we assume that a codepoint equals a character (though it's not true).
+        // If we ever encounter multi-codepoint characters, we can revisit this
+        self.chars.shrinkRetainingCapacity(0);
+        self.chars.ensureTotalCapacity(self.bytes.items.len) catch u.oom();
+        const utf8_view = std.unicode.Utf8View.init(self.bytes.items) catch @panic("invalid utf-8");
+        var iterator = utf8_view.iterator();
+        while (iterator.nextCodepoint()) |char| {
+            self.chars.append(char) catch u.oom();
+        }
+
+        self.colors.shrinkRetainingCapacity(0);
+        self.colors.ensureTotalCapacity(self.chars.items.len) catch u.oom();
+
+        self.lines.shrinkRetainingCapacity(0);
+        self.lines.append(0) catch u.oom(); // first line is always at the buffer start
+
+        self.modified = false;
+        self.modified_on_disk = false;
+        self.dirty = true; // trigger the syncing of the above structures
     }
 
     fn syncInternalData(self: *Buffer) void {

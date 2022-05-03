@@ -1,8 +1,5 @@
 # TODO
-- When opening an existing editor, refresh the file from the disk
-    - If not modified, just replace the buffer contents
-    - If modified, right now just mark as conflict and don't touch the buffer
-    - If deleted, mark as deleted and don't touch the buffer
+- Display conflict information in the footer
 - Multiple cursors
 - [optimisation] Highlighting syntax:
     - Implement a few languages, not just Zig
@@ -22,6 +19,10 @@
 - Undo/redo
 
 # DONE
++ From time to time refresh open buffers from disk
+    + If not modified, just replace the buffer contents
+    + If modified, right now just mark as conflict and don't touch the buffer
+    + If deleted, mark as deleted and don't touch the buffer
 + Sort filtered files by most relevant
 + Fix auto-indentation
 + [bug] Fix cursor positioning on horizontal scroll

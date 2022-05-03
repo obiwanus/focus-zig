@@ -146,6 +146,7 @@ pub fn main() !void {
     var frame_number: usize = 0;
     const app_start_ms = std.time.nanoTimestamp();
     var clock_ms: f64 = 0;
+    var last_redraw_ms: f64 = 0;
 
     var open_file_dialog: ?OpenFileDialog = null;
 
@@ -190,11 +191,17 @@ pub fn main() !void {
 
         // Otherwise sleep until something happens
         while (g_events.items.len == 0 and !editors.haveActiveScrollAnimation() and !window.shouldClose()) {
-            try glfw.waitEvents();
-        }
+            try glfw.waitEventsTimeout(0.5);
 
-        // Monotonically increasing clock for animations
-        clock_ms = @intToFloat(f64, std.time.nanoTimestamp() - app_start_ms) / 1_000_000;
+            // Monotonically increasing clock for animations
+            clock_ms = @intToFloat(f64, std.time.nanoTimestamp() - app_start_ms) / 1_000_000;
+
+            // Always update at least once in 0.5 seconds
+            if (clock_ms - last_redraw_ms >= 500) {
+                g_events.append(.redraw_requested) catch u.oom();
+            }
+        }
+        last_redraw_ms = clock_ms;
 
         // Process events
         if (open_file_dialog) |*dialog| {
@@ -268,7 +275,7 @@ pub fn main() !void {
                 ui.drawOpenFileDialog(dialog, frame_allocator);
             }
 
-            // ui.drawDebugPanel(frame_number);
+            ui.drawDebugPanel(frame_number);
 
             try ui.endFrame(&vc, main_cmd_pool);
         }

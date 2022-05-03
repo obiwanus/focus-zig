@@ -137,6 +137,12 @@ pub fn oom() noreturn {
     @panic("Out of memory");
 }
 
+pub fn panic(comptime fmt: []const u8, args: anytype) noreturn {
+    var buf: [1024]u8 = undefined;
+    const msg = std.fmt.bufPrint(&buf, fmt, args) catch buf[0..];
+    @panic(msg);
+}
+
 pub fn pathChunksIterator(path: []const u8) std.mem.SplitIterator(u8) {
     const delimiter = if (builtin.os.tag == .windows) "\\" else "/";
     return std.mem.split(u8, path, delimiter);
