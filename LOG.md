@@ -1,11 +1,17 @@
 # TODO
 - Select text, copy/cut/paste/duplicate
+    - Create a global clipboard buffer
+    - On ctrl+C, copy
+    - On ctrl+X, cut
+    - On ctrl+V, paste
+- Duplicate
+    - On ctrl+shift+D duplicate selection
+    - Or the whole line if no selection
 - Multiple cursors
 - [optimisation] Highlighting syntax:
     - Implement a few languages, not just Zig
     - Measure how expensive it is to rehighlight everything
 - [bug] Colors are off when non-ascii bytes are present (tokenizer doesn't support utf-8)
-- [ui] Don't set wanted position to infinity when pressing end
 - [ui] When pressing home, jump back only to the indented code
 - [ui] When drawing a buffer with a conflict we need to ask what to do
 - [tech-debt] When scanning the root folder, ignore the ignored folders right away (modify dir walker)
@@ -22,6 +28,7 @@
 - Undo/redo
 
 # DONE
++ [ui] Don't set wanted position to infinity when pressing end
 + Draw a selection
 + Select using cursor
     + If shift+arrow is pressed, start a selection or modify existing

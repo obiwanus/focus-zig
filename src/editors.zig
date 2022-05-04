@@ -417,9 +417,9 @@ pub const Editor = struct {
             // Highlight line with cursor
             {
                 const highlight_rect = Rect{
-                    .x = top_left.x - 4,
+                    .x = rect.x,
                     .y = top_left.y + @intToFloat(f32, cursor_line) * char_size.y - adjust_y,
-                    .w = area.w + 8,
+                    .w = rect.w,
                     .h = char_size.y,
                 };
                 ui.drawSolidRect(highlight_rect, style.colors.BACKGROUND_HIGHLIGHT);
@@ -691,7 +691,7 @@ pub const Editor = struct {
                     // last line
                     self.cursor.pos = buf.chars.items.len;
                 }
-                self.cursor.col_wanted = std.math.maxInt(usize);
+                self.cursor.col_wanted = null;
             },
             else => {},
         }
