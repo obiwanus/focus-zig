@@ -1,10 +1,11 @@
 # TODO
+- Replace selection when typing
+- [ui] When pressing home, jump back only to the indented code
 - Multiple cursors
 - [optimisation] Highlighting syntax:
     - Implement a few languages, not just Zig
     - Measure how expensive it is to rehighlight everything
 - [bug] Colors are off when non-ascii bytes are present (tokenizer doesn't support utf-8)
-- [ui] When pressing home, jump back only to the indented code
 - [ui] When drawing a buffer with a conflict we need to ask what to do
 - [tech-debt] When scanning the root folder, ignore the ignored folders right away (modify dir walker)
 - [tech-debt] When building a directory tree, see if we can use a memory arena
@@ -21,6 +22,7 @@
 - No known bugs
 
 # DONE
++ Delete selection
 + [bug] when duplicating last line, the '\n' is off
 + [bug] Cursor is off on the last line
 + Duplicate lines on ctrl+D

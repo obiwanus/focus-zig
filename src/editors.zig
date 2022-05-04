@@ -642,35 +642,44 @@ pub const Editor = struct {
                 }
                 self.cursor.col_wanted = null;
             },
-            .backspace => if (self.cursor.pos > 0) {
-                const to_prev_tabstop = x: {
-                    var spaces = self.cursor.col % tab_size;
-                    if (spaces == 0 and self.cursor.col > 0) spaces = 4;
-                    break :x spaces;
-                };
-                // Check if we can delete spaces to the previous tabstop
-                var all_spaces: bool = false;
-                if (to_prev_tabstop > 0) {
-                    const pos = self.cursor.pos;
-                    all_spaces = for (buf.chars.items[(pos - to_prev_tabstop)..pos]) |char| {
-                        if (char != ' ') break false;
-                    } else true;
-                    if (all_spaces) {
-                        // Delete all spaces
-                        self.cursor.pos -= to_prev_tabstop;
-                        const EMPTY_ARRAY = [_]u.Char{};
-                        buf.chars.replaceRange(self.cursor.pos, to_prev_tabstop, EMPTY_ARRAY[0..]) catch unreachable;
+            .backspace => {
+                if (self.cursor.getSelectionRange()) |selection| {
+                    buf.chars.replaceRange(selection.start, selection.end, &[_]u.Char{}) catch unreachable;
+                    self.cursor.pos = selection.start;
+                } else if (self.cursor.pos > 0) {
+                    const to_prev_tabstop = x: {
+                        var spaces = self.cursor.col % tab_size;
+                        if (spaces == 0 and self.cursor.col > 0) spaces = 4;
+                        break :x spaces;
+                    };
+                    // Check if we can delete spaces to the previous tabstop
+                    var all_spaces: bool = false;
+                    if (to_prev_tabstop > 0) {
+                        const pos = self.cursor.pos;
+                        all_spaces = for (buf.chars.items[(pos - to_prev_tabstop)..pos]) |char| {
+                            if (char != ' ') break false;
+                        } else true;
+                        if (all_spaces) {
+                            // Delete all spaces
+                            self.cursor.pos -= to_prev_tabstop;
+                            buf.chars.replaceRange(self.cursor.pos, to_prev_tabstop, &[_]u.Char{}) catch unreachable;
+                        }
                     }
-                }
-                if (!all_spaces) {
-                    // Just delete 1 char
-                    self.cursor.pos -= 1;
-                    _ = buf.chars.orderedRemove(self.cursor.pos);
+                    if (!all_spaces) {
+                        // Just delete 1 char
+                        self.cursor.pos -= 1;
+                        _ = buf.chars.orderedRemove(self.cursor.pos);
+                    }
                 }
                 self.cursor.col_wanted = null;
             },
-            .delete => if (buf.chars.items.len >= 1 and self.cursor.pos < buf.chars.items.len) {
-                _ = buf.chars.orderedRemove(self.cursor.pos);
+            .delete => {
+                if (self.cursor.getSelectionRange()) |selection| {
+                    buf.chars.replaceRange(selection.start, selection.end, &[_]u.Char{}) catch unreachable;
+                    self.cursor.pos = selection.start;
+                } else if (buf.chars.items.len >= 1 and self.cursor.pos < buf.chars.items.len) {
+                    _ = buf.chars.orderedRemove(self.cursor.pos);
+                }
                 self.cursor.col_wanted = null;
             },
             else => {

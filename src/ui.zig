@@ -225,12 +225,11 @@ pub const Ui = struct {
                     break;
                 }
             }
-
             if (dir_list_truncated) {
                 // Draw the truncation bubble first
                 const w = 3 * font.xadvance + 2 * padding;
                 var r = input_rect.splitLeft(w, padding);
-                self.drawSolidRect(r, style.colors.CURSOR_INACTIVE);
+                self.drawSolidRect(r, style.colors.SELECTION_INACTIVE);
                 const text_rect = r.shrink(padding, adjust_y, padding, 0);
                 const name = u.bytesToChars("...", tmp_allocator) catch unreachable;
                 self.drawLabel(name, text_rect.topLeft(), style.colors.PUNCTUATION);
@@ -239,7 +238,7 @@ pub const Ui = struct {
             for (dialog.open_dirs.items[total_dirs - num_dirs ..]) |d| {
                 const w = @intToFloat(f32, d.name.items.len) * font.xadvance + 2 * padding;
                 var r = input_rect.splitLeft(w, padding);
-                self.drawSolidRect(r, style.colors.CURSOR_INACTIVE);
+                self.drawSolidRect(r, style.colors.SELECTION_INACTIVE);
                 const text_rect = r.shrink(padding, adjust_y, padding, 0);
                 const name = u.bytesToChars(d.name.items, tmp_allocator) catch unreachable;
                 self.drawLabel(name, text_rect.topLeft(), style.colors.PUNCTUATION);
