@@ -315,6 +315,10 @@ const Cursor = struct {
     const Range = struct {
         start: usize,
         end: usize,
+
+        pub fn len(self: Range) usize {
+            return self.end - self.start;
+        }
     };
 
     fn getSelectionRange(self: Cursor) ?Range {
@@ -545,13 +549,18 @@ pub const Editor = struct {
     }
 
     fn typeChar(self: *Editor, char: u.Char, buf: *Buffer) void {
-        const last_char = buf.chars.items.len -| 1;
-        if (self.cursor.pos <= last_char) {
-            buf.chars.insert(self.cursor.pos, char) catch u.oom();
+        if (self.cursor.getSelectionRange()) |selection| {
+            buf.chars.replaceRange(selection.start, selection.len(), &[_]u.Char{char}) catch u.oom();
+            self.cursor.pos = selection.start + 1;
         } else {
-            buf.chars.append(char) catch u.oom();
+            const last_char = buf.chars.items.len -| 1;
+            if (self.cursor.pos <= last_char) {
+                buf.chars.insert(self.cursor.pos, char) catch u.oom();
+            } else {
+                buf.chars.append(char) catch u.oom();
+            }
+            self.cursor.pos += 1;
         }
-        self.cursor.pos += 1;
         self.cursor.col_wanted = null;
         buf.dirty = true;
         buf.modified = true;
@@ -644,7 +653,7 @@ pub const Editor = struct {
             },
             .backspace => {
                 if (self.cursor.getSelectionRange()) |selection| {
-                    buf.chars.replaceRange(selection.start, selection.end, &[_]u.Char{}) catch unreachable;
+                    buf.chars.replaceRange(selection.start, selection.len(), &[_]u.Char{}) catch unreachable;
                     self.cursor.pos = selection.start;
                 } else if (self.cursor.pos > 0) {
                     const to_prev_tabstop = x: {
@@ -675,7 +684,7 @@ pub const Editor = struct {
             },
             .delete => {
                 if (self.cursor.getSelectionRange()) |selection| {
-                    buf.chars.replaceRange(selection.start, selection.end, &[_]u.Char{}) catch unreachable;
+                    buf.chars.replaceRange(selection.start, selection.len(), &[_]u.Char{}) catch unreachable;
                     self.cursor.pos = selection.start;
                 } else if (buf.chars.items.len >= 1 and self.cursor.pos < buf.chars.items.len) {
                     _ = buf.chars.orderedRemove(self.cursor.pos);

@@ -1,6 +1,7 @@
 # TODO
-- Replace selection when typing
+- Select lines with ctrl+L
 - [ui] When pressing home, jump back only to the indented code
+- [ui] Enlarge the current editor on shift+ctrl+L
 - Multiple cursors
 - [optimisation] Highlighting syntax:
     - Implement a few languages, not just Zig
@@ -22,6 +23,7 @@
 - No known bugs
 
 # DONE
++ Replace selection when typing
 + Delete selection
 + [bug] when duplicating last line, the '\n' is off
 + [bug] Cursor is off on the last line
