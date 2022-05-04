@@ -582,21 +582,42 @@ pub const Editor = struct {
     }
 
     fn keyPress(self: *Editor, buf: *Buffer, key: glfw.Key, mods: glfw.Mods) void {
-        const tab_size = 4;
+        const TAB_SIZE = 4;
 
         buf.dirty = true;
 
         // Insertions/deletions of sorts
         switch (key) {
             .tab => {
-                const SPACES = [1]u.Char{' '} ** tab_size;
-                const to_next_tabstop = tab_size - self.cursor.col % tab_size;
-                if (self.cursor.pos >= buf.chars.items.len) {
-                    buf.chars.appendSlice(SPACES[0..to_next_tabstop]) catch u.oom();
+                const SPACES = [1]u.Char{' '} ** TAB_SIZE;
+
+                if (self.cursor.getSelectionRange()) |selection| {
+                    // Indent selected block
+                    const first_line = CharPos.getFromBufferPos(buf.lines.items, selection.start).line;
+                    const last_line = CharPos.getFromBufferPos(buf.lines.items, selection.end).line;
+                    var spaces_inserted: usize = 0;
+                    for (buf.lines.items[first_line .. last_line + 1]) |line_start| {
+                        buf.chars.insertSlice(line_start + spaces_inserted, &SPACES) catch u.oom();
+                        spaces_inserted += TAB_SIZE;
+                    }
+                    // Adjust selection
+                    if (self.cursor.pos == selection.start) {
+                        self.cursor.selection_start.? += spaces_inserted - TAB_SIZE;
+                    } else {
+                        self.cursor.pos += spaces_inserted - TAB_SIZE;
+                    }
+                    self.cursor.keep_selection = true;
                 } else {
-                    buf.chars.insertSlice(self.cursor.pos, SPACES[0..to_next_tabstop]) catch u.oom();
+                    // Insert spaces
+                    const to_next_tabstop = TAB_SIZE - self.cursor.col % TAB_SIZE;
+                    if (self.cursor.pos >= buf.chars.items.len) {
+                        buf.chars.appendSlice(SPACES[0..to_next_tabstop]) catch u.oom();
+                    } else {
+                        buf.chars.insertSlice(self.cursor.pos, SPACES[0..to_next_tabstop]) catch u.oom();
+                    }
+                    self.cursor.pos += to_next_tabstop;
                 }
-                self.cursor.pos += to_next_tabstop;
+
                 self.cursor.col_wanted = null;
             },
             .enter => {
@@ -640,7 +661,7 @@ pub const Editor = struct {
 
                     const opening_block = prev_char != null and prev_char.? == '{' and (next_char == null or next_char != null and next_char.? == '\n');
                     if (opening_block) {
-                        indent += tab_size;
+                        indent += TAB_SIZE;
                     }
 
                     char_buf[0] = '\n';
@@ -654,7 +675,7 @@ pub const Editor = struct {
 
                     if (opening_block) {
                         // Insert a closing brace
-                        indent -= tab_size;
+                        indent -= TAB_SIZE;
                         if (next_char == null) {
                             buf.chars.appendSlice(char_buf[0 .. indent + 1]) catch u.oom();
                             buf.chars.append('}') catch u.oom();
@@ -672,7 +693,7 @@ pub const Editor = struct {
                     self.cursor.pos = selection.start;
                 } else if (self.cursor.pos > 0) {
                     const to_prev_tabstop = x: {
-                        var spaces = self.cursor.col % tab_size;
+                        var spaces = self.cursor.col % TAB_SIZE;
                         if (spaces == 0 and self.cursor.col > 0) spaces = 4;
                         break :x spaces;
                     };

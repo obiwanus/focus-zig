@@ -1,4 +1,6 @@
 # TODO
+- Unindent blocks with shift+tab
+- Select words with ctrl+d
 - [ui] When pressing home, jump back only to the indented code
 - [ui] Enlarge the current editor on shift+ctrl+L
 - Multiple cursors
@@ -22,6 +24,7 @@
 - No known bugs
 
 # DONE
++ Indent selections with tab
 + Select lines with ctrl+L
 + Replace selection when typing
 + Delete selection
