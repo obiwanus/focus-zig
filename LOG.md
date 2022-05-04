@@ -1,5 +1,4 @@
 # TODO
-- [bug] After cutting everything, cursor is off
 - Multiple cursors
 - [optimisation] Highlighting syntax:
     - Implement a few languages, not just Zig
@@ -22,6 +21,7 @@
 - No known bugs
 
 # DONE
++ [bug] Cursor is off on the last line
 + Duplicate lines on ctrl+D
 + Select text, copy/cut/paste/duplicate
     + Create a clipboard buffer for cursor

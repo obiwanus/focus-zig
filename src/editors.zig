@@ -366,7 +366,7 @@ pub const CharPos = struct {
         var left: usize = 0;
         var right: usize = lines.len - 1;
 
-        const line = if (pos == lines[right])
+        const line = if (pos >= lines[right])
             right
         else while (right - left > 1) {
             const mid = left + (right - left) / 2;
@@ -412,6 +412,9 @@ pub const Editor = struct {
             const cursor = CharPos.getFromBufferPos(buf.lines.items, self.cursor.pos);
             self.cursor.line = cursor.line;
             self.cursor.col = cursor.col;
+            u.println("lines: {any}", .{buf.lines.items});
+            u.println("cursor.pos: {}. {}:{}", .{ self.cursor.pos, cursor.line, cursor.col });
+            u.println("------------------", .{});
         }
 
         self.moveViewportToCursor(char_size); // depends on lines_per_screen etc
