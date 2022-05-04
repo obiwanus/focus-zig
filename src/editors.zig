@@ -292,6 +292,7 @@ const Cursor = struct {
     line: usize = 0, // from the beginning of buffer
     col: usize = 0, // actual column
     col_wanted: ?usize = null, // where the cursor wants to be
+    selection_start: ?usize = null,
 };
 
 const ScrollAnimation = struct {
@@ -416,28 +417,28 @@ pub const Editor = struct {
             }
 
             // First draw selections
-            {
-                const start_pos = self.cursor.pos;
-                const end_pos = self.cursor.pos + 50;
+            if (self.cursor.selection_start) |selection_start| {
+                const sel_pos = CharPos.getFromBufferPos(buf.lines.items, selection_start);
+                const cur_pos = CharPos.getFromBufferPos(buf.lines.items, self.cursor.pos);
+                const start = if (selection_start < self.cursor.pos) sel_pos else cur_pos;
+                const end = if (selection_start < self.cursor.pos) cur_pos else sel_pos;
 
-                const start = CharPos.getFromBufferPos(buf.lines.items, start_pos);
-                const end = CharPos.getFromBufferPos(buf.lines.items, end_pos);
+                const sel_color = if (is_active) style.colors.SELECTION_ACTIVE else style.colors.SELECTION_INACTIVE;
 
                 var line: usize = start.line;
                 while (line <= end.line) : (line += 1) {
                     const start_col = if (line == start.line) start.col -| col_min else 0;
-                    const end_col = if (line == end.line)
-                        end.col -| col_min
-                    else
-                        // TODO: fix overflows
-                        buf.lines.items[line + 1] - buf.lines.items[line] - col_min;
+                    var end_col = if (line == end.line) end.col else buf.lines.items[line + 1] - buf.lines.items[line];
+                    if (end_col > col_max + 1) end_col = col_max + 1;
+                    end_col -|= col_min;
+
                     const r = Rect{
                         .x = top_left.x + @intToFloat(f32, start_col) * char_size.x,
                         .y = top_left.y + @intToFloat(f32, line -| line_min) * char_size.y - adjust_y,
                         .w = @intToFloat(f32, end_col - start_col) * char_size.x,
                         .h = char_size.y,
                     };
-                    ui.drawSolidRect(r, style.colors.CURSOR_INACTIVE);
+                    ui.drawSolidRect(r, sel_color);
                 }
             }
 
@@ -448,7 +449,8 @@ pub const Editor = struct {
                 .w = char_size.x,
                 .h = char_size.y,
             };
-            ui.drawSolidRect(cursor_rect, if (is_active) style.colors.CURSOR_ACTIVE else style.colors.CURSOR_INACTIVE);
+            const cursor_color = if (is_active) style.colors.CURSOR_ACTIVE else style.colors.CURSOR_INACTIVE;
+            ui.drawSolidRect(cursor_rect, cursor_color);
 
             // Then draw text on top
             ui.drawText(chars, colors, top_left, col_min, col_max);
@@ -638,50 +640,64 @@ pub const Editor = struct {
             },
         }
 
-        // Things that don't modify the buffer
-        switch (key) {
-            .left => {
-                self.cursor.pos -|= 1;
-                self.cursor.col_wanted = null;
-            },
-            .right => {
-                if (self.cursor.pos < buf.chars.items.len) {
-                    self.cursor.pos += 1;
-                    self.cursor.col_wanted = null;
-                }
-            },
-            .up => {
-                const offset: usize = if (mods.control) 5 else 1;
-                self.moveCursorToLine(self.cursor.line -| offset, buf);
-            },
-            .down => {
-                const offset: usize = if (mods.control) 5 else 1;
-                self.moveCursorToLine(self.cursor.line + offset, buf);
-            },
-            .page_up => {
-                self.moveCursorToLine(self.cursor.line -| self.lines_per_screen, buf);
-            },
-            .page_down => {
-                self.moveCursorToLine(self.cursor.line + self.lines_per_screen, buf);
-            },
-            .home => {
-                self.cursor.pos = buf.lines.items[self.cursor.line];
-                self.cursor.col_wanted = null;
-            },
-            .end => {
-                if (self.cursor.line < buf.lines.items.len -| 1) {
-                    self.cursor.pos = buf.lines.items[self.cursor.line + 1] - 1;
-                } else {
-                    // last line
-                    self.cursor.pos = buf.chars.items.len;
-                }
-                self.cursor.col_wanted = std.math.maxInt(usize);
-            },
-            else => {},
-        }
+        if (!buf.dirty) {
+            const old_pos = self.cursor.pos;
 
-        // Need to make sure there are no early returns from this function
-        if (buf.dirty) buf.modified = true;
+            // Cursor movements
+            switch (key) {
+                .left => {
+                    self.cursor.pos -|= 1;
+                    self.cursor.col_wanted = null;
+                },
+                .right => {
+                    if (self.cursor.pos < buf.chars.items.len) {
+                        self.cursor.pos += 1;
+                        self.cursor.col_wanted = null;
+                    }
+                },
+                .up => {
+                    const offset: usize = if (mods.control) 5 else 1;
+                    self.moveCursorToLine(self.cursor.line -| offset, buf);
+                },
+                .down => {
+                    const offset: usize = if (mods.control) 5 else 1;
+                    self.moveCursorToLine(self.cursor.line + offset, buf);
+                },
+                .page_up => {
+                    self.moveCursorToLine(self.cursor.line -| self.lines_per_screen, buf);
+                },
+                .page_down => {
+                    self.moveCursorToLine(self.cursor.line + self.lines_per_screen, buf);
+                },
+                .home => {
+                    self.cursor.pos = buf.lines.items[self.cursor.line];
+                    self.cursor.col_wanted = null;
+                },
+                .end => {
+                    if (self.cursor.line < buf.lines.items.len -| 1) {
+                        self.cursor.pos = buf.lines.items[self.cursor.line + 1] - 1;
+                    } else {
+                        // last line
+                        self.cursor.pos = buf.chars.items.len;
+                    }
+                    self.cursor.col_wanted = std.math.maxInt(usize);
+                },
+                else => {},
+            }
+            if (old_pos != self.cursor.pos) {
+                if (mods.shift) {
+                    if (self.cursor.selection_start == null) {
+                        // Start new selection
+                        self.cursor.selection_start = old_pos;
+                    }
+                } else {
+                    self.cursor.selection_start = null;
+                }
+            }
+        } else {
+            buf.modified = true;
+            self.cursor.selection_start = null;
+        }
 
         if (mods.control and key == .s and buf.modified) buf.saveToDisk() catch unreachable; // TODO: handle
     }

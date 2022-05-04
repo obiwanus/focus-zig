@@ -22,6 +22,8 @@ pub const colors = struct {
     pub const BACKGROUND_BRIGHT = Color{ .r = 0.131, .g = 0.202, .b = 0.25, .a = 1.0 };
     pub const CURSOR_ACTIVE = Color{ .r = 0.2, .g = 0.8, .b = 0.8, .a = 0.6 };
     pub const CURSOR_INACTIVE = Color{ .r = 0.6, .g = 0.6, .b = 0.6, .a = 0.2 };
+    pub const SELECTION_ACTIVE = Color{ .r = 0.11, .g = 0.267, .b = 0.29, .a = 1.0 };
+    pub const SELECTION_INACTIVE = Color{ .r = 0.11, .g = 0.267, .b = 0.29, .a = 0.5 };
     pub const SCROLLBAR = Color{ .r = 0.065, .g = 0.101, .b = 0.125, .a = 0.5 };
 
     // Code

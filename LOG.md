@@ -2,12 +2,19 @@
 - Select text, copy/cut/paste/duplicate
     + Draw a selection
     - Select using cursor
+        + If shift+arrow is pressed, start a selection or modify existing
+        + If anything else is pressed, remove current selection
+        + Fix overflows to the other pane
+        - If a buffer is reloaded, remove selection and adjust cursor
+    - Fix selection appearance at the end of the file
     - Check for overflows
 - Multiple cursors
 - [optimisation] Highlighting syntax:
     - Implement a few languages, not just Zig
     - Measure how expensive it is to rehighlight everything
 - [bug] Colors are off when non-ascii bytes are present (tokenizer doesn't support utf-8)
+- [ui] Don't set wanted position to infinity when pressing end
+- [ui] When pressing home, jump back only to the indented code
 - [ui] When drawing a buffer with a conflict we need to ask what to do
 - [tech-debt] When scanning the root folder, ignore the ignored folders right away (modify dir walker)
 - [tech-debt] When building a directory tree, see if we can use a memory arena
