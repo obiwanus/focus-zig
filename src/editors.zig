@@ -412,9 +412,6 @@ pub const Editor = struct {
             const cursor = CharPos.getFromBufferPos(buf.lines.items, self.cursor.pos);
             self.cursor.line = cursor.line;
             self.cursor.col = cursor.col;
-            u.println("lines: {any}", .{buf.lines.items});
-            u.println("cursor.pos: {}. {}:{}", .{ self.cursor.pos, cursor.line, cursor.col });
-            u.println("------------------", .{});
         }
 
         self.moveViewportToCursor(char_size); // depends on lines_per_screen etc
@@ -787,22 +784,19 @@ pub const Editor = struct {
             // Char range to copy
             var start = buf.lines.items[first_line];
             var end = if (last_line + 1 < buf.lines.items.len) buf.lines.items[last_line + 1] else buf.chars.items.len;
-            var num_chars = end - start;
 
             // Make sure we won't reallocate when copying
-            buf.chars.ensureTotalCapacity(buf.chars.items.len + num_chars + 1) catch u.oom();
-
-            // If we're trying to duplicate the last line, '\n' won't be included in the range
-            if (buf.chars.items[end - 1] != '\n') {
-                buf.chars.insert(start, '\n') catch u.oom();
-                start += 1;
-                end += 1;
-                num_chars += 1;
-            }
-
+            buf.chars.ensureTotalCapacity(buf.chars.items.len + end - start) catch u.oom();
             buf.chars.insertSlice(start, buf.chars.items[start..end]) catch u.oom();
 
+            // If last line is included, we have to add a newline manually
+            if (last_line == buf.lines.items.len - 1) {
+                buf.chars.insert(end, '\n') catch u.oom();
+                end += 1;
+            }
+
             // Move selection forward
+            const num_chars = end - start;
             self.cursor.pos += num_chars;
             if (self.cursor.selection_start != null) self.cursor.selection_start.? += num_chars;
             self.cursor.keep_selection = true;

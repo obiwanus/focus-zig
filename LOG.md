@@ -21,6 +21,7 @@
 - No known bugs
 
 # DONE
++ [bug] when duplicating last line, the '\n' is off
 + [bug] Cursor is off on the last line
 + Duplicate lines on ctrl+D
 + Select text, copy/cut/paste/duplicate
