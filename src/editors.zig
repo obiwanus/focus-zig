@@ -330,6 +330,21 @@ const Cursor = struct {
         };
     }
 
+    // Returns the range that covers all selected lines
+    // (or just the line on which the cursor is if nothing is selected)
+    fn getRangeOnWholeLines(self: Cursor, buf: *const Buffer) Range {
+        var first_line: usize = self.line;
+        var last_line: usize = self.line;
+        if (self.getSelectionRange()) |selection| {
+            first_line = CharPos.getFromBufferPos(buf.lines.items, selection.start).line;
+            last_line = CharPos.getFromBufferPos(buf.lines.items, selection.end).line;
+        }
+        return Range{
+            .start = buf.lines.items[first_line],
+            .end = if (last_line + 1 < buf.lines.items.len) buf.lines.items[last_line + 1] else buf.chars.items.len,
+        };
+    }
+
     fn copyToClipboard(self: *Cursor, chars: []const u.Char) void {
         self.clipboard.clearRetainingCapacity();
         self.clipboard.appendSlice(chars) catch u.oom();
@@ -750,7 +765,6 @@ pub const Editor = struct {
             }
         }
 
-        // Copy / paste
         if (u.modsOnlyCtrl(mods)) {
             old_pos = self.cursor.pos;
             switch (key) {
@@ -785,6 +799,12 @@ pub const Editor = struct {
                         buf.dirty = true;
                     }
                 },
+                .l => {
+                    // Select line
+                    const range = self.cursor.getRangeOnWholeLines(buf);
+                    self.cursor.selection_start = range.start;
+                    self.cursor.pos = range.end;
+                },
                 else => {},
             }
             if (self.cursor.pos != old_pos) self.cursor.col_wanted = null;
@@ -792,31 +812,22 @@ pub const Editor = struct {
 
         if (mods.control and mods.shift and key == .d) {
             // Duplicate lines
-            var first_line: usize = self.cursor.line;
-            var last_line: usize = self.cursor.line;
-            if (self.cursor.getSelectionRange()) |selection| {
-                first_line = CharPos.getFromBufferPos(buf.lines.items, selection.start).line;
-                last_line = CharPos.getFromBufferPos(buf.lines.items, selection.end).line;
-            }
-
-            // Char range to copy
-            var start = buf.lines.items[first_line];
-            var end = if (last_line + 1 < buf.lines.items.len) buf.lines.items[last_line + 1] else buf.chars.items.len;
+            var range = self.cursor.getRangeOnWholeLines(buf);
+            const newline_needed = range.end >= buf.chars.items.len;
 
             // Make sure we won't reallocate when copying
-            buf.chars.ensureTotalCapacity(buf.chars.items.len + end - start) catch u.oom();
-            buf.chars.insertSlice(start, buf.chars.items[start..end]) catch u.oom();
+            buf.chars.ensureTotalCapacity(buf.chars.items.len + range.len()) catch u.oom();
+            buf.chars.insertSlice(range.start, buf.chars.items[range.start..range.end]) catch u.oom();
 
             // If last line is included, we have to add a newline manually
-            if (last_line == buf.lines.items.len - 1) {
-                buf.chars.insert(end, '\n') catch u.oom();
-                end += 1;
+            if (newline_needed) {
+                buf.chars.insert(range.end, '\n') catch u.oom();
+                range.end += 1;
             }
 
             // Move selection forward
-            const num_chars = end - start;
-            self.cursor.pos += num_chars;
-            if (self.cursor.selection_start != null) self.cursor.selection_start.? += num_chars;
+            self.cursor.pos += range.len();
+            if (self.cursor.selection_start != null) self.cursor.selection_start.? += range.len();
             self.cursor.keep_selection = true;
 
             buf.dirty = true;

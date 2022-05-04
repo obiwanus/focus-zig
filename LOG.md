@@ -1,16 +1,15 @@
 # TODO
-- Select lines with ctrl+L
 - [ui] When pressing home, jump back only to the indented code
 - [ui] Enlarge the current editor on shift+ctrl+L
 - Multiple cursors
-- [optimisation] Highlighting syntax:
-    - Implement a few languages, not just Zig
-    - Measure how expensive it is to rehighlight everything
 - [bug] Colors are off when non-ascii bytes are present (tokenizer doesn't support utf-8)
 - [ui] When drawing a buffer with a conflict we need to ask what to do
 - [tech-debt] When scanning the root folder, ignore the ignored folders right away (modify dir walker)
 - [tech-debt] When building a directory tree, see if we can use a memory arena
               (maybe don't use array lists and instead just allocate slices of exact size from the arena)
+- Highlight: implement a few languages, not just Zig
+- [optimisation] Measure how expensive it is to rehighlight everything
+
 
 # WHAT NEEDS TO WORK BEFORE I CAN START USING IT
 + Open files
@@ -23,6 +22,7 @@
 - No known bugs
 
 # DONE
++ Select lines with ctrl+L
 + Replace selection when typing
 + Delete selection
 + [bug] when duplicating last line, the '\n' is off
