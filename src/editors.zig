@@ -56,8 +56,17 @@ pub fn updateAndDrawAll(self: *Self, ui: *Ui, clock_ms: f64, tmp_allocator: Allo
     }
 
     // Always try to update all open buffers
-    for (self.open_buffers.items) |*buf| {
-        if (buf.dirty) buf.syncInternalData();
+    for (self.open_buffers.items) |*buf, buf_id| {
+        if (buf.dirty) {
+            buf.syncInternalData();
+
+            // Remove selection on all cursors
+            for (self.open_editors.items) |*ed| {
+                if (ed.buffer == buf_id) {
+                    ed.cursor.selection_start = null;
+                }
+            }
+        }
     }
 
     // The editors always take the entire screen area
@@ -457,6 +466,9 @@ pub const Editor = struct {
 
             // If some text on the left is invisible, add shadow
             if (col_min > 0) ui.drawRightShadow(Rect{ .x = area.x - 5, .y = area.y - margin.y, .w = 1, .h = area.h + margin.y }, 7 * scale);
+
+            // Draw shadow on top if scrolled down
+            if (self.scroll.y > 0) ui.drawBottomShadow(Rect{ .x = rect.x, .y = rect.y - 1, .w = rect.w, .h = 1 }, 7 * scale);
         }
 
         // Draw footer
@@ -640,64 +652,61 @@ pub const Editor = struct {
             },
         }
 
-        if (!buf.dirty) {
-            const old_pos = self.cursor.pos;
+        const old_pos = self.cursor.pos;
 
-            // Cursor movements
-            switch (key) {
-                .left => {
-                    self.cursor.pos -|= 1;
+        // Cursor movements
+        switch (key) {
+            .left => {
+                self.cursor.pos -|= 1;
+                self.cursor.col_wanted = null;
+            },
+            .right => {
+                if (self.cursor.pos < buf.chars.items.len) {
+                    self.cursor.pos += 1;
                     self.cursor.col_wanted = null;
-                },
-                .right => {
-                    if (self.cursor.pos < buf.chars.items.len) {
-                        self.cursor.pos += 1;
-                        self.cursor.col_wanted = null;
-                    }
-                },
-                .up => {
-                    const offset: usize = if (mods.control) 5 else 1;
-                    self.moveCursorToLine(self.cursor.line -| offset, buf);
-                },
-                .down => {
-                    const offset: usize = if (mods.control) 5 else 1;
-                    self.moveCursorToLine(self.cursor.line + offset, buf);
-                },
-                .page_up => {
-                    self.moveCursorToLine(self.cursor.line -| self.lines_per_screen, buf);
-                },
-                .page_down => {
-                    self.moveCursorToLine(self.cursor.line + self.lines_per_screen, buf);
-                },
-                .home => {
-                    self.cursor.pos = buf.lines.items[self.cursor.line];
-                    self.cursor.col_wanted = null;
-                },
-                .end => {
-                    if (self.cursor.line < buf.lines.items.len -| 1) {
-                        self.cursor.pos = buf.lines.items[self.cursor.line + 1] - 1;
-                    } else {
-                        // last line
-                        self.cursor.pos = buf.chars.items.len;
-                    }
-                    self.cursor.col_wanted = std.math.maxInt(usize);
-                },
-                else => {},
-            }
-            if (old_pos != self.cursor.pos) {
-                if (mods.shift) {
-                    if (self.cursor.selection_start == null) {
-                        // Start new selection
-                        self.cursor.selection_start = old_pos;
-                    }
-                } else {
-                    self.cursor.selection_start = null;
                 }
-            }
-        } else {
-            buf.modified = true;
-            self.cursor.selection_start = null;
+            },
+            .up => {
+                const offset: usize = if (mods.control) 5 else 1;
+                self.moveCursorToLine(self.cursor.line -| offset, buf);
+            },
+            .down => {
+                const offset: usize = if (mods.control) 5 else 1;
+                self.moveCursorToLine(self.cursor.line + offset, buf);
+            },
+            .page_up => {
+                self.moveCursorToLine(self.cursor.line -| self.lines_per_screen, buf);
+            },
+            .page_down => {
+                self.moveCursorToLine(self.cursor.line + self.lines_per_screen, buf);
+            },
+            .home => {
+                self.cursor.pos = buf.lines.items[self.cursor.line];
+                self.cursor.col_wanted = null;
+            },
+            .end => {
+                if (self.cursor.line < buf.lines.items.len -| 1) {
+                    self.cursor.pos = buf.lines.items[self.cursor.line + 1] - 1;
+                } else {
+                    // last line
+                    self.cursor.pos = buf.chars.items.len;
+                }
+                self.cursor.col_wanted = std.math.maxInt(usize);
+            },
+            else => {},
         }
+        if (old_pos != self.cursor.pos) {
+            if (mods.shift) {
+                if (self.cursor.selection_start == null) {
+                    // Start new selection
+                    self.cursor.selection_start = old_pos;
+                }
+            } else {
+                self.cursor.selection_start = null;
+            }
+        }
+
+        if (buf.dirty) buf.modified = true;
 
         if (mods.control and key == .s and buf.modified) buf.saveToDisk() catch unreachable; // TODO: handle
     }

@@ -1,13 +1,5 @@
 # TODO
 - Select text, copy/cut/paste/duplicate
-    + Draw a selection
-    - Select using cursor
-        + If shift+arrow is pressed, start a selection or modify existing
-        + If anything else is pressed, remove current selection
-        + Fix overflows to the other pane
-        - If a buffer is reloaded, remove selection and adjust cursor
-    - Fix selection appearance at the end of the file
-    - Check for overflows
 - Multiple cursors
 - [optimisation] Highlighting syntax:
     - Implement a few languages, not just Zig
@@ -30,6 +22,14 @@
 - Undo/redo
 
 # DONE
++ Draw a selection
++ Select using cursor
+    + If shift+arrow is pressed, start a selection or modify existing
+    + If anything else is pressed, remove current selection
+    + Fix overflows to the other pane
+    + If a buffer is reloaded, remove selection and adjust cursor
++ Fix selection appearance at the end of the file
++ Check for overflows
 + Use binary search to get char pos from buffer pos
 + Display conflict information in the footer
 + Update modified time when saving buffer to disk

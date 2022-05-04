@@ -380,6 +380,12 @@ pub const Ui = struct {
         self.drawRect(Rect{ .x = r.x, .y = r.y - size, .w = r.w, .h = size }, transparent, transparent, dark, dark);
     }
 
+    pub fn drawBottomShadow(self: *Ui, r: Rect, size: f32) void {
+        const dark = style.colors.SHADOW_DARK;
+        const transparent = style.colors.SHADOW_TRANSPARENT;
+        self.drawRect(Rect{ .x = r.x, .y = r.y + r.h, .w = r.w, .h = size }, dark, dark, transparent, transparent);
+    }
+
     pub fn drawRightShadow(self: *Ui, r: Rect, size: f32) void {
         const dark = style.colors.SHADOW_DARK;
         const transparent = style.colors.SHADOW_TRANSPARENT;

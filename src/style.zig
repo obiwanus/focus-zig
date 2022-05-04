@@ -39,8 +39,10 @@ pub const colors = struct {
     pub const KEYWORD = Color{ .r = 0.902, .g = 0.493, .b = 0.457, .a = 1.0 };
 
     // Special
-    pub const SHADOW_DARK = Color{ .r = 0.057, .g = 0.089, .b = 0.11, .a = 0.2 };
-    pub const SHADOW_TRANSPARENT = Color{ .r = 0.057, .g = 0.089, .b = 0.11, .a = 0 };
+    pub const SHADOW_DARK = Color{ .r = 0, .g = 0, .b = 0, .a = 0.2 };
+    pub const SHADOW_TRANSPARENT = Color{ .r = 0, .g = 0, .b = 0, .a = 0 };
+    // pub const SHADOW_DARK = Color{ .r = 0.057, .g = 0.089, .b = 0.11, .a = 0.2 };
+    // pub const SHADOW_TRANSPARENT = Color{ .r = 0.057, .g = 0.089, .b = 0.11, .a = 0 };
     pub const WARNING = Color{ .r = 0.85, .g = 0.68, .b = 0.33, .a = 1.0 };
 
     pub const PALETTE = [_]Color{

@@ -197,7 +197,7 @@ pub fn main() !void {
             clock_ms = @intToFloat(f64, std.time.nanoTimestamp() - app_start_ms) / 1_000_000;
 
             // Always update at least once in 0.5 seconds
-            const redraw = false; // for debugging
+            const redraw = true; // for debugging
             if (redraw and clock_ms - last_redraw_ms >= 500) {
                 g_events.append(.redraw_requested) catch u.oom();
             }
