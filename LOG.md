@@ -1,7 +1,4 @@
 # TODO
-- Duplicate
-    - On ctrl+shift+D duplicate selection
-    - Or the whole line if no selection
 - [bug] After cutting everything, cursor is off
 - Multiple cursors
 - [optimisation] Highlighting syntax:
@@ -18,12 +15,14 @@
 + Open files
 + Save files
 + Switch between open files
-- Select text, copy/cut/paste/duplicate
++ Select text, copy/cut/paste/duplicate
 - Create new files
 - Search within buffer
 - Undo/redo
+- No known bugs
 
 # DONE
++ Duplicate lines on ctrl+D
 + Select text, copy/cut/paste/duplicate
     + Create a clipboard buffer for cursor
     + On ctrl+C, copy
