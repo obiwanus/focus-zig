@@ -46,6 +46,9 @@ pub fn deinit(self: Self) void {
         buf.lines.deinit();
         if (buf.file) |file| self.allocator.free(file.path);
     }
+    for (self.open_editors.items) |ed| {
+        ed.cursor.clipboard.deinit();
+    }
 }
 
 pub fn updateAndDrawAll(self: *Self, ui: *Ui, clock_ms: f64, tmp_allocator: Allocator) void {
@@ -291,7 +294,10 @@ fn openNewBuffer(self: *Self, path: []const u8) usize {
 }
 
 fn createNewEditor(self: *Self, buffer: usize) usize {
-    const new_editor = Editor{ .buffer = buffer };
+    const new_editor = Editor{
+        .buffer = buffer,
+        .cursor = Cursor{ .clipboard = std.ArrayList(u.Char).init(self.allocator) },
+    };
     self.open_editors.append(new_editor) catch u.oom();
     return self.open_editors.items.len - 1;
 }
@@ -302,6 +308,26 @@ const Cursor = struct {
     col: usize = 0, // actual column
     col_wanted: ?usize = null, // where the cursor wants to be
     selection_start: ?usize = null,
+    clipboard: std.ArrayList(u.Char),
+
+    const Range = struct {
+        start: usize,
+        end: usize,
+    };
+
+    fn getSelectionRange(self: Cursor) ?Range {
+        const selection_start = self.selection_start orelse return null;
+        if (self.pos == selection_start) return null;
+        return Range{
+            .start = std.math.min(selection_start, self.pos),
+            .end = std.math.max(selection_start, self.pos),
+        };
+    }
+
+    fn copyToClipboard(self: *Cursor, chars: []const u.Char) void {
+        self.clipboard.clearRetainingCapacity();
+        self.clipboard.appendSlice(chars) catch u.oom();
+    }
 };
 
 const ScrollAnimation = struct {
@@ -426,11 +452,9 @@ pub const Editor = struct {
             }
 
             // First draw selections
-            if (self.cursor.selection_start) |selection_start| {
-                const sel_pos = CharPos.getFromBufferPos(buf.lines.items, selection_start);
-                const cur_pos = CharPos.getFromBufferPos(buf.lines.items, self.cursor.pos);
-                const start = if (selection_start < self.cursor.pos) sel_pos else cur_pos;
-                const end = if (selection_start < self.cursor.pos) cur_pos else sel_pos;
+            if (self.cursor.getSelectionRange()) |s| {
+                const start = CharPos.getFromBufferPos(buf.lines.items, s.start);
+                const end = CharPos.getFromBufferPos(buf.lines.items, s.end);
 
                 const sel_color = if (is_active) style.colors.SELECTION_ACTIVE else style.colors.SELECTION_INACTIVE;
 
@@ -536,7 +560,7 @@ pub const Editor = struct {
 
         buf.dirty = true;
 
-        // Things that modify the buffer
+        // Insertions/deletions of sorts
         switch (key) {
             .tab => {
                 const SPACES = [1]u.Char{' '} ** tab_size;
@@ -703,6 +727,43 @@ pub const Editor = struct {
                 }
             } else {
                 self.cursor.selection_start = null;
+            }
+        }
+
+        // Copy / paste
+        if (u.modsOnlyCtrl(mods)) {
+            switch (key) {
+                .a => {
+                    // Select all
+                    self.cursor.selection_start = 0;
+                    self.cursor.pos = buf.chars.items.len;
+                },
+                .c, .x => {
+                    // Copy / cut
+                    if (self.cursor.getSelectionRange()) |s| {
+                        self.cursor.copyToClipboard(buf.chars.items[s.start..s.end]);
+                        if (key == .x) {
+                            buf.chars.replaceRange(s.start, s.end - s.start, &[_]u.Char{}) catch u.oom();
+                            self.cursor.pos = s.start;
+                            buf.dirty = true;
+                        }
+                    }
+                },
+                .v => {
+                    // Paste
+                    if (self.cursor.clipboard.items.len > 0) {
+                        const paste_data = self.cursor.clipboard.items;
+                        if (self.cursor.getSelectionRange()) |s| {
+                            buf.chars.replaceRange(s.start, s.end - s.start, paste_data) catch u.oom();
+                        } else if (self.cursor.pos >= buf.chars.items.len) {
+                            buf.chars.appendSlice(paste_data) catch u.oom();
+                        } else {
+                            buf.chars.insertSlice(self.cursor.pos, paste_data) catch u.oom();
+                        }
+                        buf.dirty = true;
+                    }
+                },
+                else => {},
             }
         }
 

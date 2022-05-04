@@ -1,12 +1,8 @@
 # TODO
-- Select text, copy/cut/paste/duplicate
-    - Create a global clipboard buffer
-    - On ctrl+C, copy
-    - On ctrl+X, cut
-    - On ctrl+V, paste
 - Duplicate
     - On ctrl+shift+D duplicate selection
     - Or the whole line if no selection
+- [bug] After cutting everything, cursor is off
 - Multiple cursors
 - [optimisation] Highlighting syntax:
     - Implement a few languages, not just Zig
@@ -28,6 +24,11 @@
 - Undo/redo
 
 # DONE
++ Select text, copy/cut/paste/duplicate
+    + Create a clipboard buffer for cursor
+    + On ctrl+C, copy
+    + On ctrl+X, cut
+    + On ctrl+V, paste
 + [ui] Don't set wanted position to infinity when pressing end
 + Draw a selection
 + Select using cursor
