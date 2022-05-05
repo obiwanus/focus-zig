@@ -798,7 +798,13 @@ pub const Editor = struct {
                 self.moveCursorToLine(self.cursor.line + self.lines_per_screen, buf);
             },
             .home => {
-                self.cursor.pos = buf.lines.items[self.cursor.line];
+                const line_start = buf.lines.items[self.cursor.line];
+                const text_start = buf.lines_whitespace.items[self.cursor.line];
+                if (self.cursor.pos != text_start) {
+                    self.cursor.pos = text_start;
+                } else {
+                    self.cursor.pos = line_start;
+                }
                 self.cursor.col_wanted = null;
             },
             .end => {
