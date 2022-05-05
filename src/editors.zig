@@ -44,6 +44,7 @@ pub fn deinit(self: Self) void {
         buf.chars.deinit();
         buf.colors.deinit();
         buf.lines.deinit();
+        buf.lines_whitespace.deinit();
         if (buf.file) |file| self.allocator.free(file.path);
     }
     for (self.open_editors.items) |ed| {
@@ -282,6 +283,7 @@ fn openNewBuffer(self: *Self, path: []const u8) usize {
         .chars = std.ArrayList(u.Char).init(self.allocator),
         .colors = std.ArrayList(TextColor).init(self.allocator),
         .lines = std.ArrayList(usize).init(self.allocator),
+        .lines_whitespace = std.ArrayList(usize).init(self.allocator),
     };
     // [zig bug]: have to do it separately because otherwise 'path' becomes empty
     new_buffer.file = .{
@@ -592,20 +594,45 @@ pub const Editor = struct {
                 const SPACES = [1]u.Char{' '} ** TAB_SIZE;
 
                 if (self.cursor.getSelectionRange()) |selection| {
-                    // Indent selected block
                     const first_line = CharPos.getFromBufferPos(buf.lines.items, selection.start).line;
                     const last_line = CharPos.getFromBufferPos(buf.lines.items, selection.end).line;
-                    var spaces_inserted: usize = 0;
-                    for (buf.lines.items[first_line .. last_line + 1]) |line_start| {
-                        buf.chars.insertSlice(line_start + spaces_inserted, &SPACES) catch u.oom();
-                        spaces_inserted += TAB_SIZE;
-                    }
-                    // Adjust selection
-                    if (self.cursor.pos == selection.start) {
-                        self.cursor.selection_start.? += spaces_inserted - TAB_SIZE;
+
+                    if (!mods.shift) {
+                        // Indent selected block
+                        var spaces_inserted: usize = 0;
+                        for (buf.lines.items[first_line .. last_line + 1]) |line_start| {
+                            buf.chars.insertSlice(line_start + spaces_inserted, &SPACES) catch u.oom();
+                            spaces_inserted += TAB_SIZE;
+                        }
+                        // Adjust selection
+                        if (self.cursor.pos == selection.start) {
+                            self.cursor.pos += TAB_SIZE;
+                            self.cursor.selection_start.? += spaces_inserted;
+                        } else {
+                            self.cursor.selection_start.? += TAB_SIZE;
+                            self.cursor.pos += spaces_inserted;
+                        }
                     } else {
-                        self.cursor.pos += spaces_inserted - TAB_SIZE;
+                        // Un-indent selected block
+                        var sel_start_adjust: usize = 0;
+                        var removed: usize = 0;
+                        for (buf.lines_whitespace.items[first_line .. last_line + 1]) |text_start, i| {
+                            const line_start = buf.lines.items[first_line + i];
+                            const spaces_to_remove = std.math.min(TAB_SIZE, text_start - line_start);
+                            buf.chars.replaceRange(line_start - removed, spaces_to_remove, &[_]u.Char{}) catch unreachable;
+                            removed += spaces_to_remove;
+                            if (i == 0) sel_start_adjust = std.math.min(selection.start - line_start, spaces_to_remove);
+                        }
+                        // Adjust selection
+                        if (self.cursor.pos == selection.start) {
+                            self.cursor.pos -= sel_start_adjust;
+                            self.cursor.selection_start.? -|= removed;
+                        } else {
+                            self.cursor.selection_start.? -|= sel_start_adjust;
+                            self.cursor.pos -|= removed;
+                        }
                     }
+
                     self.cursor.keep_selection = true;
                 } else {
                     // Insert spaces
@@ -799,7 +826,7 @@ pub const Editor = struct {
                     if (self.cursor.getSelectionRange()) |s| {
                         self.cursor.copyToClipboard(buf.chars.items[s.start..s.end]);
                         if (key == .x) {
-                            buf.chars.replaceRange(s.start, s.end - s.start, &[_]u.Char{}) catch u.oom();
+                            buf.chars.replaceRange(s.start, s.end - s.start, &[_]u.Char{}) catch unreachable;
                             self.cursor.pos = s.start;
                             buf.dirty = true;
                         }
@@ -926,6 +953,7 @@ pub const Buffer = struct {
     chars: std.ArrayList(u.Char),
     colors: std.ArrayList(TextColor),
     lines: std.ArrayList(usize),
+    lines_whitespace: std.ArrayList(usize),
 
     dirty: bool = true, // needs syncing internal structures
     modified: bool = false, // hasn't been saved to disk
@@ -1000,12 +1028,12 @@ pub const Buffer = struct {
         };
         defer allocator.free(file_contents);
 
-        self.bytes.shrinkRetainingCapacity(0);
+        self.bytes.clearRetainingCapacity();
         self.bytes.appendSlice(file_contents) catch u.oom();
 
         // For simplicity we assume that a codepoint equals a character (though it's not true).
         // If we ever encounter multi-codepoint characters, we can revisit this
-        self.chars.shrinkRetainingCapacity(0);
+        self.chars.clearRetainingCapacity();
         self.chars.ensureTotalCapacity(self.bytes.items.len) catch u.oom();
         const utf8_view = std.unicode.Utf8View.init(self.bytes.items) catch @panic("invalid utf-8");
         var iterator = utf8_view.iterator();
@@ -1013,10 +1041,10 @@ pub const Buffer = struct {
             self.chars.append(char) catch u.oom();
         }
 
-        self.colors.shrinkRetainingCapacity(0);
+        self.colors.clearRetainingCapacity();
         self.colors.ensureTotalCapacity(self.chars.items.len) catch u.oom();
 
-        self.lines.shrinkRetainingCapacity(0);
+        self.lines.clearRetainingCapacity();
         self.lines.append(0) catch u.oom(); // first line is always at the buffer start
 
         self.modified = false;
@@ -1028,10 +1056,24 @@ pub const Buffer = struct {
         // Recalculate lines
         {
             self.lines.shrinkRetainingCapacity(1);
+            self.lines_whitespace.clearRetainingCapacity();
+            var new_line = true;
             for (self.chars.items) |char, i| {
+                if (new_line and char != ' ') {
+                    self.lines_whitespace.append(i) catch u.oom();
+                    new_line = false;
+                }
                 if (char == '\n') {
                     self.lines.append(i + 1) catch u.oom();
+                    new_line = true;
                 }
+            }
+
+            if (self.lines.items.len > self.lines_whitespace.items.len) {
+                // If the last line is empty, manually add an entry
+                self.lines_whitespace.append(self.chars.items.len) catch u.oom();
+                // Temporary assert. Can be removed if never triggered
+                u.assert(self.lines.items.len == self.lines_whitespace.items.len);
             }
         }
 

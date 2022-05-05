@@ -1,8 +1,9 @@
 # TODO
-- Unindent blocks with shift+tab
+- Unindent single lines with shift+tab
 - Select words with ctrl+d
 - [ui] When pressing home, jump back only to the indented code
 - [ui] Enlarge the current editor on shift+ctrl+L
+- Strip trailing whitespace on save
 - Multiple cursors
 - [bug] Colors are off when non-ascii bytes are present (tokenizer doesn't support utf-8)
 - [ui] When drawing a buffer with a conflict we need to ask what to do
@@ -24,6 +25,10 @@
 - No known bugs
 
 # DONE
++ Unindent blocks with shift+tab
+    + Build a whitespace line range structure
+    + Fix selection adjustment when indenting
+    + Fix selection adjustment when unindenting
 + Indent selections with tab
 + Select lines with ctrl+L
 + Replace selection when typing
