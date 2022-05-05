@@ -10,6 +10,7 @@ pub const style = @import("style.zig");
 pub const fonts = @import("fonts.zig");
 pub const ui = @import("ui.zig");
 
+pub const Buffer = @import("Buffer.zig");
 pub const Editors = @import("Editors.zig");
 
 pub const vulkan = struct {

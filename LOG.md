@@ -1,6 +1,9 @@
 # TODO
+- Store full line ranges so that we don't have to worry about checking for last line
 - Multiple cursors
     + Select words with ctrl+d
+    - Refactor code so that we have additional cursors
+        - Read how edits are done in focus-reference
     - On subsequent presses search and create more cursors
 - Use a global clipboard unless multiple cursors are used
 - Create new files
