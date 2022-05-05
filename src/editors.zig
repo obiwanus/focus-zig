@@ -103,7 +103,7 @@ pub fn charEntered(self: *Self, char: u.Char) void {
     if (self.activeEditor()) |editor| editor.typeChar(char, self.getBuffer(editor.buffer));
 }
 
-pub fn keyPress(self: *Self, key: glfw.Key, mods: glfw.Mods) void {
+pub fn keyPress(self: *Self, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allocator) void {
     if (mods.control and mods.alt) {
         switch (key) {
             .left => {
@@ -125,7 +125,7 @@ pub fn keyPress(self: *Self, key: glfw.Key, mods: glfw.Mods) void {
             self.closeActivePane();
         }
     } else if (self.activeEditor()) |editor| {
-        editor.keyPress(self.getBuffer(editor.buffer), key, mods);
+        editor.keyPress(self.getBuffer(editor.buffer), key, mods, tmp_allocator);
     }
 }
 
@@ -305,6 +305,15 @@ fn createNewEditor(self: *Self, buffer: usize) usize {
     return self.open_editors.items.len - 1;
 }
 
+const Range = struct {
+    start: usize,
+    end: usize,
+
+    pub fn len(self: Range) usize {
+        return self.end - self.start;
+    }
+};
+
 const Cursor = struct {
     pos: usize = 0,
     line: usize = 0, // from the beginning of buffer
@@ -313,15 +322,6 @@ const Cursor = struct {
     selection_start: ?usize = null,
     keep_selection: bool = false,
     clipboard: std.ArrayList(u.Char),
-
-    const Range = struct {
-        start: usize,
-        end: usize,
-
-        pub fn len(self: Range) usize {
-            return self.end - self.start;
-        }
-    };
 
     fn getSelectionRange(self: Cursor) ?Range {
         const selection_start = self.selection_start orelse return null;
@@ -583,7 +583,7 @@ pub const Editor = struct {
         buf.modified = true;
     }
 
-    fn keyPress(self: *Editor, buf: *Buffer, key: glfw.Key, mods: glfw.Mods) void {
+    fn keyPress(self: *Editor, buf: *Buffer, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allocator) void {
         const TAB_SIZE = 4;
 
         buf.dirty = true;
@@ -899,7 +899,41 @@ pub const Editor = struct {
 
         if (buf.dirty) buf.modified = true;
 
-        if (mods.control and key == .s and buf.modified) buf.saveToDisk() catch unreachable; // TODO: handle
+        // Save to disk
+        if (mods.control and key == .s and buf.modified and buf.file != null) {
+            // Strip trailing spaces
+            {
+                var ranges_to_delete = std.ArrayList(Range).init(tmp_allocator);
+                var start: ?usize = null;
+                for (buf.chars.items) |char, i| {
+                    if (char == ' ') {
+                        if (start == null) start = i;
+                    } else if (char == '\n' and start != null) {
+                        ranges_to_delete.append(Range{ .start = start.?, .end = i }) catch u.oom();
+                        start = null;
+                    } else {
+                        start = null;
+                    }
+                }
+                if (start) |s| ranges_to_delete.append(Range{ .start = s, .end = buf.chars.items.len }) catch u.oom();
+
+                var removed: usize = 0;
+                var removed_before_cursor: usize = 0;
+                for (ranges_to_delete.items) |range| {
+                    buf.chars.replaceRange(range.start -| removed, range.len(), &[_]u.Char{}) catch unreachable;
+                    removed += range.len();
+                    if (self.cursor.pos >= range.end) {
+                        removed_before_cursor += range.len();
+                    } else if (self.cursor.pos > range.start) {
+                        removed_before_cursor += (self.cursor.pos - range.start);
+                    }
+                }
+                self.cursor.pos -= removed_before_cursor;
+
+                if (ranges_to_delete.items.len > 0) buf.dirty = true;
+            }
+            buf.saveToDisk() catch unreachable; // TODO: handle
+        }
     }
 
     pub fn setNewScrollTarget(self: *Editor, target: f32, clock_ms: f64) void {
@@ -982,7 +1016,8 @@ pub const Buffer = struct {
     };
 
     fn saveToDisk(self: *Buffer) !void {
-        if (self.file == null or !self.modified) return;
+        if (self.file == null) return;
+
         self.recalculateBytes();
         if (self.bytes.items[self.bytes.items.len -| 1] != '\n') self.bytes.append('\n') catch u.oom();
 

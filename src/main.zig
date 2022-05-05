@@ -249,7 +249,7 @@ pub fn main() !void {
                             }
                             continue;
                         }
-                        editors.keyPress(kp.key, kp.mods);
+                        editors.keyPress(kp.key, kp.mods, frame_allocator);
                     },
                     else => {},
                 }

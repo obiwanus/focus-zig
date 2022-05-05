@@ -1,16 +1,19 @@
 # TODO
-- Select words with ctrl+d
-- [ui] Enlarge the current editor on shift+ctrl+L
-- Strip trailing whitespace on save
 - Multiple cursors
+    - Select words with ctrl+d
+- Use a global clipboard unless multiple cursors are used
+- Create new files
+- Search within buffer
+- Undo/redo
+- Format on save
+- Enlarge the current editor on shift+ctrl+L
 - [bug] Colors are off when non-ascii bytes are present (tokenizer doesn't support utf-8)
-- [ui] When drawing a buffer with a conflict we need to ask what to do
-- [tech-debt] When scanning the root folder, ignore the ignored folders right away (modify dir walker)
-- [tech-debt] When building a directory tree, see if we can use a memory arena
-              (maybe don't use array lists and instead just allocate slices of exact size from the arena)
 - Highlight: implement a few languages, not just Zig
-- [optimisation] Measure how expensive it is to rehighlight everything
-
+- When scanning the root folder, ignore the ignored folders right away (modify dir walker)
+- When building a directory tree, see if we can use a memory arena
+  (maybe don't use array lists and instead just allocate slices of exact size from the arena)
+- Measure how expensive it is to rehighlight everything
+- When drawing a buffer with a conflict we need to ask what to do
 
 # WHAT NEEDS TO WORK BEFORE I CAN START USING IT
 + Open files
@@ -23,6 +26,7 @@
 - No known bugs
 
 # DONE
++ Strip trailing whitespace on save
 + [ui] When pressing home, jump back only to the indented code
 + Unindent single lines with shift+tab
 + Unindent blocks with shift+tab
