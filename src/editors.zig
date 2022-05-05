@@ -352,7 +352,7 @@ const Cursor = struct {
         const line_start = buf.lines.items[self.line];
         const line_end = if (self.line + 1 < buf.lines.items.len) buf.lines.items[self.line + 1] - 1 else buf.chars.items.len;
 
-        const start = if (u.isWordChar(buf.chars.items[self.pos]))
+        const start = if (self.pos < line_end and u.isWordChar(buf.chars.items[self.pos]))
             self.pos
         else if (self.pos -| 1 >= line_start and u.isWordChar(buf.chars.items[self.pos -| 1]))
             self.pos -| 1
@@ -877,14 +877,18 @@ pub const Editor = struct {
                     // Paste
                     if (self.cursor.clipboard.items.len > 0) {
                         const paste_data = self.cursor.clipboard.items;
+                        var paste_start: usize = undefined;
                         if (self.cursor.getSelectionRange()) |s| {
                             buf.chars.replaceRange(s.start, s.end - s.start, paste_data) catch u.oom();
+                            paste_start = s.start;
                         } else if (self.cursor.pos >= buf.chars.items.len) {
+                            paste_start = buf.chars.items.len;
                             buf.chars.appendSlice(paste_data) catch u.oom();
                         } else {
                             buf.chars.insertSlice(self.cursor.pos, paste_data) catch u.oom();
+                            paste_start = self.cursor.pos;
                         }
-                        self.cursor.pos += paste_data.len;
+                        self.cursor.pos = paste_start + paste_data.len;
                         buf.dirty = true;
                     }
                 },

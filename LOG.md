@@ -1,5 +1,4 @@
 # TODO
-- Fix cursor positioning on paste
 - Multiple cursors
     +- Select words with ctrl+d
     - On subsequent presses search and create more cursors
@@ -28,6 +27,7 @@
 - No known bugs
 
 # DONE
++ Fix cursor positioning on paste
 + Strip trailing whitespace on save
 + [ui] When pressing home, jump back only to the indented code
 + Unindent single lines with shift+tab
