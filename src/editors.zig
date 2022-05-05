@@ -636,13 +636,23 @@ pub const Editor = struct {
                     self.cursor.keep_selection = true;
                 } else {
                     // Insert spaces
-                    const to_next_tabstop = TAB_SIZE - self.cursor.col % TAB_SIZE;
-                    if (self.cursor.pos >= buf.chars.items.len) {
-                        buf.chars.appendSlice(SPACES[0..to_next_tabstop]) catch u.oom();
+                    if (!mods.shift) {
+                        const to_next_tabstop = TAB_SIZE - self.cursor.col % TAB_SIZE;
+                        if (self.cursor.pos >= buf.chars.items.len) {
+                            buf.chars.appendSlice(SPACES[0..to_next_tabstop]) catch u.oom();
+                        } else {
+                            buf.chars.insertSlice(self.cursor.pos, SPACES[0..to_next_tabstop]) catch u.oom();
+                        }
+                        self.cursor.pos += to_next_tabstop;
                     } else {
-                        buf.chars.insertSlice(self.cursor.pos, SPACES[0..to_next_tabstop]) catch u.oom();
+                        // Un-indent current line
+                        const line_start = buf.lines.items[self.cursor.line];
+                        const text_start = buf.lines_whitespace.items[self.cursor.line];
+                        const spaces_to_remove = std.math.min(TAB_SIZE, text_start - line_start);
+                        const cursor_adjust = std.math.min(self.cursor.pos - line_start, spaces_to_remove);
+                        buf.chars.replaceRange(line_start, spaces_to_remove, &[_]u.Char{}) catch unreachable;
+                        self.cursor.pos -|= cursor_adjust;
                     }
-                    self.cursor.pos += to_next_tabstop;
                 }
 
                 self.cursor.col_wanted = null;

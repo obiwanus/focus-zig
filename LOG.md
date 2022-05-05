@@ -1,5 +1,4 @@
 # TODO
-- Unindent single lines with shift+tab
 - Select words with ctrl+d
 - [ui] When pressing home, jump back only to the indented code
 - [ui] Enlarge the current editor on shift+ctrl+L
@@ -25,6 +24,7 @@
 - No known bugs
 
 # DONE
++ Unindent single lines with shift+tab
 + Unindent blocks with shift+tab
     + Build a whitespace line range structure
     + Fix selection adjustment when indenting
