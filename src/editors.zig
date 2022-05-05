@@ -354,7 +354,7 @@ const Cursor = struct {
 
         const start = if (self.pos < line_end and u.isWordChar(buf.chars.items[self.pos]))
             self.pos
-        else if (self.pos -| 1 >= line_start and u.isWordChar(buf.chars.items[self.pos -| 1]))
+        else if (self.pos -| 1 >= line_start and self.pos -| 1 < line_end and u.isWordChar(buf.chars.items[self.pos -| 1]))
             self.pos -| 1
         else
             return null;
@@ -899,7 +899,11 @@ pub const Editor = struct {
                     self.cursor.pos = range.end;
                 },
                 .d => {
-                    // TODO: when there's already a selection, create more cursors
+                    // TODO:
+                    // - When single cursor has a selection, create more cursors
+                    // - When more than one cursor:
+                    //     - select words under each
+                    //     - do nothing else
                     if (self.cursor.selectWord(buf)) |range| {
                         self.cursor.selection_start = range.start;
                         self.cursor.pos = range.end;
