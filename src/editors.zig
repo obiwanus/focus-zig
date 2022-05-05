@@ -347,6 +347,31 @@ const Cursor = struct {
         };
     }
 
+    fn selectWord(self: Cursor, buf: *const Buffer) ?Range {
+        // Search within the line boundaries
+        const line_start = buf.lines.items[self.line];
+        const line_end = if (self.line + 1 < buf.lines.items.len) buf.lines.items[self.line + 1] - 1 else buf.chars.items.len;
+
+        const start = if (u.isWordChar(buf.chars.items[self.pos]))
+            self.pos
+        else if (self.pos -| 1 >= line_start and u.isWordChar(buf.chars.items[self.pos -| 1]))
+            self.pos -| 1
+        else
+            return null;
+
+        var word_start = start;
+        word_start = while (word_start >= line_start) : (word_start -= 1) {
+            const is_part_of_word = u.isWordChar(buf.chars.items[word_start]);
+            if (!is_part_of_word) break word_start + 1;
+            if (word_start == 0 and is_part_of_word) break word_start;
+        } else word_start + 1;
+
+        var word_end = start + 1;
+        while (word_end < line_end and u.isWordChar(buf.chars.items[word_end])) : (word_end += 1) {}
+
+        return Range{ .start = word_start, .end = word_end };
+    }
+
     fn copyToClipboard(self: *Cursor, chars: []const u.Char) void {
         self.clipboard.clearRetainingCapacity();
         self.clipboard.appendSlice(chars) catch u.oom();
@@ -868,6 +893,13 @@ pub const Editor = struct {
                     const range = self.cursor.getRangeOnWholeLines(buf);
                     self.cursor.selection_start = range.start;
                     self.cursor.pos = range.end;
+                },
+                .d => {
+                    // TODO: when there's already a selection, create more cursors
+                    if (self.cursor.selectWord(buf)) |range| {
+                        self.cursor.selection_start = range.start;
+                        self.cursor.pos = range.end;
+                    }
                 },
                 else => {},
             }

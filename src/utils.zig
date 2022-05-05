@@ -147,3 +147,11 @@ pub fn pathChunksIterator(path: []const u8) std.mem.SplitIterator(u8) {
     const delimiter = if (builtin.os.tag == .windows) "\\" else "/";
     return std.mem.split(u8, path, delimiter);
 }
+
+pub fn isWordChar(char: Char) bool {
+    return switch (char) {
+        '0'...'9', 'A'...'Z', 'a'...'z', '_' => true,
+        'А'...'Я', 'а'...'я' => true,
+        else => false,
+    };
+}

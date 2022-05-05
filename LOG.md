@@ -1,6 +1,8 @@
 # TODO
+- Fix cursor positioning on paste
 - Multiple cursors
-    - Select words with ctrl+d
+    +- Select words with ctrl+d
+    - On subsequent presses search and create more cursors
 - Use a global clipboard unless multiple cursors are used
 - Create new files
 - Search within buffer
