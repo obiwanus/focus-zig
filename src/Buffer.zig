@@ -31,6 +31,15 @@ pub const LineCol = struct {
     col: usize,
 };
 
+pub const Range = struct {
+    start: usize,
+    end: usize,
+
+    pub fn len(self: Range) usize {
+        return self.end - self.start;
+    }
+};
+
 pub fn init(allocator: Allocator) Buffer {
     return .{
         .file = null,
@@ -141,29 +150,7 @@ pub fn loadFile(self: *Buffer, path: []const u8, allocator: Allocator) void {
 }
 
 pub fn syncInternalData(self: *Buffer) void {
-    // Recalculate lines
-    {
-        self.lines.shrinkRetainingCapacity(1);
-        self.lines_whitespace.clearRetainingCapacity();
-        var new_line = true;
-        for (self.chars.items) |char, i| {
-            if (new_line and char != ' ') {
-                self.lines_whitespace.append(i) catch u.oom();
-                new_line = false;
-            }
-            if (char == '\n') {
-                self.lines.append(i + 1) catch u.oom();
-                new_line = true;
-            }
-        }
-
-        if (self.lines.items.len > self.lines_whitespace.items.len) {
-            // If the last line is empty, manually add an entry
-            self.lines_whitespace.append(self.chars.items.len) catch u.oom();
-            // Temporary assert. Can be removed if never triggered
-            u.assert(self.lines.items.len == self.lines_whitespace.items.len);
-        }
-    }
+    self.recalculateLines();
 
     // Highlight code
     {
@@ -203,6 +190,29 @@ pub fn syncInternalData(self: *Buffer) void {
     self.dirty = false;
 }
 
+pub fn recalculateLines(self: *Buffer) void {
+    self.lines.shrinkRetainingCapacity(1);
+    self.lines_whitespace.clearRetainingCapacity();
+    var new_line = true;
+    for (self.chars.items) |char, i| {
+        if (new_line and char != ' ') {
+            self.lines_whitespace.append(i) catch u.oom();
+            new_line = false;
+        }
+        if (char == '\n') {
+            self.lines.append(i + 1) catch u.oom();
+            new_line = true;
+        }
+    }
+
+    if (self.numLines() > self.lines_whitespace.items.len) {
+        // If the last line is empty, manually add an entry
+        self.lines_whitespace.append(self.chars.items.len) catch u.oom();
+        // Temporary assert. Can be removed if never triggered
+        u.assert(self.numLines() == self.lines_whitespace.items.len);
+    }
+}
+
 /// Returns line and column given a position in the buffer
 pub fn getLineCol(self: Buffer, pos: usize) LineCol {
     // Binary search
@@ -223,6 +233,21 @@ pub fn getLineCol(self: Buffer, pos: usize) LineCol {
     } else left;
     const col = pos - lines[line];
     return .{ .line = line, .col = col };
+}
+
+// TODO:
+// /// If line and column are outside the range,
+// pub fn getPosFromLineCol(self: Buffer, line: usize, col: usize) usize {
+//     const new_line = u.min(line, self.numLines());
+//     const line_start = self.lines.items[new_line];
+// }
+
+pub fn numLines(self: Buffer) usize {
+    return self.lines.items.len;
+}
+
+pub fn removeRange(self: *Buffer, range: Range) void {
+    self.chars.replaceRange(range.start, range.len(), &[_]u.Char{}) catch unreachable;
 }
 
 fn recalculateBytes(self: *Buffer) void {

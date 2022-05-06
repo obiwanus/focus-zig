@@ -95,7 +95,7 @@ pub fn charEntered(self: *Editors, char: u.Char) void {
     if (self.activeEditor()) |editor| editor.typeChar(char, self.getBuffer(editor.buffer));
 }
 
-pub fn keyPress(self: *Editors, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allocator) void {
+pub fn keyPress(self: *Editors, key: glfw.Key, mods: glfw.Mods) void {
     if (mods.control and mods.alt) {
         switch (key) {
             .left => {
@@ -117,7 +117,7 @@ pub fn keyPress(self: *Editors, key: glfw.Key, mods: glfw.Mods, tmp_allocator: A
             self.closeActivePane();
         }
     } else if (self.activeEditor()) |editor| {
-        editor.keyPress(self.getBuffer(editor.buffer), key, mods, tmp_allocator);
+        editor.keyPress(self.getBuffer(editor.buffer), key, mods);
     }
 }
 
@@ -285,15 +285,6 @@ fn createNewEditor(self: *Editors, buffer: usize) usize {
     return self.open_editors.items.len - 1;
 }
 
-const Range = struct {
-    start: usize,
-    end: usize,
-
-    pub fn len(self: Range) usize {
-        return self.end - self.start;
-    }
-};
-
 const Cursor = struct {
     pos: usize = 0,
     line: usize = 0, // from the beginning of buffer
@@ -303,34 +294,34 @@ const Cursor = struct {
     keep_selection: bool = false,
     clipboard: std.ArrayList(u.Char),
 
-    fn getSelectionRange(self: Cursor) ?Range {
+    fn getSelectionRange(self: Cursor) ?Buffer.Range {
         const selection_start = self.selection_start orelse return null;
         if (self.pos == selection_start) return null;
-        return Range{
-            .start = std.math.min(selection_start, self.pos),
-            .end = std.math.max(selection_start, self.pos),
+        return Buffer.Range{
+            .start = u.min(selection_start, self.pos),
+            .end = u.max(selection_start, self.pos),
         };
     }
 
     // Returns the range that covers all selected lines
     // (or just the line on which the cursor is if nothing is selected)
-    fn getRangeOnWholeLines(self: Cursor, buf: *const Buffer) Range {
+    fn getRangeOnWholeLines(self: Cursor, buf: *const Buffer) Buffer.Range {
         var first_line: usize = self.line;
         var last_line: usize = self.line;
         if (self.getSelectionRange()) |selection| {
             first_line = buf.getLineCol(selection.start).line;
             last_line = buf.getLineCol(selection.end).line;
         }
-        return Range{
+        return .{
             .start = buf.lines.items[first_line],
-            .end = if (last_line + 1 < buf.lines.items.len) buf.lines.items[last_line + 1] else buf.chars.items.len,
+            .end = if (last_line + 1 < buf.numLines()) buf.lines.items[last_line + 1] else buf.chars.items.len,
         };
     }
 
-    fn selectWord(self: Cursor, buf: *const Buffer) ?Range {
+    fn selectWord(self: Cursor, buf: *const Buffer) ?Buffer.Range {
         // Search within the line boundaries
         const line_start = buf.lines.items[self.line];
-        const line_end = if (self.line + 1 < buf.lines.items.len) buf.lines.items[self.line + 1] - 1 else buf.chars.items.len;
+        const line_end = if (self.line + 1 < buf.numLines()) buf.lines.items[self.line + 1] - 1 else buf.chars.items.len;
 
         const start = if (self.pos < line_end and u.isWordChar(buf.chars.items[self.pos]))
             self.pos
@@ -349,7 +340,7 @@ const Cursor = struct {
         var word_end = start + 1;
         while (word_end < line_end and u.isWordChar(buf.chars.items[word_end])) : (word_end += 1) {}
 
-        return Range{ .start = word_start, .end = word_end };
+        return Buffer.Range{ .start = word_start, .end = word_end };
     }
 
     fn copyToClipboard(self: *Cursor, chars: []const u.Char) void {
@@ -428,7 +419,7 @@ pub const Editor = struct {
             const col_max = col_min + self.cols_per_screen;
 
             const start_char = buf.lines.items[line_min];
-            const end_char = if (line_max >= buf.lines.items.len) buf.chars.items.len else buf.lines.items[line_max];
+            const end_char = if (line_max >= buf.numLines()) buf.chars.items.len else buf.lines.items[line_max];
             const chars = buf.chars.items[start_char..end_char];
             const colors = buf.colors.items[start_char..end_char];
 
@@ -563,7 +554,7 @@ pub const Editor = struct {
         buf.modified = true;
     }
 
-    fn keyPress(self: *Editor, buf: *Buffer, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allocator) void {
+    fn keyPress(self: *Editor, buf: *Buffer, key: glfw.Key, mods: glfw.Mods) void {
         const TAB_SIZE = 4;
 
         buf.dirty = true;
@@ -598,10 +589,10 @@ pub const Editor = struct {
                         var removed: usize = 0;
                         for (buf.lines_whitespace.items[first_line .. last_line + 1]) |text_start, i| {
                             const line_start = buf.lines.items[first_line + i];
-                            const spaces_to_remove = std.math.min(TAB_SIZE, text_start - line_start);
+                            const spaces_to_remove = u.min(TAB_SIZE, text_start - line_start);
                             buf.chars.replaceRange(line_start - removed, spaces_to_remove, &[_]u.Char{}) catch unreachable;
                             removed += spaces_to_remove;
-                            if (i == 0) sel_start_adjust = std.math.min(selection.start - line_start, spaces_to_remove);
+                            if (i == 0) sel_start_adjust = u.min(selection.start - line_start, spaces_to_remove);
                         }
                         // Adjust selection
                         if (self.cursor.pos == selection.start) {
@@ -628,8 +619,8 @@ pub const Editor = struct {
                         // Un-indent current line
                         const line_start = buf.lines.items[self.cursor.line];
                         const text_start = buf.lines_whitespace.items[self.cursor.line];
-                        const spaces_to_remove = std.math.min(TAB_SIZE, text_start - line_start);
-                        const cursor_adjust = std.math.min(self.cursor.pos - line_start, spaces_to_remove);
+                        const spaces_to_remove = u.min(TAB_SIZE, text_start - line_start);
+                        const cursor_adjust = u.min(self.cursor.pos - line_start, spaces_to_remove);
                         buf.chars.replaceRange(line_start, spaces_to_remove, &[_]u.Char{}) catch unreachable;
                         self.cursor.pos -|= cursor_adjust;
                     }
@@ -660,7 +651,7 @@ pub const Editor = struct {
                     // Insert line below
                     std.mem.set(u.Char, char_buf[0..indent], ' ');
                     char_buf[indent] = '\n';
-                    self.cursor.pos = if (self.cursor.line < buf.lines.items.len - 1)
+                    self.cursor.pos = if (self.cursor.line < buf.numLines() - 1)
                         buf.lines.items[self.cursor.line + 1]
                     else
                         buf.chars.items.len;
@@ -788,7 +779,7 @@ pub const Editor = struct {
                 self.cursor.col_wanted = null;
             },
             .end => {
-                if (self.cursor.line < buf.lines.items.len -| 1) {
+                if (self.cursor.line < buf.numLines() -| 1) {
                     self.cursor.pos = buf.lines.items[self.cursor.line + 1] - 1;
                 } else {
                     // last line
@@ -898,34 +889,27 @@ pub const Editor = struct {
         if (mods.control and key == .s and buf.modified and buf.file != null) {
             // Strip trailing spaces
             {
-                var ranges_to_delete = std.ArrayList(Range).init(tmp_allocator);
+                var i: usize = 0;
                 var start: ?usize = null;
-                for (buf.chars.items) |char, i| {
+                while (i < buf.chars.items.len) : (i += 1) {
+                    const char = buf.chars.items[i];
                     if (char == ' ') {
                         if (start == null) start = i;
-                    } else if (char == '\n' and start != null) {
-                        ranges_to_delete.append(Range{ .start = start.?, .end = i }) catch u.oom();
-                        start = null;
                     } else {
+                        if (char == '\n' and start != null) {
+                            const range = Buffer.Range{ .start = start.?, .end = i };
+                            buf.removeRange(range);
+                            i -|= range.len();
+                        }
                         start = null;
+                        buf.dirty = true;
                     }
                 }
-                if (start) |s| ranges_to_delete.append(Range{ .start = s, .end = buf.chars.items.len }) catch u.oom();
+                if (start) |s| buf.removeRange(.{ .start = s, .end = buf.chars.items.len });
 
-                var removed: usize = 0;
-                var removed_before_cursor: usize = 0;
-                for (ranges_to_delete.items) |range| {
-                    buf.chars.replaceRange(range.start -| removed, range.len(), &[_]u.Char{}) catch unreachable;
-                    removed += range.len();
-                    if (self.cursor.pos >= range.end) {
-                        removed_before_cursor += range.len();
-                    } else if (self.cursor.pos > range.start) {
-                        removed_before_cursor += (self.cursor.pos - range.start);
-                    }
-                }
-                self.cursor.pos -= removed_before_cursor;
-
-                if (ranges_to_delete.items.len > 0) buf.dirty = true;
+                // TODO:
+                // buf.recalculateLines();
+                // self.cursor.pos = buf.getPosFromLineCol(self.cursor.line, self.cursor.col);
             }
             buf.saveToDisk() catch unreachable; // TODO: handle
         }
@@ -950,14 +934,14 @@ pub const Editor = struct {
     }
 
     fn moveCursorToLine(self: *Editor, line: usize, buf: *Buffer) void {
-        const last_line = buf.lines.items.len - 1;
-        const target_line = std.math.clamp(line, 0, last_line);
+        const last_line = buf.numLines() - 1;
+        const target_line = u.clamp(line, 0, last_line);
         const chars_on_target_line = if (target_line < last_line)
             buf.lines.items[target_line + 1] - buf.lines.items[target_line] -| 1
         else
             buf.chars.items.len - buf.lines.items[target_line];
         const wanted_pos = self.cursor.col_wanted orelse self.cursor.col;
-        const new_line_pos = std.math.min(wanted_pos, chars_on_target_line);
+        const new_line_pos = u.min(wanted_pos, chars_on_target_line);
         self.cursor.col_wanted = if (new_line_pos < wanted_pos) wanted_pos else null; // reset or remember wanted position
         self.cursor.pos = buf.lines.items[target_line] + new_line_pos;
     }

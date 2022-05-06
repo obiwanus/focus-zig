@@ -9,6 +9,9 @@ pub const Char = u21;
 
 pub const assert = std.debug.assert;
 pub const print = std.debug.print;
+pub const clamp = std.math.clamp;
+pub const min = std.math.min;
+pub const max = std.math.max;
 
 pub fn println(comptime fmt: []const u8, args: anytype) void {
     print(fmt ++ "\n", args);
