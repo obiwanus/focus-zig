@@ -6,12 +6,14 @@
         - Read how edits are done in focus-reference
     - On subsequent presses search and create more cursors
 - Use a global clipboard unless multiple cursors are used
+- Wrap around when moving selection in the open files dialog
 - Create new files
 - Search within buffer
 - Undo/redo
 - Format on save
 - Enlarge the current editor on shift+ctrl+L
 - [bug] Colors are off when non-ascii bytes are present (tokenizer doesn't support utf-8)
+- [asus] Crash when resizing
 - Highlight: implement a few languages, not just Zig
 - When scanning the root folder, ignore the ignored folders right away (modify dir walker)
 - When building a directory tree, see if we can use a memory arena

@@ -26,6 +26,11 @@ const File = struct {
     mtime: i128,
 };
 
+pub const LineCol = struct {
+    line: usize,
+    col: usize,
+};
+
 pub fn saveToDisk(self: *Buffer) !void {
     if (self.file == null) return;
 
@@ -175,6 +180,28 @@ pub fn syncInternalData(self: *Buffer) void {
     }
 
     self.dirty = false;
+}
+
+/// Returns line and column given a position in the buffer
+pub fn getLineCol(self: Buffer, pos: usize) LineCol {
+    // Binary search
+    const lines = self.lines.items;
+    var left: usize = 0;
+    var right: usize = lines.len - 1;
+    const line = if (pos >= lines[right])
+        right
+    else while (right - left > 1) {
+        const mid = left + (right - left) / 2;
+        const mid_value = lines[mid];
+        if (pos == mid_value) break mid;
+        if (pos < mid_value) {
+            right = mid;
+        } else {
+            left = mid;
+        }
+    } else left;
+    const col = pos - lines[line];
+    return .{ .line = line, .col = col };
 }
 
 fn recalculateBytes(self: *Buffer) void {

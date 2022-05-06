@@ -339,8 +339,8 @@ const Cursor = struct {
         var first_line: usize = self.line;
         var last_line: usize = self.line;
         if (self.getSelectionRange()) |selection| {
-            first_line = CharPos.getFromBufferPos(buf.lines.items, selection.start).line;
-            last_line = CharPos.getFromBufferPos(buf.lines.items, selection.end).line;
+            first_line = buf.getLineCol(selection.start).line;
+            last_line = buf.getLineCol(selection.end).line;
         }
         return Range{
             .start = buf.lines.items[first_line],
@@ -405,31 +405,6 @@ const ScrollAnimation = struct {
     }
 };
 
-pub const CharPos = struct {
-    line: usize,
-    col: usize,
-
-    pub fn getFromBufferPos(lines: []const usize, pos: usize) CharPos {
-        var left: usize = 0;
-        var right: usize = lines.len - 1;
-
-        const line = if (pos >= lines[right])
-            right
-        else while (right - left > 1) {
-            const mid = left + (right - left) / 2;
-            const mid_value = lines[mid];
-            if (pos == mid_value) break mid;
-            if (pos < mid_value) {
-                right = mid;
-            } else {
-                left = mid;
-            }
-        } else left;
-        const col = pos - lines[line];
-        return .{ .line = line, .col = col };
-    }
-};
-
 pub const Editor = struct {
     buffer: usize,
 
@@ -456,7 +431,7 @@ pub const Editor = struct {
         // Update cursor line, col and pos
         {
             if (self.cursor.pos > buf.chars.items.len) self.cursor.pos = buf.chars.items.len;
-            const cursor = CharPos.getFromBufferPos(buf.lines.items, self.cursor.pos);
+            const cursor = buf.getLineCol(self.cursor.pos);
             self.cursor.line = cursor.line;
             self.cursor.col = cursor.col;
         }
@@ -502,8 +477,8 @@ pub const Editor = struct {
 
             // First draw selections
             if (self.cursor.getSelectionRange()) |s| {
-                const start = CharPos.getFromBufferPos(buf.lines.items, s.start);
-                const end = CharPos.getFromBufferPos(buf.lines.items, s.end);
+                const start = buf.getLineCol(s.start);
+                const end = buf.getLineCol(s.end);
 
                 const sel_color = if (is_active) style.colors.SELECTION_ACTIVE else style.colors.SELECTION_INACTIVE;
 
@@ -620,8 +595,8 @@ pub const Editor = struct {
                 const SPACES = [1]u.Char{' '} ** TAB_SIZE;
 
                 if (self.cursor.getSelectionRange()) |selection| {
-                    const first_line = CharPos.getFromBufferPos(buf.lines.items, selection.start).line;
-                    const last_line = CharPos.getFromBufferPos(buf.lines.items, selection.end).line;
+                    const first_line = buf.getLineCol(selection.start).line;
+                    const last_line = buf.getLineCol(selection.end).line;
 
                     if (!mods.shift) {
                         // Indent selected block
