@@ -1,5 +1,5 @@
 # TODO
-- Store full line ranges so that we don't have to worry about checking for last line
+- Adjust cursor after save
 - Multiple cursors
     + Select words with ctrl+d
     - Refactor code so that we have additional cursors
@@ -32,6 +32,10 @@
 - No known bugs
 
 # DONE
++ Store full line ranges so that we don't have to worry about checking for last line
+    + Refactor line ranges
+        + Fix home button
+        + Fix line duplication
 + Fix cursor positioning on paste
 + Strip trailing whitespace on save
 + [ui] When pressing home, jump back only to the indented code

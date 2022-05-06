@@ -13,8 +13,7 @@ file: ?File, // buffer may be tied to a file or may be just freestanding
 bytes: std.ArrayList(u8),
 chars: std.ArrayList(u.Char),
 colors: std.ArrayList(TextColor),
-lines: std.ArrayList(usize),
-lines_whitespace: std.ArrayList(usize),
+lines: std.ArrayList(Line),
 
 dirty: bool = true, // needs syncing internal structures
 modified: bool = false, // hasn't been saved to disk
@@ -40,14 +39,27 @@ pub const Range = struct {
     }
 };
 
+pub const Line = struct {
+    start: usize,
+    text_start: usize,
+    end: usize,
+
+    pub fn len(self: Line) usize {
+        return self.end - self.start;
+    }
+
+    pub fn lenWhitespace(self: Line) usize {
+        return self.text_start - self.start;
+    }
+};
+
 pub fn init(allocator: Allocator) Buffer {
     return .{
         .file = null,
         .bytes = std.ArrayList(u8).init(allocator),
         .chars = std.ArrayList(u.Char).init(allocator),
         .colors = std.ArrayList(TextColor).init(allocator),
-        .lines = std.ArrayList(usize).init(allocator),
-        .lines_whitespace = std.ArrayList(usize).init(allocator),
+        .lines = std.ArrayList(Line).init(allocator),
     };
 }
 
@@ -56,14 +68,13 @@ pub fn deinit(self: Buffer, allocator: Allocator) void {
     self.chars.deinit();
     self.colors.deinit();
     self.lines.deinit();
-    self.lines_whitespace.deinit();
     if (self.file) |file| allocator.free(file.path);
 }
 
 pub fn saveToDisk(self: *Buffer) !void {
     if (self.file == null) return;
 
-    self.recalculateBytes();
+    self.updateBytesFromChars();
     if (self.bytes.items[self.bytes.items.len -| 1] != '\n') self.bytes.append('\n') catch u.oom();
 
     const file_path = self.file.?.path;
@@ -138,15 +149,9 @@ pub fn loadFile(self: *Buffer, path: []const u8, allocator: Allocator) void {
         self.chars.append(char) catch u.oom();
     }
 
-    self.colors.clearRetainingCapacity();
-    self.colors.ensureTotalCapacity(self.chars.items.len) catch u.oom();
-
-    self.lines.clearRetainingCapacity();
-    self.lines.append(0) catch u.oom(); // first line is always at the buffer start
-
     self.modified = false;
     self.modified_on_disk = false;
-    self.dirty = true; // trigger the syncing of the above structures
+    self.dirty = true;
 }
 
 pub fn syncInternalData(self: *Buffer) void {
@@ -160,7 +165,7 @@ pub fn syncInternalData(self: *Buffer) void {
         var colors = self.colors.items;
         std.mem.set(TextColor, colors, .comment);
 
-        self.recalculateBytes();
+        self.updateBytesFromChars();
         self.bytes.append(0) catch u.oom(); // null-terminate
 
         // NOTE: we're tokenizing the whole source file. At least for zig this can be optimised,
@@ -191,26 +196,21 @@ pub fn syncInternalData(self: *Buffer) void {
 }
 
 pub fn recalculateLines(self: *Buffer) void {
-    self.lines.shrinkRetainingCapacity(1);
-    self.lines_whitespace.clearRetainingCapacity();
-    var new_line = true;
+    self.lines.clearRetainingCapacity();
+
+    var line_start: usize = 0;
+    var text_start: ?usize = null;
     for (self.chars.items) |char, i| {
-        if (new_line and char != ' ') {
-            self.lines_whitespace.append(i) catch u.oom();
-            new_line = false;
+        if (text_start == null and char != ' ') {
+            text_start = i;
         }
         if (char == '\n') {
-            self.lines.append(i + 1) catch u.oom();
-            new_line = true;
+            self.lines.append(.{ .start = line_start, .text_start = text_start.?, .end = i }) catch u.oom();
+            line_start = i + 1;
+            text_start = null;
         }
     }
-
-    if (self.numLines() > self.lines_whitespace.items.len) {
-        // If the last line is empty, manually add an entry
-        self.lines_whitespace.append(self.chars.items.len) catch u.oom();
-        // Temporary assert. Can be removed if never triggered
-        u.assert(self.numLines() == self.lines_whitespace.items.len);
-    }
+    self.lines.append(.{ .start = line_start, .text_start = text_start orelse line_start, .end = self.numChars() }) catch u.oom();
 }
 
 /// Returns line and column given a position in the buffer
@@ -219,19 +219,19 @@ pub fn getLineCol(self: Buffer, pos: usize) LineCol {
     const lines = self.lines.items;
     var left: usize = 0;
     var right: usize = lines.len - 1;
-    const line = if (pos >= lines[right])
+    const line = if (pos >= lines[right].start)
         right
     else while (right - left > 1) {
         const mid = left + (right - left) / 2;
-        const mid_value = lines[mid];
-        if (pos == mid_value) break mid;
-        if (pos < mid_value) {
+        const line_start = lines[mid].start;
+        if (pos == line_start) break mid;
+        if (pos < line_start) {
             right = mid;
         } else {
             left = mid;
         }
     } else left;
-    const col = pos - lines[line];
+    const col = pos - lines[line].start;
     return .{ .line = line, .col = col };
 }
 
@@ -242,15 +242,40 @@ pub fn getLineCol(self: Buffer, pos: usize) LineCol {
 //     const line_start = self.lines.items[new_line];
 // }
 
+pub fn getLine(self: Buffer, line_num: usize) Line {
+    const line = u.min(line_num, self.numLines() - 1);
+    return self.lines.items[line];
+}
+
+pub fn numChars(self: Buffer) usize {
+    return self.chars.items.len;
+}
+
 pub fn numLines(self: Buffer) usize {
     return self.lines.items.len;
+}
+
+pub fn insertSlice(self: *Buffer, pos: usize, slice: []const u.Char) void {
+    if (pos >= self.numChars()) {
+        self.chars.appendSlice(slice) catch u.oom();
+    } else {
+        self.chars.insertSlice(pos, slice) catch u.oom();
+    }
+}
+
+pub fn insertChar(self: *Buffer, pos: usize, char: u.Char) void {
+    if (pos >= self.numChars()) {
+        self.chars.append(char) catch u.oom();
+    } else {
+        self.chars.insert(pos, char) catch u.oom();
+    }
 }
 
 pub fn removeRange(self: *Buffer, range: Range) void {
     self.chars.replaceRange(range.start, range.len(), &[_]u.Char{}) catch unreachable;
 }
 
-fn recalculateBytes(self: *Buffer) void {
+fn updateBytesFromChars(self: *Buffer) void {
     self.bytes.ensureTotalCapacity(self.chars.items.len * 4) catch u.oom(); // enough to store 4-byte chars
     self.bytes.expandToCapacity();
     var cursor: usize = 0;
