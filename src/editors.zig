@@ -40,17 +40,8 @@ pub fn init(allocator: Allocator) Editors {
 }
 
 pub fn deinit(self: Editors) void {
-    for (self.open_buffers.items) |buf| {
-        buf.bytes.deinit();
-        buf.chars.deinit();
-        buf.colors.deinit();
-        buf.lines.deinit();
-        buf.lines_whitespace.deinit();
-        if (buf.file) |file| self.allocator.free(file.path);
-    }
-    for (self.open_editors.items) |ed| {
-        ed.cursor.clipboard.deinit();
-    }
+    for (self.open_buffers.items) |buf| buf.deinit(self.allocator);
+    for (self.open_editors.items) |ed| ed.cursor.clipboard.deinit();
 }
 
 pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: Allocator) void {
@@ -278,22 +269,10 @@ fn findOpenBuffer(self: Editors, path: []const u8) ?usize {
 }
 
 fn openNewBuffer(self: *Editors, path: []const u8) usize {
-    var new_buffer = Buffer{
-        .file = null,
-        .bytes = std.ArrayList(u8).init(self.allocator),
-        .chars = std.ArrayList(u.Char).init(self.allocator),
-        .colors = std.ArrayList(TextColor).init(self.allocator),
-        .lines = std.ArrayList(usize).init(self.allocator),
-        .lines_whitespace = std.ArrayList(usize).init(self.allocator),
-    };
-    // [zig bug]: have to do it separately because otherwise 'path' becomes empty
-    new_buffer.file = .{
-        .path = self.allocator.dupe(u8, path) catch u.oom(),
-        .mtime = 0,
-    };
-    new_buffer.load(self.allocator);
+    var buffer = Buffer.init(self.allocator);
+    buffer.loadFile(self.allocator.dupe(u8, path) catch u.oom(), self.allocator);
 
-    self.open_buffers.append(new_buffer) catch u.oom();
+    self.open_buffers.append(buffer) catch u.oom();
     return self.open_buffers.items.len - 1;
 }
 

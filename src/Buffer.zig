@@ -23,13 +23,33 @@ deleted: bool = false, // was deleted from disk by someone else
 
 const File = struct {
     path: []const u8,
-    mtime: i128,
+    mtime: i128 = 0,
 };
 
 pub const LineCol = struct {
     line: usize,
     col: usize,
 };
+
+pub fn init(allocator: Allocator) Buffer {
+    return .{
+        .file = null,
+        .bytes = std.ArrayList(u8).init(allocator),
+        .chars = std.ArrayList(u.Char).init(allocator),
+        .colors = std.ArrayList(TextColor).init(allocator),
+        .lines = std.ArrayList(usize).init(allocator),
+        .lines_whitespace = std.ArrayList(usize).init(allocator),
+    };
+}
+
+pub fn deinit(self: Buffer, allocator: Allocator) void {
+    self.bytes.deinit();
+    self.chars.deinit();
+    self.colors.deinit();
+    self.lines.deinit();
+    self.lines_whitespace.deinit();
+    if (self.file) |file| allocator.free(file.path);
+}
 
 pub fn saveToDisk(self: *Buffer) !void {
     if (self.file == null) return;
@@ -76,21 +96,22 @@ pub fn refreshFromDisk(self: *Buffer, allocator: Allocator) void {
             return;
         }
         // Reload buffer if not modified
-        self.load(allocator);
+        self.loadFile(self.file.?.path, allocator);
     }
 }
 
-pub fn load(self: *Buffer, allocator: Allocator) void {
-    const file_path = self.file.?.path;
-    const file = std.fs.cwd().openFile(file_path, .{ .read = true }) catch u.panic("Can't open '{s}'", .{file_path});
+pub fn loadFile(self: *Buffer, path: []const u8, allocator: Allocator) void {
+    // NOTE: taking ownership of the passed path
+    self.file = .{ .path = path };
+    const file = std.fs.cwd().openFile(path, .{ .read = true }) catch u.panic("Can't open '{s}'", .{path});
     defer file.close();
 
-    const stat = file.stat() catch |err| u.panic("{} while getting stat on '{s}'", .{ err, file_path });
+    const stat = file.stat() catch |err| u.panic("{} while getting stat on '{s}'", .{ err, path });
     self.file.?.mtime = stat.mtime;
 
     const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 Mb
     const file_contents = file.reader().readAllAlloc(allocator, MAX_FILE_SIZE) catch |e| switch (e) {
-        error.StreamTooLong => u.panic("File '{s}' is more than 10 Mb in size", .{file_path}),
+        error.StreamTooLong => u.panic("File '{s}' is more than 10 Mb in size", .{path}),
         else => u.oom(),
     };
     defer allocator.free(file_contents);
