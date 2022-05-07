@@ -1,5 +1,4 @@
 # TODO
-- Adjust cursor after save
 - Multiple cursors
     + Select words with ctrl+d
     - Refactor code so that we have additional cursors
@@ -32,6 +31,7 @@
 - No known bugs
 
 # DONE
++ Adjust cursor after save
 + Store full line ranges so that we don't have to worry about checking for last line
     + Refactor line ranges
         + Fix home button

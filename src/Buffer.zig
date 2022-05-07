@@ -235,12 +235,14 @@ pub fn getLineCol(self: Buffer, pos: usize) LineCol {
     return .{ .line = line, .col = col };
 }
 
-// TODO:
-// /// If line and column are outside the range,
-// pub fn getPosFromLineCol(self: Buffer, line: usize, col: usize) usize {
-//     const new_line = u.min(line, self.numLines());
-//     const line_start = self.lines.items[new_line];
-// }
+pub fn getPosFromLineCol(self: Buffer, line: usize, col: usize) usize {
+    const new_line = self.getLine(line); // may be different if outside of range
+    if (col >= new_line.len()) {
+        return new_line.end;
+    } else {
+        return new_line.start + col;
+    }
+}
 
 pub fn getLine(self: Buffer, line_num: usize) Line {
     const line = u.min(line_num, self.numLines() - 1);

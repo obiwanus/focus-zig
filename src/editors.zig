@@ -877,10 +877,11 @@ pub const Editor = struct {
                 }
                 if (start) |s| buf.removeRange(.{ .start = s, .end = buf.numChars() });
 
-                // TODO:
-                // buf.recalculateLines();
-                // self.cursor.pos = buf.getPosFromLineCol(self.cursor.line, self.cursor.col);
+                // Adjust cursor
+                buf.recalculateLines();
+                self.cursor.pos = buf.getPosFromLineCol(self.cursor.line, self.cursor.col);
             }
+
             buf.saveToDisk() catch unreachable; // TODO: handle
         }
     }
