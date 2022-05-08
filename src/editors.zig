@@ -722,26 +722,27 @@ pub const Editor = struct {
         }
 
         var old_pos = self.cursor.pos;
+        const line = buf.getLine(self.cursor.line);
+        const move_by: usize = if (mods.control) 5 else 1;
 
         // Cursor movements
         switch (key) {
             .left => {
-                self.cursor.pos -|= 1;
+                self.cursor.pos -|= move_by;
+                if (mods.control and self.cursor.pos < line.start) self.cursor.pos = line.start;
                 self.cursor.col_wanted = null;
             },
             .right => {
-                if (self.cursor.pos < buf.numChars()) {
-                    self.cursor.pos += 1;
-                    self.cursor.col_wanted = null;
-                }
+                self.cursor.pos += move_by;
+                if (mods.control and self.cursor.pos > line.end) self.cursor.pos = line.end;
+                if (self.cursor.pos > buf.numChars()) self.cursor.pos = buf.numChars();
+                self.cursor.col_wanted = null;
             },
             .up => {
-                const offset: usize = if (mods.control) 5 else 1;
-                self.moveCursorToLine(self.cursor.line -| offset, buf);
+                self.moveCursorToLine(self.cursor.line -| move_by, buf);
             },
             .down => {
-                const offset: usize = if (mods.control) 5 else 1;
-                self.moveCursorToLine(self.cursor.line + offset, buf);
+                self.moveCursorToLine(self.cursor.line + move_by, buf);
             },
             .page_up => {
                 self.moveCursorToLine(self.cursor.line -| self.lines_per_screen, buf);
@@ -750,7 +751,6 @@ pub const Editor = struct {
                 self.moveCursorToLine(self.cursor.line + self.lines_per_screen, buf);
             },
             .home => {
-                const line = buf.getLine(self.cursor.line);
                 if (self.cursor.pos != line.text_start) {
                     self.cursor.pos = line.text_start;
                 } else {
@@ -759,7 +759,7 @@ pub const Editor = struct {
                 self.cursor.col_wanted = null;
             },
             .end => {
-                self.cursor.pos = buf.getLine(self.cursor.line).end;
+                self.cursor.pos = line.end;
                 self.cursor.col_wanted = null;
             },
             else => {},

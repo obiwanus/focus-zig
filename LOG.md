@@ -31,6 +31,7 @@
 - No known bugs
 
 # DONE
++ Move cursor left and right with ctrl
 + Adjust cursor after save
 + Store full line ranges so that we don't have to worry about checking for last line
     + Refactor line ranges
