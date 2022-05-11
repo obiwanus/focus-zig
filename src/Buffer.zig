@@ -249,6 +249,11 @@ pub fn getLine(self: Buffer, line_num: usize) Line {
     return self.lines.items[line];
 }
 
+pub fn getLineOrNull(self: Buffer, line_num: usize) ?Line {
+    if (line_num >= self.numLines()) return null;
+    return self.lines.items[line_num];
+}
+
 pub fn numChars(self: Buffer) usize {
     return self.chars.items.len;
 }

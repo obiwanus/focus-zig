@@ -31,6 +31,7 @@
 - No known bugs
 
 # DONE
++ Fix indentation when creating new line above and below
 + Move cursor left and right with ctrl
 + Adjust cursor after save
 + Store full line ranges so that we don't have to worry about checking for last line

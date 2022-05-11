@@ -628,12 +628,7 @@ pub const Editor = struct {
             },
             .enter => {
                 const line = buf.getLine(self.cursor.line);
-                var indent = blk: {
-                    var indent: usize = 0;
-                    var cursor = line.start;
-                    while (cursor < buf.numChars() and cursor < self.cursor.pos and buf.chars.items[cursor] == ' ') : (cursor += 1) indent += 1;
-                    break :blk indent;
-                };
+                var indent = line.lenWhitespace();
                 var char_buf: [1024]u.Char = undefined;
                 if (mods.control and mods.shift) {
                     // Insert line above
@@ -646,8 +641,16 @@ pub const Editor = struct {
                     // Insert line below
                     std.mem.set(u.Char, char_buf[0..indent], ' ');
                     char_buf[indent] = '\n';
-                    self.cursor.pos = buf.getLine(self.cursor.line + 1).start;
-                    buf.insertSlice(self.cursor.pos, char_buf[0 .. indent + 1]);
+                    if (buf.getLineOrNull(self.cursor.line + 1)) |next_line| {
+                        self.cursor.pos = next_line.start;
+                        buf.insertSlice(self.cursor.pos, char_buf[0 .. indent + 1]);
+                        self.cursor.pos += indent;
+                    } else {
+                        // Last line
+                        buf.chars.append('\n') catch u.oom();
+                        buf.chars.appendSlice(char_buf[0..indent]) catch u.oom();
+                        self.cursor.pos = buf.numChars();
+                    }
                 } else {
                     // Break the line normally
                     const prev_char = if (buf.numChars() > 0) buf.chars.items[self.cursor.pos -| 1] else null;
