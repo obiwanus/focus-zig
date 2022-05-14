@@ -25,6 +25,10 @@ const File = struct {
     mtime: i128 = 0,
 };
 
+// const Edit = union(enum) {
+//     .
+// };
+
 pub const LineCol = struct {
     line: usize,
     col: usize,
@@ -210,7 +214,8 @@ pub fn recalculateLines(self: *Buffer) void {
             text_start = null;
         }
     }
-    self.lines.append(.{ .start = line_start, .text_start = text_start orelse line_start, .end = self.numChars() }) catch u.oom();
+    const end_char = self.numChars();
+    self.lines.append(.{ .start = line_start, .text_start = text_start orelse end_char, .end = end_char }) catch u.oom();
 }
 
 /// Returns line and column given a position in the buffer
@@ -278,8 +283,38 @@ pub fn insertChar(self: *Buffer, pos: usize, char: u.Char) void {
     }
 }
 
+pub fn expandRangeToWholeLines(self: Buffer, start: usize, end: usize) Range {
+    const range = self.getValidRange(start, end);
+    const first_line = self.getLineCol(range.start).line;
+    const last_line = self.getLineCol(range.end).line;
+    return .{
+        .start = self.lines.items[first_line].start,
+        .end = self.lines.items[last_line].end,
+    };
+}
+
+// // TODO: should not be needed
 pub fn removeRange(self: *Buffer, range: Range) void {
     self.chars.replaceRange(range.start, range.len(), &[_]u.Char{}) catch unreachable;
+}
+
+pub fn getValidRange(self: Buffer, start: usize, end: usize) Range {
+    const max_end = self.numChars();
+    const new_end = if (end > max_end) max_end else end;
+    u.assert(start < new_end);
+    return Range{ .start = start, .end = new_end };
+}
+
+pub fn deleteRange(self: *Buffer, start: usize, end: usize, cursor_pos: usize) void {
+    const range = self.getValidRange(start, end);
+    if (range.start == range.end) return;
+    self.chars.replaceRange(range.start, range.len(), &[_]u.Char{}) catch unreachable;
+    _ = cursor_pos; // TODO
+}
+
+pub fn replaceRange(self: *Buffer, start: usize, end: usize, new_chars: []u.Char) void {
+    const range = self.getValidRange(start, end);
+    self.chars.replaceRange(range.start, range.len(), new_chars) catch u.oom();
 }
 
 fn updateBytesFromChars(self: *Buffer) void {

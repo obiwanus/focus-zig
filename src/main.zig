@@ -249,13 +249,13 @@ pub fn main() !void {
                             }
                             continue;
                         }
-                        editors.keyPress(kp.key, kp.mods);
+                        editors.keyPress(kp.key, kp.mods, frame_allocator);
                     },
                     else => {},
                 }
             }
         }
-        g_events.shrinkRetainingCapacity(0);
+        g_events.clearRetainingCapacity();
 
         // Update uniform buffer
         // NOTE: no need to update every frame right now, but we're still doing it

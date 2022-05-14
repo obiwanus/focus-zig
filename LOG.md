@@ -1,14 +1,17 @@
 # TODO
+- Refactor the edit system (have formal edits)
+    - Change the keypress code first, only then think about undo
+
+- Undo/redo
+- Replace selection on enter
 - Multiple cursors
     + Select words with ctrl+d
     - Refactor code so that we have additional cursors
-        - Read how edits are done in focus-reference
     - On subsequent presses search and create more cursors
 - Use a global clipboard unless multiple cursors are used
 - Wrap around when moving selection in the open files dialog
 - Create new files
 - Search within buffer
-- Undo/redo
 - Format on save
 - Enlarge the current editor on shift+ctrl+L
 - [bug] Colors are off when non-ascii bytes are present (tokenizer doesn't support utf-8)
@@ -31,6 +34,9 @@
 - No known bugs
 
 # DONE
++ Fix: selection end is misadjusted when unindenting
++ Fix: selection doesn't include newline
++ Fix: empty line at the end is not unindented
 + Fix indentation when creating new line above and below
 + Move cursor left and right with ctrl
 + Adjust cursor after save
