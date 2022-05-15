@@ -632,79 +632,57 @@ pub const Editor = struct {
                             cursor.pos -|= sel_end_adjust;
                         }
                     }
-
-                    // if (!mods.shift) {
-                    //     // Un-indent selected block
-                    //     var sel_start_adjust: usize = 0;
-                    //     var removed: usize = 0;
-                    //     for (lines) |line, i| {
-                    //         const spaces_to_remove = u.min(TAB_SIZE, line.lenWhitespace());
-                    //         buf.chars.replaceRange(line.start - removed, spaces_to_remove, &[_]u.Char{}) catch unreachable;
-                    //         removed += spaces_to_remove;
-                    //         if (i == 0) sel_start_adjust = u.min(selection.start - line.start, spaces_to_remove);
-                    //     }
-                    //     // Adjust selection
-                    //     if (self.cursor.pos == selection.start) {
-                    //         self.cursor.pos -= sel_start_adjust;
-                    //         self.cursor.selection_start.? -|= removed;
-                    //     } else {
-                    //         self.cursor.selection_start.? -|= sel_start_adjust;
-                    //         self.cursor.pos -|= removed;
-                    //     }
-                    // }
-
                     cursor.keep_selection = true;
                 } else {
-                    // Insert spaces
                     if (!mods.shift) {
-                        const to_next_tabstop = TAB_SIZE - self.cursor.col % TAB_SIZE;
-                        if (self.cursor.pos >= buf.numChars()) {
-                            buf.chars.appendSlice(SPACES[0..to_next_tabstop]) catch u.oom();
-                        } else {
-                            buf.chars.insertSlice(self.cursor.pos, SPACES[0..to_next_tabstop]) catch u.oom();
-                        }
-                        self.cursor.pos += to_next_tabstop;
+                        // Insert spaces
+                        const to_next_tabstop = TAB_SIZE - cursor.col % TAB_SIZE;
+                        buf.insertSlice(cursor.pos, SPACES[0..to_next_tabstop]);
+                        cursor.pos += to_next_tabstop;
                     } else {
                         // Un-indent current line
-                        const line = buf.getLine(self.cursor.line);
+                        const line = buf.getLine(cursor.line);
                         const spaces_to_remove = u.min(TAB_SIZE, line.lenWhitespace());
-                        const cursor_adjust = u.min(self.cursor.pos - line.start, spaces_to_remove);
-                        buf.chars.replaceRange(line.start, spaces_to_remove, &[_]u.Char{}) catch unreachable;
-                        self.cursor.pos -|= cursor_adjust;
+                        buf.deleteRange(line.start, line.start + spaces_to_remove, old_cursor_pos);
+                        cursor.pos -|= u.min(cursor.pos - line.start, spaces_to_remove);
                     }
                 }
-
-                self.cursor.col_wanted = null;
             },
             .enter => {
-                const line = buf.getLine(self.cursor.line);
+                const line = buf.getLine(cursor.line);
                 var indent = line.lenWhitespace();
                 var char_buf: [1024]u.Char = undefined;
+                u.assert(indent < char_buf.len);
+
                 if (mods.control and mods.shift) {
                     // Insert line above
                     std.mem.set(u.Char, char_buf[0..indent], ' ');
                     char_buf[indent] = '\n';
-                    self.cursor.pos = line.start;
-                    buf.insertSlice(self.cursor.pos, char_buf[0 .. indent + 1]);
-                    self.cursor.pos += indent;
+                    cursor.pos = line.start;
+                    buf.insertSlice(cursor.pos, char_buf[0 .. indent + 1]);
+                    cursor.pos += indent;
                 } else if (mods.control) {
                     // Insert line below
                     std.mem.set(u.Char, char_buf[0..indent], ' ');
                     char_buf[indent] = '\n';
-                    if (buf.getLineOrNull(self.cursor.line + 1)) |next_line| {
-                        self.cursor.pos = next_line.start;
-                        buf.insertSlice(self.cursor.pos, char_buf[0 .. indent + 1]);
-                        self.cursor.pos += indent;
+                    if (buf.getLineOrNull(cursor.line + 1)) |next_line| {
+                        cursor.pos = next_line.start;
+                        buf.insertSlice(cursor.pos, char_buf[0 .. indent + 1]);
+                        cursor.pos += indent;
                     } else {
                         // Last line
                         buf.chars.append('\n') catch u.oom();
                         buf.chars.appendSlice(char_buf[0..indent]) catch u.oom();
-                        self.cursor.pos = buf.numChars();
+                        cursor.pos = buf.numChars();
                     }
+                } else if (cursor.getSelectionRange()) |selection| {
+                    // Replace selection with a newline
+                    buf.replaceRange(selection.start, selection.end, &[_]u.Char{'\n'});
+                    cursor.pos = selection.start + 1;
                 } else {
                     // Break the line normally
-                    const prev_char = if (buf.numChars() > 0) buf.chars.items[self.cursor.pos -| 1] else null;
-                    const next_char = if (self.cursor.pos < buf.numChars()) buf.chars.items[self.cursor.pos] else null;
+                    const prev_char = if (buf.numChars() > 0) buf.chars.items[cursor.pos -| 1] else null;
+                    const next_char = if (cursor.pos < buf.numChars()) buf.chars.items[cursor.pos] else null;
 
                     const opening_block = prev_char != null and prev_char.? == '{' and (next_char == null or next_char != null and next_char.? == '\n');
                     if (opening_block) {
@@ -713,21 +691,20 @@ pub const Editor = struct {
 
                     char_buf[0] = '\n';
                     std.mem.set(u.Char, char_buf[1 .. indent + 1], ' ');
-                    if (self.cursor.pos >= buf.numChars()) {
+                    if (cursor.pos >= buf.numChars()) {
                         buf.chars.appendSlice(char_buf[0 .. indent + 1]) catch u.oom();
                     } else {
-                        buf.chars.insertSlice(self.cursor.pos, char_buf[0 .. indent + 1]) catch u.oom();
+                        buf.chars.insertSlice(cursor.pos, char_buf[0 .. indent + 1]) catch u.oom();
                     }
-                    self.cursor.pos += 1 + indent;
+                    cursor.pos += 1 + indent;
 
                     if (opening_block) {
                         // Insert a closing brace
                         indent -= TAB_SIZE;
-                        buf.insertSlice(self.cursor.pos, char_buf[0 .. indent + 1]);
-                        buf.insertChar(self.cursor.pos + indent + 1, '}');
+                        buf.insertSlice(cursor.pos, char_buf[0 .. indent + 1]);
+                        buf.insertChar(cursor.pos + indent + 1, '}');
                     }
                 }
-                self.cursor.col_wanted = null;
             },
             else => {
                 buf.dirty = false; // nothing needs to be done

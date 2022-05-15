@@ -267,22 +267,6 @@ pub fn numLines(self: Buffer) usize {
     return self.lines.items.len;
 }
 
-pub fn insertSlice(self: *Buffer, pos: usize, slice: []const u.Char) void {
-    if (pos >= self.numChars()) {
-        self.chars.appendSlice(slice) catch u.oom();
-    } else {
-        self.chars.insertSlice(pos, slice) catch u.oom();
-    }
-}
-
-pub fn insertChar(self: *Buffer, pos: usize, char: u.Char) void {
-    if (pos >= self.numChars()) {
-        self.chars.append(char) catch u.oom();
-    } else {
-        self.chars.insert(pos, char) catch u.oom();
-    }
-}
-
 pub fn expandRangeToWholeLines(self: Buffer, start: usize, end: usize) Range {
     const range = self.getValidRange(start, end);
     const first_line = self.getLineCol(range.start).line;
@@ -301,7 +285,7 @@ pub fn removeRange(self: *Buffer, range: Range) void {
 pub fn getValidRange(self: Buffer, start: usize, end: usize) Range {
     const max_end = self.numChars();
     const new_end = if (end > max_end) max_end else end;
-    u.assert(start < new_end);
+    u.assert(start <= new_end);
     return Range{ .start = start, .end = new_end };
 }
 
@@ -312,9 +296,21 @@ pub fn deleteRange(self: *Buffer, start: usize, end: usize, cursor_pos: usize) v
     _ = cursor_pos; // TODO
 }
 
-pub fn replaceRange(self: *Buffer, start: usize, end: usize, new_chars: []u.Char) void {
+pub fn replaceRange(self: *Buffer, start: usize, end: usize, new_chars: []const u.Char) void {
     const range = self.getValidRange(start, end);
     self.chars.replaceRange(range.start, range.len(), new_chars) catch u.oom();
+}
+
+pub fn insertSlice(self: *Buffer, pos: usize, slice: []const u.Char) void {
+    if (pos >= self.numChars()) {
+        self.chars.appendSlice(slice) catch u.oom();
+    } else {
+        self.chars.insertSlice(pos, slice) catch u.oom();
+    }
+}
+
+pub fn insertChar(self: *Buffer, pos: usize, char: u.Char) void {
+    self.insertSlice(pos, &[_]u.Char{char});
 }
 
 fn updateBytesFromChars(self: *Buffer) void {

@@ -1,9 +1,7 @@
 # TODO
 - Refactor the edit system (have formal edits)
     - Change the keypress code first, only then think about undo
-
 - Undo/redo
-- Replace selection on enter
 - Multiple cursors
     + Select words with ctrl+d
     - Refactor code so that we have additional cursors
@@ -34,6 +32,7 @@
 - No known bugs
 
 # DONE
++ Replace selection on enter
 + Fix: selection end is misadjusted when unindenting
 + Fix: selection doesn't include newline
 + Fix: empty line at the end is not unindented
