@@ -670,6 +670,12 @@ pub const Editor = struct {
                     // Replace selection with a newline
                     buf.replaceRange(selection.start, selection.end, &[_]u.Char{'\n'});
                     cursor.pos = selection.start + 1;
+                } else if (cursor.col <= indent) {
+                    // Don't add too much indentation
+                    indent = cursor.col;
+                    char_buf[indent] = '\n';
+                    buf.insertSlice(line.start, char_buf[0 .. indent + 1]);
+                    cursor.pos += 1 + indent;
                 } else {
                     // Break the line normally
                     char_buf[0] = '\n';

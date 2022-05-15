@@ -1,7 +1,6 @@
 # TODO
 - Refactor the edit system (have formal edits)
     - Change the keypress code first, only then think about undo
-    - Fix: indentation on newline
 - Undo/redo
 - Multiple cursors
     + Select words with ctrl+d
@@ -33,6 +32,7 @@
 - No known bugs
 
 # DONE
++ Fix: indentation on newline
 + Replace selection on enter
 + Fix: selection end is misadjusted when unindenting
 + Fix: selection doesn't include newline
