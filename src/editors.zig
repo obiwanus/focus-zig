@@ -688,56 +688,56 @@ pub const Editor = struct {
             },
         }
 
-        const line = buf.getLine(self.cursor.line);
+        const line = buf.getLine(cursor.line);
         const move_by: usize = if (mods.control) 5 else 1;
 
         // Cursor movements
         switch (key) {
             .left => {
-                self.cursor.pos -|= move_by;
-                if (mods.control and self.cursor.pos < line.start) self.cursor.pos = line.start;
-                self.cursor.col_wanted = null;
+                cursor.pos -|= move_by;
+                if (mods.control and cursor.pos < line.start) cursor.pos = line.start;
+                cursor.col_wanted = null;
             },
             .right => {
-                self.cursor.pos += move_by;
-                if (mods.control and self.cursor.pos > line.end) self.cursor.pos = line.end;
-                if (self.cursor.pos > buf.numChars()) self.cursor.pos = buf.numChars();
-                self.cursor.col_wanted = null;
+                cursor.pos += move_by;
+                if (mods.control and cursor.pos > line.end) cursor.pos = line.end;
+                if (cursor.pos > buf.numChars()) cursor.pos = buf.numChars();
+                cursor.col_wanted = null;
             },
             .up => {
-                self.moveCursorToLine(self.cursor.line -| move_by, buf);
+                self.moveCursorToLine(cursor.line -| move_by, buf);
             },
             .down => {
-                self.moveCursorToLine(self.cursor.line + move_by, buf);
+                self.moveCursorToLine(cursor.line + move_by, buf);
             },
             .page_up => {
-                self.moveCursorToLine(self.cursor.line -| self.lines_per_screen, buf);
+                self.moveCursorToLine(cursor.line -| self.lines_per_screen, buf);
             },
             .page_down => {
-                self.moveCursorToLine(self.cursor.line + self.lines_per_screen, buf);
+                self.moveCursorToLine(cursor.line + self.lines_per_screen, buf);
             },
             .home => {
-                if (self.cursor.pos != line.text_start) {
-                    self.cursor.pos = line.text_start;
+                if (cursor.pos != line.text_start) {
+                    cursor.pos = line.text_start;
                 } else {
-                    self.cursor.pos = line.start;
+                    cursor.pos = line.start;
                 }
-                self.cursor.col_wanted = null;
+                cursor.col_wanted = null;
             },
             .end => {
-                self.cursor.pos = line.end;
-                self.cursor.col_wanted = null;
+                cursor.pos = line.end;
+                cursor.col_wanted = null;
             },
             else => {},
         }
-        if (old_cursor_pos != self.cursor.pos and !self.cursor.keep_selection) {
+        if (old_cursor_pos != cursor.pos and !cursor.keep_selection) {
             if (mods.shift) {
-                if (self.cursor.selection_start == null) {
+                if (cursor.selection_start == null) {
                     // Start new selection
-                    self.cursor.selection_start = old_cursor_pos;
+                    cursor.selection_start = old_cursor_pos;
                 }
             } else {
-                self.cursor.selection_start = null;
+                cursor.selection_start = null;
             }
         }
 
@@ -745,47 +745,47 @@ pub const Editor = struct {
             switch (key) {
                 .a => {
                     // Select all
-                    self.cursor.selection_start = 0;
-                    self.cursor.pos = buf.numChars();
+                    cursor.selection_start = 0;
+                    cursor.pos = buf.numChars();
                 },
                 .c, .x => {
                     // Copy / cut
-                    if (self.cursor.getSelectionRange()) |s| {
-                        self.cursor.copyToClipboard(buf.chars.items[s.start..s.end]);
+                    if (cursor.getSelectionRange()) |s| {
+                        cursor.copyToClipboard(buf.chars.items[s.start..s.end]);
                         if (key == .x) {
                             buf.chars.replaceRange(s.start, s.end - s.start, &[_]u.Char{}) catch unreachable;
-                            self.cursor.pos = s.start;
+                            cursor.pos = s.start;
                             buf.dirty = true;
                         }
                     }
                 },
                 .v => {
                     // Paste
-                    if (self.cursor.clipboard.items.len > 0) {
-                        const paste_data = self.cursor.clipboard.items;
+                    if (cursor.clipboard.items.len > 0) {
+                        const paste_data = cursor.clipboard.items;
                         var paste_start: usize = undefined;
-                        if (self.cursor.getSelectionRange()) |s| {
+                        if (cursor.getSelectionRange()) |s| {
                             buf.chars.replaceRange(s.start, s.end - s.start, paste_data) catch u.oom();
                             paste_start = s.start;
-                        } else if (self.cursor.pos >= buf.numChars()) {
+                        } else if (cursor.pos >= buf.numChars()) {
                             paste_start = buf.numChars();
                             buf.chars.appendSlice(paste_data) catch u.oom();
                         } else {
-                            buf.chars.insertSlice(self.cursor.pos, paste_data) catch u.oom();
-                            paste_start = self.cursor.pos;
+                            buf.chars.insertSlice(cursor.pos, paste_data) catch u.oom();
+                            paste_start = cursor.pos;
                         }
-                        self.cursor.pos = paste_start + paste_data.len;
+                        cursor.pos = paste_start + paste_data.len;
                         buf.dirty = true;
                     }
                 },
                 .l => {
                     // Select line
-                    const range = if (self.cursor.getSelectionRange()) |selection|
+                    const range = if (cursor.getSelectionRange()) |selection|
                         buf.expandRangeToWholeLines(selection.start, selection.end)
                     else
-                        buf.expandRangeToWholeLines(self.cursor.pos, self.cursor.pos);
-                    self.cursor.selection_start = range.start;
-                    self.cursor.pos = range.end;
+                        buf.expandRangeToWholeLines(cursor.pos, cursor.pos);
+                    cursor.selection_start = range.start;
+                    cursor.pos = range.end;
                 },
                 .d => {
                     // TODO:
@@ -793,9 +793,9 @@ pub const Editor = struct {
                     // - When more than one cursor:
                     //     - select words under each
                     //     - do nothing else
-                    if (self.cursor.selectWord(buf)) |range| {
-                        self.cursor.selection_start = range.start;
-                        self.cursor.pos = range.end;
+                    if (cursor.selectWord(buf)) |range| {
+                        cursor.selection_start = range.start;
+                        cursor.pos = range.end;
                     }
                 },
                 else => {},
@@ -804,10 +804,10 @@ pub const Editor = struct {
 
         if (mods.control and mods.shift and key == .d) {
             // Duplicate lines
-            var range = if (self.cursor.getSelectionRange()) |selection|
+            var range = if (cursor.getSelectionRange()) |selection|
                 buf.expandRangeToWholeLines(selection.start, selection.end)
             else
-                buf.expandRangeToWholeLines(self.cursor.pos, self.cursor.pos);
+                buf.expandRangeToWholeLines(cursor.pos, cursor.pos);
 
             // Make sure we won't reallocate when copying
             buf.chars.ensureTotalCapacity(buf.numChars() + range.len()) catch u.oom();
@@ -816,9 +816,9 @@ pub const Editor = struct {
             range.end += 1;
 
             // Move selection forward
-            self.cursor.pos += range.len();
-            if (self.cursor.selection_start != null) self.cursor.selection_start.? += range.len();
-            self.cursor.keep_selection = true;
+            cursor.pos += range.len();
+            if (cursor.selection_start != null) cursor.selection_start.? += range.len();
+            cursor.keep_selection = true;
 
             buf.dirty = true;
         }
@@ -828,37 +828,18 @@ pub const Editor = struct {
         // Keep or reset col_wanted
         switch (key) {
             .up, .down, .page_up, .page_down => {}, // keep on vertical movements
-            else => if (self.cursor.pos != old_cursor_pos) {
-                self.cursor.col_wanted = null;
+            else => if (cursor.pos != old_cursor_pos) {
+                cursor.col_wanted = null;
             },
         }
 
         // Save to disk
         if (mods.control and key == .s and buf.file != null) {
-            // Strip trailing spaces
-            {
-                var i: usize = 0;
-                var start: ?usize = null;
-                while (i < buf.numChars()) : (i += 1) {
-                    const char = buf.chars.items[i];
-                    if (char == ' ') {
-                        if (start == null) start = i;
-                    } else {
-                        if (char == '\n' and start != null) {
-                            const range = Buffer.Range{ .start = start.?, .end = i };
-                            buf.removeRange(range);
-                            i -|= range.len();
-                        }
-                        start = null;
-                        buf.dirty = true;
-                    }
-                }
-                if (start) |s| buf.removeRange(.{ .start = s, .end = buf.numChars() });
+            buf.stripTrailingSpaces();
 
-                // Adjust cursor
-                buf.recalculateLines();
-                self.cursor.pos = buf.getPosFromLineCol(self.cursor.line, self.cursor.col);
-            }
+            // Adjust cursor in case it was on the trimmed whitespace
+            buf.recalculateLines();
+            cursor.pos = buf.getPosFromLineCol(cursor.line, cursor.col);
 
             buf.saveToDisk() catch unreachable; // TODO: handle
         }

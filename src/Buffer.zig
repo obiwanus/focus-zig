@@ -277,11 +277,6 @@ pub fn expandRangeToWholeLines(self: Buffer, start: usize, end: usize) Range {
     };
 }
 
-// // TODO: should not be needed
-pub fn removeRange(self: *Buffer, range: Range) void {
-    self.chars.replaceRange(range.start, range.len(), &[_]u.Char{}) catch unreachable;
-}
-
 pub fn getValidRange(self: Buffer, start: usize, end: usize) Range {
     const max_end = self.numChars();
     const new_end = if (end > max_end) max_end else end;
@@ -289,11 +284,15 @@ pub fn getValidRange(self: Buffer, start: usize, end: usize) Range {
     return Range{ .start = start, .end = new_end };
 }
 
+fn deleteRaw(self: *Buffer, range: Range) void {
+    self.chars.replaceRange(range.start, range.len(), &[_]u.Char{}) catch unreachable;
+}
+
 pub fn deleteRange(self: *Buffer, start: usize, end: usize, cursor_pos: usize) void {
     const range = self.getValidRange(start, end);
     if (range.start == range.end) return;
-    self.chars.replaceRange(range.start, range.len(), &[_]u.Char{}) catch unreachable;
-    _ = cursor_pos; // TODO
+    self.deleteRaw(range);
+    _ = cursor_pos;
 }
 
 pub fn replaceRange(self: *Buffer, start: usize, end: usize, new_chars: []const u.Char) void {
@@ -307,6 +306,26 @@ pub fn insertSlice(self: *Buffer, pos: usize, slice: []const u.Char) void {
     } else {
         self.chars.insertSlice(pos, slice) catch u.oom();
     }
+}
+
+pub fn stripTrailingSpaces(self: *Buffer) void {
+    var i: usize = 0;
+    var start: ?usize = null;
+    while (i < self.numChars()) : (i += 1) {
+        const char = self.chars.items[i];
+        if (char == ' ') {
+            if (start == null) start = i;
+        } else {
+            if (char == '\n' and start != null) {
+                const range = Buffer.Range{ .start = start.?, .end = i };
+                self.deleteRaw(range);
+                i -|= range.len();
+            }
+            start = null;
+            self.dirty = true;
+        }
+    }
+    if (start) |s| self.deleteRaw(.{ .start = s, .end = self.numChars() });
 }
 
 pub fn insertChar(self: *Buffer, pos: usize, char: u.Char) void {
