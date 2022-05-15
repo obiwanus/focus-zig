@@ -1,6 +1,6 @@
 # TODO
 - Refactor the edit system (have formal edits)
-    - Change the keypress code first, only then think about undo
+    - Get rid of direct buffer modifications
 - Undo/redo
 - Multiple cursors
     + Select words with ctrl+d

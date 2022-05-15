@@ -303,30 +303,6 @@ const Cursor = struct {
         };
     }
 
-    fn selectWord(self: Cursor, buf: *const Buffer) ?Buffer.Range {
-        // Search within the line boundaries
-        const line = buf.lines.items[self.line];
-
-        const start = if (self.pos < line.end and u.isWordChar(buf.chars.items[self.pos]))
-            self.pos
-        else if (self.pos -| 1 >= line.start and self.pos -| 1 < line.end and u.isWordChar(buf.chars.items[self.pos -| 1]))
-            self.pos -| 1
-        else
-            return null;
-
-        var word_start = start;
-        word_start = while (word_start >= line.start) : (word_start -= 1) {
-            const is_part_of_word = u.isWordChar(buf.chars.items[word_start]);
-            if (!is_part_of_word) break word_start + 1;
-            if (word_start == 0 and is_part_of_word) break word_start;
-        } else word_start + 1;
-
-        var word_end = start + 1;
-        while (word_end < line.end and u.isWordChar(buf.chars.items[word_end])) : (word_end += 1) {}
-
-        return Buffer.Range{ .start = word_start, .end = word_end };
-    }
-
     fn copyToClipboard(self: *Cursor, chars: []const u.Char) void {
         self.clipboard.clearRetainingCapacity();
         self.clipboard.appendSlice(chars) catch u.oom();
@@ -385,7 +361,7 @@ pub const Editor = struct {
         // Update cursor line, col and pos
         {
             if (self.cursor.pos > buf.numChars()) self.cursor.pos = buf.numChars();
-            const cursor = buf.getLineCol(self.cursor.pos);
+            const cursor = buf.getLineColFromPos(self.cursor.pos);
             self.cursor.line = cursor.line;
             self.cursor.col = cursor.col;
         }
@@ -431,8 +407,8 @@ pub const Editor = struct {
 
             // First draw selections
             if (self.cursor.getSelectionRange()) |s| {
-                const start = buf.getLineCol(s.start);
-                const end = buf.getLineCol(s.end);
+                const start = buf.getLineColFromPos(s.start);
+                const end = buf.getLineColFromPos(s.end);
 
                 const sel_color = if (is_active) style.colors.SELECTION_ACTIVE else style.colors.SELECTION_INACTIVE;
 
@@ -580,7 +556,7 @@ pub const Editor = struct {
 
                 if (cursor.getSelectionRange()) |selection| {
                     const range = buf.expandRangeToWholeLines(selection.start, selection.end);
-                    const lines = buf.lines.items[buf.getLineCol(selection.start).line .. buf.getLineCol(selection.end).line + 1];
+                    const lines = buf.lines.items[buf.getLineColFromPos(selection.start).line .. buf.getLineColFromPos(selection.end).line + 1];
 
                     var new_chars = std.ArrayList(u.Char).init(tmp_allocator);
                     new_chars.ensureTotalCapacity(range.len() + lines.len * TAB_SIZE) catch u.oom();
@@ -793,7 +769,7 @@ pub const Editor = struct {
                     // - When more than one cursor:
                     //     - select words under each
                     //     - do nothing else
-                    if (cursor.selectWord(buf)) |range| {
+                    if (buf.selectWord(cursor.pos)) |range| {
                         cursor.selection_start = range.start;
                         cursor.pos = range.end;
                     }

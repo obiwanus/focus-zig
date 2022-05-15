@@ -219,7 +219,7 @@ pub fn recalculateLines(self: *Buffer) void {
 }
 
 /// Returns line and column given a position in the buffer
-pub fn getLineCol(self: Buffer, pos: usize) LineCol {
+pub fn getLineColFromPos(self: Buffer, pos: usize) LineCol {
     // Binary search
     const lines = self.lines.items;
     var left: usize = 0;
@@ -269,12 +269,39 @@ pub fn numLines(self: Buffer) usize {
 
 pub fn expandRangeToWholeLines(self: Buffer, start: usize, end: usize) Range {
     const range = self.getValidRange(start, end);
-    const first_line = self.getLineCol(range.start).line;
-    const last_line = self.getLineCol(range.end).line;
+    const first_line = self.getLineColFromPos(range.start).line;
+    const last_line = self.getLineColFromPos(range.end).line;
     return .{
         .start = self.lines.items[first_line].start,
         .end = self.lines.items[last_line].end,
     };
+}
+
+pub fn selectWord(self: Buffer, pos: usize) ?Range {
+    // Search within the line boundaries
+    const line = self.getLine(self.getLineColFromPos(pos).line);
+    const chars = self.chars.items;
+
+    const pos2 = pos -| 1; // check pos on the left too if pos doesn't work
+
+    const start = if (pos < line.end and u.isWordChar(chars[pos]))
+        pos
+    else if (pos2 >= line.start and pos2 < line.end and u.isWordChar(chars[pos2]))
+        pos2
+    else
+        return null;
+
+    var word_start = start;
+    word_start = while (word_start >= line.start) : (word_start -= 1) {
+        const is_part_of_word = u.isWordChar(chars[word_start]);
+        if (!is_part_of_word) break word_start + 1;
+        if (word_start == 0 and is_part_of_word) break word_start;
+    } else word_start + 1;
+
+    var word_end = start + 1;
+    while (word_end < line.end and u.isWordChar(chars[word_end])) : (word_end += 1) {}
+
+    return Range{ .start = word_start, .end = word_end };
 }
 
 pub fn getValidRange(self: Buffer, start: usize, end: usize) Range {
