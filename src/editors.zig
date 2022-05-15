@@ -652,28 +652,19 @@ pub const Editor = struct {
                 const line = buf.getLine(cursor.line);
                 var indent = line.lenWhitespace();
                 var char_buf: [1024]u.Char = undefined;
-                u.assert(indent < char_buf.len);
+                std.mem.set(u.Char, char_buf[0 .. indent + 1], ' '); // if buffer is too small, we safely crash here
 
                 if (mods.control and mods.shift) {
                     // Insert line above
-                    std.mem.set(u.Char, char_buf[0..indent], ' ');
                     char_buf[indent] = '\n';
-                    cursor.pos = line.start;
-                    buf.insertSlice(cursor.pos, char_buf[0 .. indent + 1]);
-                    cursor.pos += indent;
+                    buf.insertSlice(line.start, char_buf[0 .. indent + 1]);
+                    cursor.pos = line.start + indent;
                 } else if (mods.control) {
                     // Insert line below
-                    std.mem.set(u.Char, char_buf[0..indent], ' ');
-                    char_buf[indent] = '\n';
                     if (buf.getLineOrNull(cursor.line + 1)) |next_line| {
-                        cursor.pos = next_line.start;
-                        buf.insertSlice(cursor.pos, char_buf[0 .. indent + 1]);
-                        cursor.pos += indent;
-                    } else {
-                        // Last line
-                        buf.chars.append('\n') catch u.oom();
-                        buf.chars.appendSlice(char_buf[0..indent]) catch u.oom();
-                        cursor.pos = buf.numChars();
+                        char_buf[indent] = '\n';
+                        buf.insertSlice(next_line.start, char_buf[0 .. indent + 1]);
+                        cursor.pos = next_line.start + indent;
                     }
                 } else if (cursor.getSelectionRange()) |selection| {
                     // Replace selection with a newline
@@ -681,29 +672,9 @@ pub const Editor = struct {
                     cursor.pos = selection.start + 1;
                 } else {
                     // Break the line normally
-                    const prev_char = if (buf.numChars() > 0) buf.chars.items[cursor.pos -| 1] else null;
-                    const next_char = if (cursor.pos < buf.numChars()) buf.chars.items[cursor.pos] else null;
-
-                    const opening_block = prev_char != null and prev_char.? == '{' and (next_char == null or next_char != null and next_char.? == '\n');
-                    if (opening_block) {
-                        indent += TAB_SIZE;
-                    }
-
                     char_buf[0] = '\n';
-                    std.mem.set(u.Char, char_buf[1 .. indent + 1], ' ');
-                    if (cursor.pos >= buf.numChars()) {
-                        buf.chars.appendSlice(char_buf[0 .. indent + 1]) catch u.oom();
-                    } else {
-                        buf.chars.insertSlice(cursor.pos, char_buf[0 .. indent + 1]) catch u.oom();
-                    }
+                    buf.insertSlice(cursor.pos, char_buf[0 .. indent + 1]);
                     cursor.pos += 1 + indent;
-
-                    if (opening_block) {
-                        // Insert a closing brace
-                        indent -= TAB_SIZE;
-                        buf.insertSlice(cursor.pos, char_buf[0 .. indent + 1]);
-                        buf.insertChar(cursor.pos + indent + 1, '}');
-                    }
                 }
             },
             else => {
