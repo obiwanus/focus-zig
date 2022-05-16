@@ -99,7 +99,7 @@ pub fn charEntered(self: *Editors, char: u.Char, clock_ms: f64) void {
 }
 
 pub fn keyPress(self: *Editors, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allocator, clock_ms: f64) void {
-    if (mods.control and mods.alt) {
+    if (u.modsCmd(mods) and mods.alt) {
         switch (key) {
             .left => {
                 self.switchToLeft();
@@ -113,7 +113,7 @@ pub fn keyPress(self: *Editors, key: glfw.Key, mods: glfw.Mods, tmp_allocator: A
             },
             else => {},
         }
-    } else if (mods.control and key == .w) {
+    } else if (u.modsOnlyCmd(mods) and key == .w) {
         if (mods.shift) {
             self.closeOtherPane();
         } else {
@@ -635,12 +635,12 @@ pub const Editor = struct {
                 var char_buf: [1024]u.Char = undefined;
                 std.mem.set(u.Char, char_buf[0 .. indent + 1], ' '); // if buffer is too small, we safely crash here
 
-                if (mods.control and mods.shift) {
+                if (u.modsCmd(mods) and mods.shift) {
                     // Insert line above
                     char_buf[indent] = '\n';
                     buf.insertSlice(line.start, char_buf[0 .. indent + 1], cursor.state());
                     cursor.pos = line.start + indent;
-                } else if (mods.control) {
+                } else if (u.modsCmd(mods)) {
                     // Insert line below
                     if (buf.getLineOrNull(cursor.line + 1)) |next_line| {
                         char_buf[indent] = '\n';
@@ -670,17 +670,17 @@ pub const Editor = struct {
         }
 
         const line = buf.getLine(cursor.line);
-        const move_by: usize = if (mods.control) 5 else 1;
+        const move_by: usize = if (u.modsCmd(mods)) 5 else 1;
 
         // Cursor movements
         switch (key) {
             .left => {
                 cursor.pos -|= move_by;
-                if (mods.control and cursor.pos < line.start) cursor.pos = line.start;
+                if (u.modsCmd(mods) and cursor.pos < line.start) cursor.pos = line.start;
             },
             .right => {
                 cursor.pos += move_by;
-                if (mods.control and cursor.pos > line.end) cursor.pos = line.end;
+                if (u.modsCmd(mods) and cursor.pos > line.end) cursor.pos = line.end;
                 if (cursor.pos > buf.numChars()) cursor.pos = buf.numChars();
             },
             .up => {
@@ -718,7 +718,7 @@ pub const Editor = struct {
             }
         }
 
-        if (u.modsOnlyCtrl(mods)) {
+        if (u.modsOnlyCmd(mods)) {
             switch (key) {
                 .a => {
                     // Select all
@@ -782,7 +782,7 @@ pub const Editor = struct {
             }
         }
 
-        if (mods.control and mods.shift and key == .z) {
+        if (u.modsCmd(mods) and mods.shift and key == .z) {
             if (buf.redo()) |cursor_state| {
                 cursor.pos = cursor_state.pos;
                 cursor.selection_start = cursor_state.selection_start;
@@ -791,7 +791,7 @@ pub const Editor = struct {
             }
         }
 
-        if (mods.control and mods.shift and key == .d) {
+        if (u.modsCmd(mods) and mods.shift and key == .d) {
             // Duplicate lines
             var range = if (cursor.getSelectionRange()) |selection|
                 buf.expandRangeToWholeLines(selection.start, selection.end)
@@ -826,7 +826,7 @@ pub const Editor = struct {
         }
 
         // Save to disk
-        if (mods.control and key == .s and buf.file != null) {
+        if (u.modsCmd(mods) and key == .s and buf.file != null) {
             buf.stripTrailingSpaces();
 
             // Adjust cursor in case it was on the trimmed whitespace

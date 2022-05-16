@@ -252,7 +252,7 @@ pub fn main() !void {
                         editors.charEntered(char, clock_ms);
                     },
                     .key_pressed => |kp| {
-                        if (u.modsOnlyCtrl(kp.mods) and kp.key == .p) {
+                        if (u.modsOnlyCmd(kp.mods) and kp.key == .p) {
                             open_file_dialog = try OpenFileDialog.init(gpa);
                             if (editors.getActiveEditorFilePath()) |path| {
                                 // Open files relavitely to the currently active buffer
