@@ -217,10 +217,7 @@ pub fn loadFile(self: *Buffer, path: []const u8, allocator: Allocator) void {
     self.dirty = true;
 }
 
-pub fn syncInternalData(self: *Buffer, clock_ms: f64) void {
-    if (clock_ms - self.last_edit_ms >= 500) self.putCurrentEditsIntoUndoGroup();
-    self.last_edit_ms = clock_ms;
-
+pub fn syncInternalData(self: *Buffer) void {
     self.recalculateLines();
 
     // Highlight code
@@ -487,7 +484,7 @@ pub fn redo(self: *Buffer) ?CursorState {
     return cursor;
 }
 
-fn putCurrentEditsIntoUndoGroup(self: *Buffer) void {
+pub fn putCurrentEditsIntoUndoGroup(self: *Buffer) void {
     if (self.edits.items.len == 0) return;
     const edits = self.edits.toOwnedSlice();
     std.mem.reverse(Edit, edits);

@@ -29,6 +29,7 @@ last_update_from_disk_ms: f64 = 0,
 
 const Editors = @This();
 const BUFFER_REFRESH_TIMEOUT_MS = 500;
+const UNDO_GROUP_TIMEOUT_MS = 500;
 
 pub fn init(allocator: Allocator) Editors {
     return .{
@@ -53,8 +54,9 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
 
     // Always try to update all open buffers
     for (self.open_buffers.items) |*buf, buf_id| {
+        if (clock_ms - buf.last_edit_ms >= UNDO_GROUP_TIMEOUT_MS) buf.putCurrentEditsIntoUndoGroup();
         if (buf.dirty) {
-            buf.syncInternalData(clock_ms);
+            buf.syncInternalData();
             buf.dirty = false;
 
             // Remove selection on all cursors
@@ -92,11 +94,11 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
     }
 }
 
-pub fn charEntered(self: *Editors, char: u.Char) void {
-    if (self.activeEditor()) |editor| editor.typeChar(char, self.getBuffer(editor.buffer));
+pub fn charEntered(self: *Editors, char: u.Char, clock_ms: f64) void {
+    if (self.activeEditor()) |editor| editor.typeChar(char, self.getBuffer(editor.buffer), clock_ms);
 }
 
-pub fn keyPress(self: *Editors, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allocator) void {
+pub fn keyPress(self: *Editors, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allocator, clock_ms: f64) void {
     if (mods.control and mods.alt) {
         switch (key) {
             .left => {
@@ -118,7 +120,7 @@ pub fn keyPress(self: *Editors, key: glfw.Key, mods: glfw.Mods, tmp_allocator: A
             self.closeActivePane();
         }
     } else if (self.activeEditor()) |editor| {
-        editor.keyPress(self.getBuffer(editor.buffer), key, mods, tmp_allocator);
+        editor.keyPress(self.getBuffer(editor.buffer), key, mods, tmp_allocator, clock_ms);
     }
 }
 
@@ -502,7 +504,7 @@ pub const Editor = struct {
         }
     }
 
-    fn typeChar(self: *Editor, char: u.Char, buf: *Buffer) void {
+    fn typeChar(self: *Editor, char: u.Char, buf: *Buffer, clock_ms: f64) void {
         var cursor = &self.cursor;
 
         if (cursor.getSelectionRange()) |selection| {
@@ -515,9 +517,10 @@ pub const Editor = struct {
         cursor.col_wanted = null;
         buf.dirty = true;
         buf.modified = true;
+        buf.last_edit_ms = clock_ms;
     }
 
-    fn keyPress(self: *Editor, buf: *Buffer, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allocator) void {
+    fn keyPress(self: *Editor, buf: *Buffer, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allocator, clock_ms: f64) void {
         var cursor = &self.cursor;
         const old_cursor_pos = cursor.pos;
 
@@ -809,7 +812,10 @@ pub const Editor = struct {
             buf.dirty = true;
         }
 
-        if (buf.dirty) buf.modified = true;
+        if (buf.dirty) {
+            buf.modified = true;
+            buf.last_edit_ms = clock_ms;
+        }
 
         // Keep or reset col_wanted
         switch (key) {

@@ -249,7 +249,7 @@ pub fn main() !void {
             for (g_events.items) |event| {
                 switch (event) {
                     .char_entered => |char| {
-                        editors.charEntered(char);
+                        editors.charEntered(char, clock_ms);
                     },
                     .key_pressed => |kp| {
                         if (u.modsOnlyCtrl(kp.mods) and kp.key == .p) {
@@ -260,7 +260,7 @@ pub fn main() !void {
                             }
                             continue;
                         }
-                        editors.keyPress(kp.key, kp.mods, frame_allocator);
+                        editors.keyPress(kp.key, kp.mods, frame_allocator, clock_ms);
                     },
                     else => {},
                 }

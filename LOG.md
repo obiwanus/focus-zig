@@ -1,5 +1,5 @@
 # TODO
-- Fix: single character left when undoing
+- Search within buffer
 - Multiple cursors
     + Select words with ctrl+d
     - Refactor code so that we have additional cursors
@@ -7,7 +7,6 @@
 - Use a global clipboard unless multiple cursors are used
 - Wrap around when moving selection in the open files dialog
 - Create new files
-- Search within buffer
 - Format on save
 - Enlarge the current editor on shift+ctrl+L
 - [bug] Colors are off when non-ascii bytes are present (tokenizer doesn't support utf-8)
@@ -24,12 +23,11 @@
 + Save files
 + Switch between open files
 + Select text, copy/cut/paste/duplicate
-- Create new files
++ Undo/redo
 - Search within buffer
-- Undo/redo
-- No known bugs
 
 # DONE
++ Fix: single character left when undoing
 + Set window icon
 + Fix: selection disappears on certain actions
 + Undo by group
