@@ -1,5 +1,6 @@
 # TODO
-- Undo by group
+- Fix: selection disappears on certain actions
+- Fix: single character left when undoing
 - Multiple cursors
     + Select words with ctrl+d
     - Refactor code so that we have additional cursors
@@ -30,6 +31,7 @@
 - No known bugs
 
 # DONE
++ Undo by group
 + A basic undo
 + Refactor the edit system (have formal edits)
 + Get rid of direct buffer modifications

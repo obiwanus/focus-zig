@@ -25,7 +25,7 @@ layout: union(enum) {
         active: usize,
     },
 },
-last_buffer_update_ms: f64 = 0,
+last_update_from_disk_ms: f64 = 0,
 
 const Editors = @This();
 const BUFFER_REFRESH_TIMEOUT_MS = 500;
@@ -46,15 +46,15 @@ pub fn deinit(self: Editors) void {
 
 pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: Allocator) void {
     // Reload buffers from disk and check for conflicts
-    if (clock_ms - self.last_buffer_update_ms > BUFFER_REFRESH_TIMEOUT_MS) {
+    if (clock_ms - self.last_update_from_disk_ms > BUFFER_REFRESH_TIMEOUT_MS) {
         for (self.open_buffers.items) |*buf| buf.refreshFromDisk(self.allocator);
-        self.last_buffer_update_ms = clock_ms;
+        self.last_update_from_disk_ms = clock_ms;
     }
 
     // Always try to update all open buffers
     for (self.open_buffers.items) |*buf, buf_id| {
         if (buf.dirty) {
-            buf.syncInternalData();
+            buf.syncInternalData(clock_ms);
 
             // Remove selection on all cursors
             for (self.open_editors.items) |*ed| {
@@ -303,6 +303,11 @@ const Cursor = struct {
         };
     }
 
+    fn state(self: Cursor) Buffer.CursorState {
+        // Used to save in undos/redos
+        return .{ .pos = self.pos, .selection_start = self.selection_start };
+    }
+
     fn copyToClipboard(self: *Cursor, chars: []const u.Char) void {
         self.clipboard.clearRetainingCapacity();
         self.clipboard.appendSlice(chars) catch u.oom();
@@ -497,14 +502,16 @@ pub const Editor = struct {
     }
 
     fn typeChar(self: *Editor, char: u.Char, buf: *Buffer) void {
-        if (self.cursor.getSelectionRange()) |selection| {
-            buf.replaceRange(selection.start, selection.end, &[_]u.Char{char});
-            self.cursor.pos = selection.start + 1;
+        var cursor = &self.cursor;
+
+        if (cursor.getSelectionRange()) |selection| {
+            buf.replaceRange(selection.start, selection.end, &[_]u.Char{char}, cursor.state());
+            cursor.pos = selection.start + 1;
         } else {
-            buf.insertChar(self.cursor.pos, char);
-            self.cursor.pos += 1;
+            buf.insertChar(cursor.pos, char, cursor.state());
+            cursor.pos += 1;
         }
-        self.cursor.col_wanted = null;
+        cursor.col_wanted = null;
         buf.dirty = true;
         buf.modified = true;
     }
@@ -519,15 +526,15 @@ pub const Editor = struct {
         switch (key) {
             .delete => {
                 if (cursor.getSelectionRange()) |selection| {
-                    buf.deleteRange(selection.start, selection.end);
+                    buf.deleteRange(selection.start, selection.end, cursor.state());
                     cursor.pos = selection.start;
                 } else {
-                    buf.deleteRange(cursor.pos, cursor.pos + 1);
+                    buf.deleteRange(cursor.pos, cursor.pos + 1, cursor.state());
                 }
             },
             .backspace => {
                 if (cursor.getSelectionRange()) |selection| {
-                    buf.deleteRange(selection.start, selection.end);
+                    buf.deleteRange(selection.start, selection.end, cursor.state());
                     cursor.pos = selection.start;
                 } else {
                     // Check if we can delete spaces to the previous tabstop
@@ -542,7 +549,7 @@ pub const Editor = struct {
                         }
                     }
                     const spaces_to_remove = if (all_spaces) to_prev_tabstop else 1;
-                    buf.deleteRange(cursor.pos -| spaces_to_remove, cursor.pos);
+                    buf.deleteRange(cursor.pos -| spaces_to_remove, cursor.pos, cursor.state());
                     cursor.pos -|= spaces_to_remove;
                 }
             },
@@ -564,8 +571,7 @@ pub const Editor = struct {
                             if (line.end != range.end) new_chars.appendAssumeCapacity('\n');
                         }
 
-                        // TODO: remember cursor and selection
-                        buf.replaceRange(range.start, range.end, new_chars.items);
+                        buf.replaceRange(range.start, range.end, new_chars.items, cursor.state());
 
                         // Adjust selection
                         const spaces_inserted = lines.len * TAB_SIZE;
@@ -587,7 +593,7 @@ pub const Editor = struct {
                         }
 
                         // TODO: remember cursor and selection
-                        buf.replaceRange(range.start, range.end, new_chars.items);
+                        buf.replaceRange(range.start, range.end, new_chars.items, cursor.state());
 
                         const first_line = lines[0];
                         const last_line = lines[lines.len - 1];
@@ -608,13 +614,13 @@ pub const Editor = struct {
                     if (!mods.shift) {
                         // Insert spaces
                         const to_next_tabstop = TAB_SIZE - cursor.col % TAB_SIZE;
-                        buf.insertSlice(cursor.pos, SPACES[0..to_next_tabstop]);
+                        buf.insertSlice(cursor.pos, SPACES[0..to_next_tabstop], cursor.state());
                         cursor.pos += to_next_tabstop;
                     } else {
                         // Un-indent current line
                         const line = buf.getLine(cursor.line);
                         const spaces_to_remove = u.min(TAB_SIZE, line.lenWhitespace());
-                        buf.deleteRange(line.start, line.start + spaces_to_remove);
+                        buf.deleteRange(line.start, line.start + spaces_to_remove, cursor.state());
                         cursor.pos -|= u.min(cursor.pos - line.start, spaces_to_remove);
                     }
                 }
@@ -628,29 +634,29 @@ pub const Editor = struct {
                 if (mods.control and mods.shift) {
                     // Insert line above
                     char_buf[indent] = '\n';
-                    buf.insertSlice(line.start, char_buf[0 .. indent + 1]);
+                    buf.insertSlice(line.start, char_buf[0 .. indent + 1], cursor.state());
                     cursor.pos = line.start + indent;
                 } else if (mods.control) {
                     // Insert line below
                     if (buf.getLineOrNull(cursor.line + 1)) |next_line| {
                         char_buf[indent] = '\n';
-                        buf.insertSlice(next_line.start, char_buf[0 .. indent + 1]);
+                        buf.insertSlice(next_line.start, char_buf[0 .. indent + 1], cursor.state());
                         cursor.pos = next_line.start + indent;
                     }
                 } else if (cursor.getSelectionRange()) |selection| {
                     // Replace selection with a newline
-                    buf.replaceRange(selection.start, selection.end, &[_]u.Char{'\n'});
+                    buf.replaceRange(selection.start, selection.end, &[_]u.Char{'\n'}, cursor.state());
                     cursor.pos = selection.start + 1;
                 } else if (cursor.col <= indent) {
                     // Don't add too much indentation
                     indent = cursor.col;
                     char_buf[indent] = '\n';
-                    buf.insertSlice(line.start, char_buf[0 .. indent + 1]);
+                    buf.insertSlice(line.start, char_buf[0 .. indent + 1], cursor.state());
                     cursor.pos += 1 + indent;
                 } else {
                     // Break the line normally
                     char_buf[0] = '\n';
-                    buf.insertSlice(cursor.pos, char_buf[0 .. indent + 1]);
+                    buf.insertSlice(cursor.pos, char_buf[0 .. indent + 1], cursor.state());
                     cursor.pos += 1 + indent;
                 }
             },
@@ -720,7 +726,7 @@ pub const Editor = struct {
                     if (cursor.getSelectionRange()) |s| {
                         cursor.copyToClipboard(buf.chars.items[s.start..s.end]);
                         if (key == .x) {
-                            buf.deleteRange(s.start, s.end);
+                            buf.deleteRange(s.start, s.end, cursor.state());
                             cursor.pos = s.start;
                             buf.dirty = true;
                         }
@@ -731,10 +737,10 @@ pub const Editor = struct {
                     if (cursor.clipboard.items.len > 0) {
                         const paste_data = cursor.clipboard.items;
                         if (cursor.getSelectionRange()) |s| {
-                            buf.replaceRange(s.start, s.end, paste_data);
+                            buf.replaceRange(s.start, s.end, paste_data, cursor.state());
                             cursor.pos = s.start + paste_data.len;
                         } else {
-                            buf.insertSlice(cursor.pos, paste_data);
+                            buf.insertSlice(cursor.pos, paste_data, cursor.state());
                             cursor.pos += paste_data.len;
                         }
                         buf.dirty = true;
@@ -761,10 +767,23 @@ pub const Editor = struct {
                     }
                 },
                 .z => {
-                    buf.undo();
-                    buf.dirty = true;
+                    if (buf.undo()) |cursor_state| {
+                        cursor.pos = cursor_state.pos;
+                        cursor.selection_start = cursor_state.selection_start;
+                        cursor.keep_selection = true;
+                        buf.dirty = true;
+                    }
                 },
                 else => {},
+            }
+        }
+
+        if (mods.control and mods.shift and key == .z) {
+            if (buf.redo()) |cursor_state| {
+                cursor.pos = cursor_state.pos;
+                cursor.selection_start = cursor_state.selection_start;
+                cursor.keep_selection = true;
+                buf.dirty = true;
             }
         }
 
@@ -777,8 +796,8 @@ pub const Editor = struct {
 
             // Make sure we won't reallocate when copying
             buf.chars.ensureTotalCapacity(buf.numChars() + range.len()) catch u.oom();
-            buf.insertSlice(range.start, buf.chars.items[range.start..range.end]);
-            buf.insertChar(range.end, '\n');
+            buf.insertSlice(range.start, buf.chars.items[range.start..range.end], cursor.state());
+            buf.insertChar(range.end, '\n', cursor.state());
             range.end += 1;
 
             // Move selection forward
