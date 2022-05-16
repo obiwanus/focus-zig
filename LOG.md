@@ -1,5 +1,4 @@
 # TODO
-- Fix: selection disappears on certain actions
 - Fix: single character left when undoing
 - Multiple cursors
     + Select words with ctrl+d
@@ -31,6 +30,7 @@
 - No known bugs
 
 # DONE
++ Fix: selection disappears on certain actions
 + Undo by group
 + A basic undo
 + Refactor the edit system (have formal edits)

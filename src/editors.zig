@@ -55,6 +55,7 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
     for (self.open_buffers.items) |*buf, buf_id| {
         if (buf.dirty) {
             buf.syncInternalData(clock_ms);
+            buf.dirty = false;
 
             // Remove selection on all cursors
             for (self.open_editors.items) |*ed| {
