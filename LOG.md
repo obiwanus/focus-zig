@@ -1,4 +1,5 @@
 # TODO
+- Fix: invalid cursor when redoing
 - Search within buffer
 - Multiple cursors
     + Select words with ctrl+d
@@ -27,6 +28,7 @@
 - Search within buffer
 
 # DONE
++ On windows use the windows subsystem
 + Fix: single character left when undoing
 + Set window icon
 + Fix: selection disappears on certain actions

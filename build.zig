@@ -38,6 +38,10 @@ pub fn build(b: *std.build.Builder) void {
     resources.addShader("ui_frag", "shaders/ui.frag");
     exe.addPackage(resources.package);
 
+    if (target.getOsTag() == .windows) {
+        exe.subsystem = .Windows;
+    }
+
     const run_cmd = exe.run();
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| {
