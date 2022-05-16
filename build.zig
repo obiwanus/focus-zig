@@ -12,10 +12,9 @@ pub fn build(b: *std.build.Builder) void {
     exe.setTarget(target);
     exe.setBuildMode(mode);
 
-    // NOTE: temporarily removed because unused
-    // // stb_image
-    // exe.addCSourceFile("libs/stb_image/stb_image.c", &.{});
-    // exe.addPackagePath("stbi", "libs/stb_image/stbi.zig");
+    // stb_image
+    exe.addCSourceFile("libs/stb_image/stb_image.c", &.{});
+    exe.addPackagePath("stbi", "libs/stb_image/stbi.zig");
 
     // stb_truetype
     exe.addCSourceFile("libs/stb_truetype/stb_truetype.c", &.{});

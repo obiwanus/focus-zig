@@ -30,6 +30,7 @@
 - No known bugs
 
 # DONE
++ Set window icon
 + Fix: selection disappears on certain actions
 + Undo by group
 + A basic undo

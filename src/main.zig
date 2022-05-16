@@ -1,8 +1,9 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-pub const glfw = @import("glfw");
-pub const vk = @import("vulkan");
+const glfw = @import("glfw");
+const vk = @import("vulkan");
+const stbi = @import("stbi");
 
 const focus = @import("focus.zig");
 const u = focus.utils;
@@ -73,6 +74,16 @@ pub fn main() !void {
     try window.setPosInt(monitor_pos.x, monitor_pos.y);
     try window.maximize();
     defer window.destroy();
+
+    // Set window icon
+    const window_icon = stbi.load("images/focus.png", .rgb_alpha) catch u.panic("Couldn't load window icon", .{});
+    defer window_icon.free();
+    window.setIcon(static_allocator, &[_]glfw.Image{.{
+        .width = window_icon.width,
+        .height = window_icon.height,
+        .pixels = window_icon.pixels,
+        .owned = true,
+    }}) catch u.panic("Couldn't set window icon", .{});
 
     const vc = try VulkanContext.init(static_allocator, APP_NAME, window);
     defer vc.deinit();
