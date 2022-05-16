@@ -1,5 +1,5 @@
 # TODO
-- Undo/redo
+- Undo by group
 - Multiple cursors
     + Select words with ctrl+d
     - Refactor code so that we have additional cursors
@@ -30,6 +30,7 @@
 - No known bugs
 
 # DONE
++ A basic undo
 + Refactor the edit system (have formal edits)
 + Get rid of direct buffer modifications
 + Fix: indentation on newline

@@ -760,6 +760,10 @@ pub const Editor = struct {
                         cursor.pos = range.end;
                     }
                 },
+                .z => {
+                    buf.undo();
+                    buf.dirty = true;
+                },
                 else => {},
             }
         }

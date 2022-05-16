@@ -5,15 +5,21 @@ const u = focus.utils;
 
 const Allocator = std.mem.Allocator;
 const TextColor = focus.style.TextColor;
+const Char = u.Char;
 
 const Buffer = @This();
 
 file: ?File, // buffer may be tied to a file or may be just freestanding
 
 bytes: std.ArrayList(u8),
-chars: std.ArrayList(u.Char),
+chars: std.ArrayList(Char),
 colors: std.ArrayList(TextColor),
 lines: std.ArrayList(Line),
+
+edit_alloc: Allocator,
+undos: std.ArrayList([]Edit),
+redos: std.ArrayList([]Edit),
+edits: std.ArrayList(Edit), // most recent edits, which will be put into an undo group soon
 
 dirty: bool = true, // needs syncing internal structures
 modified: bool = false, // hasn't been saved to disk
@@ -25,9 +31,32 @@ const File = struct {
     mtime: i128 = 0,
 };
 
-// const Edit = union(enum) {
-//     .
-// };
+const Edit = union(enum) {
+    Insert: struct {
+        pos: usize,
+        new_chars: []Char,
+    },
+    Replace: struct {
+        range: Range,
+        new_chars: []Char,
+        old_chars: []Char,
+    },
+    Delete: struct {
+        range: Range,
+        old_chars: []Char,
+    },
+
+    fn deinit(self: Edit, allocator: Allocator) void {
+        switch (self) {
+            .Insert => |edit| allocator.free(edit.new_chars),
+            .Replace => |edit| {
+                allocator.free(edit.new_chars);
+                allocator.free(edit.old_chars);
+            },
+            .Delete => |edit| allocator.free(edit.old_chars),
+        }
+    }
+};
 
 pub const LineCol = struct {
     line: usize,
@@ -61,9 +90,14 @@ pub fn init(allocator: Allocator) Buffer {
     return .{
         .file = null,
         .bytes = std.ArrayList(u8).init(allocator),
-        .chars = std.ArrayList(u.Char).init(allocator),
+        .chars = std.ArrayList(Char).init(allocator),
         .colors = std.ArrayList(TextColor).init(allocator),
         .lines = std.ArrayList(Line).init(allocator),
+
+        .edit_alloc = allocator,
+        .undos = std.ArrayList([]Edit).init(allocator),
+        .redos = std.ArrayList([]Edit).init(allocator),
+        .edits = std.ArrayList(Edit).init(allocator),
     };
 }
 
@@ -73,6 +107,21 @@ pub fn deinit(self: Buffer, allocator: Allocator) void {
     self.colors.deinit();
     self.lines.deinit();
     if (self.file) |file| allocator.free(file.path);
+
+    for (self.undos.items) |edits| {
+        for (edits) |edit| edit.deinit(self.edit_alloc);
+        self.edit_alloc.free(edits);
+    }
+    self.undos.deinit();
+
+    for (self.redos.items) |edits| {
+        for (edits) |edit| edit.deinit(self.edit_alloc);
+        self.edit_alloc.free(edits);
+    }
+    self.redos.deinit();
+
+    for (self.edits.items) |edit| edit.deinit(self.edit_alloc);
+    self.edits.deinit();
 }
 
 pub fn saveToDisk(self: *Buffer) !void {
@@ -195,8 +244,6 @@ pub fn syncInternalData(self: *Buffer) void {
 
         _ = self.bytes.pop(); // un-null-terminate
     }
-
-    self.dirty = false;
 }
 
 pub fn recalculateLines(self: *Buffer) void {
@@ -304,6 +351,18 @@ pub fn selectWord(self: Buffer, pos: usize) ?Range {
     return Range{ .start = word_start, .end = word_end };
 }
 
+fn copyChars(self: Buffer, start: usize, end: usize) []Char {
+    return self.edit_alloc.dupe(Char, self.chars.items[start..end]) catch u.oom();
+}
+
+fn clearRedos(self: *Buffer) void {
+    for (self.redos.items) |edits| {
+        for (edits) |edit| edit.deinit(self.edit_alloc);
+        self.edit_alloc.free(edits);
+    }
+    self.redos.clearRetainingCapacity();
+}
+
 pub fn getValidRange(self: Buffer, start: usize, end: usize) Range {
     const max_end = self.numChars();
     const new_end = if (end > max_end) max_end else end;
@@ -312,25 +371,70 @@ pub fn getValidRange(self: Buffer, start: usize, end: usize) Range {
 }
 
 fn deleteRaw(self: *Buffer, range: Range) void {
-    self.chars.replaceRange(range.start, range.len(), &[_]u.Char{}) catch unreachable;
+    self.chars.replaceRange(range.start, range.len(), &[_]Char{}) catch unreachable;
+}
+
+fn insertRaw(self: *Buffer, pos: usize, chars: []const Char) void {
+    if (pos >= self.numChars()) {
+        self.chars.appendSlice(chars) catch u.oom();
+    } else {
+        self.chars.insertSlice(pos, chars) catch u.oom();
+    }
+}
+
+fn replaceRaw(self: *Buffer, start: usize, end: usize, chars: []const Char) void {
+    self.chars.replaceRange(start, end - start, chars) catch u.oom();
 }
 
 pub fn deleteRange(self: *Buffer, start: usize, end: usize) void {
     const range = self.getValidRange(start, end);
     if (range.start == range.end) return;
+    self.edits.append(.{ .Delete = .{ .range = range, .old_chars = self.copyChars(range.start, range.end) } }) catch u.oom();
+    self.clearRedos();
     self.deleteRaw(range);
 }
 
-pub fn replaceRange(self: *Buffer, start: usize, end: usize, new_chars: []const u.Char) void {
+pub fn replaceRange(self: *Buffer, start: usize, end: usize, new_chars: []const Char) void {
     const range = self.getValidRange(start, end);
-    self.chars.replaceRange(range.start, range.len(), new_chars) catch u.oom();
+    self.edits.append(.{ .Replace = .{
+        .range = range,
+        .new_chars = self.edit_alloc.dupe(Char, new_chars) catch u.oom(),
+        .old_chars = self.copyChars(range.start, range.end),
+    } }) catch u.oom();
+    self.clearRedos();
+    self.replaceRaw(range.start, range.end, new_chars);
 }
 
-pub fn insertSlice(self: *Buffer, pos: usize, slice: []const u.Char) void {
-    if (pos >= self.numChars()) {
-        self.chars.appendSlice(slice) catch u.oom();
-    } else {
-        self.chars.insertSlice(pos, slice) catch u.oom();
+pub fn insertSlice(self: *Buffer, pos: usize, chars: []const Char) void {
+    self.edits.append(.{ .Insert = .{
+        .pos = pos,
+        .new_chars = self.edit_alloc.dupe(Char, chars) catch u.oom(),
+    } }) catch u.oom();
+    self.clearRedos();
+    self.insertRaw(pos, chars);
+}
+
+pub fn undo(self: *Buffer) void {
+    if (self.edits.popOrNull()) |edit| {
+        self.revertEdit(edit);
+        // for (edits) |edit| self.revertEdit(edit);
+        // std.mem.reverse(Edit, edits);
+        // self.redos.append(edits) catch u.oom();
+    }
+    self.dirty = true;
+}
+
+fn revertEdit(self: *Buffer, edit: Edit) void {
+    switch (edit) {
+        .Insert => |e| {
+            self.deleteRaw(.{ .start = e.pos, .end = e.pos + e.new_chars.len });
+        },
+        .Delete => |e| {
+            self.insertRaw(e.range.start, e.old_chars);
+        },
+        .Replace => |e| {
+            self.replaceRaw(e.range.start, e.new_chars.len, e.old_chars);
+        },
     }
 }
 
@@ -354,8 +458,8 @@ pub fn stripTrailingSpaces(self: *Buffer) void {
     if (start) |s| self.deleteRaw(.{ .start = s, .end = self.numChars() });
 }
 
-pub fn insertChar(self: *Buffer, pos: usize, char: u.Char) void {
-    self.insertSlice(pos, &[_]u.Char{char});
+pub fn insertChar(self: *Buffer, pos: usize, char: Char) void {
+    self.insertSlice(pos, &[_]Char{char});
 }
 
 fn updateBytesFromChars(self: *Buffer) void {
