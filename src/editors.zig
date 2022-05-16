@@ -498,15 +498,10 @@ pub const Editor = struct {
 
     fn typeChar(self: *Editor, char: u.Char, buf: *Buffer) void {
         if (self.cursor.getSelectionRange()) |selection| {
-            buf.chars.replaceRange(selection.start, selection.len(), &[_]u.Char{char}) catch u.oom();
+            buf.replaceRange(selection.start, selection.end, &[_]u.Char{char});
             self.cursor.pos = selection.start + 1;
         } else {
-            const last_char = buf.numChars() -| 1;
-            if (self.cursor.pos <= last_char) {
-                buf.chars.insert(self.cursor.pos, char) catch u.oom();
-            } else {
-                buf.chars.append(char) catch u.oom();
-            }
+            buf.insertChar(self.cursor.pos, char);
             self.cursor.pos += 1;
         }
         self.cursor.col_wanted = null;
@@ -524,15 +519,15 @@ pub const Editor = struct {
         switch (key) {
             .delete => {
                 if (cursor.getSelectionRange()) |selection| {
-                    buf.deleteRange(selection.start, selection.end, old_cursor_pos);
+                    buf.deleteRange(selection.start, selection.end);
                     cursor.pos = selection.start;
                 } else {
-                    buf.deleteRange(cursor.pos, cursor.pos + 1, old_cursor_pos);
+                    buf.deleteRange(cursor.pos, cursor.pos + 1);
                 }
             },
             .backspace => {
                 if (cursor.getSelectionRange()) |selection| {
-                    buf.deleteRange(selection.start, selection.end, old_cursor_pos);
+                    buf.deleteRange(selection.start, selection.end);
                     cursor.pos = selection.start;
                 } else {
                     // Check if we can delete spaces to the previous tabstop
@@ -547,7 +542,7 @@ pub const Editor = struct {
                         }
                     }
                     const spaces_to_remove = if (all_spaces) to_prev_tabstop else 1;
-                    buf.deleteRange(cursor.pos -| spaces_to_remove, cursor.pos, old_cursor_pos);
+                    buf.deleteRange(cursor.pos -| spaces_to_remove, cursor.pos);
                     cursor.pos -|= spaces_to_remove;
                 }
             },
@@ -619,7 +614,7 @@ pub const Editor = struct {
                         // Un-indent current line
                         const line = buf.getLine(cursor.line);
                         const spaces_to_remove = u.min(TAB_SIZE, line.lenWhitespace());
-                        buf.deleteRange(line.start, line.start + spaces_to_remove, old_cursor_pos);
+                        buf.deleteRange(line.start, line.start + spaces_to_remove);
                         cursor.pos -|= u.min(cursor.pos - line.start, spaces_to_remove);
                     }
                 }
@@ -672,13 +667,11 @@ pub const Editor = struct {
             .left => {
                 cursor.pos -|= move_by;
                 if (mods.control and cursor.pos < line.start) cursor.pos = line.start;
-                cursor.col_wanted = null;
             },
             .right => {
                 cursor.pos += move_by;
                 if (mods.control and cursor.pos > line.end) cursor.pos = line.end;
                 if (cursor.pos > buf.numChars()) cursor.pos = buf.numChars();
-                cursor.col_wanted = null;
             },
             .up => {
                 self.moveCursorToLine(cursor.line -| move_by, buf);
@@ -698,11 +691,9 @@ pub const Editor = struct {
                 } else {
                     cursor.pos = line.start;
                 }
-                cursor.col_wanted = null;
             },
             .end => {
                 cursor.pos = line.end;
-                cursor.col_wanted = null;
             },
             else => {},
         }
@@ -729,7 +720,7 @@ pub const Editor = struct {
                     if (cursor.getSelectionRange()) |s| {
                         cursor.copyToClipboard(buf.chars.items[s.start..s.end]);
                         if (key == .x) {
-                            buf.chars.replaceRange(s.start, s.end - s.start, &[_]u.Char{}) catch unreachable;
+                            buf.deleteRange(s.start, s.end);
                             cursor.pos = s.start;
                             buf.dirty = true;
                         }
@@ -739,18 +730,13 @@ pub const Editor = struct {
                     // Paste
                     if (cursor.clipboard.items.len > 0) {
                         const paste_data = cursor.clipboard.items;
-                        var paste_start: usize = undefined;
                         if (cursor.getSelectionRange()) |s| {
-                            buf.chars.replaceRange(s.start, s.end - s.start, paste_data) catch u.oom();
-                            paste_start = s.start;
-                        } else if (cursor.pos >= buf.numChars()) {
-                            paste_start = buf.numChars();
-                            buf.chars.appendSlice(paste_data) catch u.oom();
+                            buf.replaceRange(s.start, s.end, paste_data);
+                            cursor.pos = s.start + paste_data.len;
                         } else {
-                            buf.chars.insertSlice(cursor.pos, paste_data) catch u.oom();
-                            paste_start = cursor.pos;
+                            buf.insertSlice(cursor.pos, paste_data);
+                            cursor.pos += paste_data.len;
                         }
-                        cursor.pos = paste_start + paste_data.len;
                         buf.dirty = true;
                     }
                 },

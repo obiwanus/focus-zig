@@ -1,6 +1,4 @@
 # TODO
-- Refactor the edit system (have formal edits)
-    - Get rid of direct buffer modifications
 - Undo/redo
 - Multiple cursors
     + Select words with ctrl+d
@@ -32,6 +30,8 @@
 - No known bugs
 
 # DONE
++ Refactor the edit system (have formal edits)
++ Get rid of direct buffer modifications
 + Fix: indentation on newline
 + Replace selection on enter
 + Fix: selection end is misadjusted when unindenting

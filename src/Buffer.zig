@@ -315,11 +315,10 @@ fn deleteRaw(self: *Buffer, range: Range) void {
     self.chars.replaceRange(range.start, range.len(), &[_]u.Char{}) catch unreachable;
 }
 
-pub fn deleteRange(self: *Buffer, start: usize, end: usize, cursor_pos: usize) void {
+pub fn deleteRange(self: *Buffer, start: usize, end: usize) void {
     const range = self.getValidRange(start, end);
     if (range.start == range.end) return;
     self.deleteRaw(range);
-    _ = cursor_pos;
 }
 
 pub fn replaceRange(self: *Buffer, start: usize, end: usize, new_chars: []const u.Char) void {
