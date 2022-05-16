@@ -27,6 +27,7 @@
 - Search within buffer
 
 # DONE
++ Use cmd on macos and ctrl on other systems
 + Fix: single character left when undoing
 + Set window icon
 + Fix: selection disappears on certain actions

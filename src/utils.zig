@@ -14,6 +14,8 @@ pub const min = std.math.min;
 pub const min3 = std.math.min3;
 pub const max = std.math.max;
 
+pub const is_macos = builtin.os.tag == .macos;
+
 pub fn println(comptime fmt: []const u8, args: anytype) void {
     print(fmt ++ "\n", args);
 }
@@ -133,7 +135,15 @@ pub fn writeEntireFile(file_path: []const u8, buffer: []const u8) !void {
     try file.writeAll(buffer);
 }
 
-pub fn modsOnlyCtrl(m: glfw.Mods) bool {
+pub fn modsCmd(m: glfw.Mods) bool {
+    if (is_macos) return m.super;
+    return m.control;
+}
+
+pub fn modsOnlyCmd(m: glfw.Mods) bool {
+    if (is_macos) {
+        return m.super and !(m.shift or m.alt or m.control);
+    }
     return m.control and !(m.shift or m.alt or m.super);
 }
 
