@@ -1,6 +1,5 @@
 # TODO
 - Search within buffer
-    - Scroll text if it doesn't fit
 - Remove selection on escape
 - Multiple cursors
     + Select words with ctrl+d
@@ -29,6 +28,7 @@
 - Search within buffer
 
 # DONE
++ Scroll text if it doesn't fit
 + Select text when opening
 + Remove or replace all text on backspace or char_entered if selected
 + Remove all text on ctrl+backspace

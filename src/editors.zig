@@ -587,8 +587,6 @@ pub const Editor = struct {
 
         // Draw search box
         if (self.search_box.open) {
-            const text = self.search_box.text.items;
-
             const input_margin_top = 8 * scale;
             const input_margin = 5 * scale;
             const input_padding = 5 * scale;
@@ -608,6 +606,8 @@ pub const Editor = struct {
             ui.drawSolidRect(input_rect, style.colors.BACKGROUND);
 
             var text_rect = input_rect.shrinkEvenly(input_margin);
+            const max_chars = @floatToInt(usize, text_rect.w / char_size.x) -| 1; // leave one for cursor
+            const text = self.search_box.text.items[self.search_box.text.items.len -| max_chars..];
             if (self.search_box.text_selected) {
                 // Draw selection
                 var selection_rect = text_rect;
@@ -618,7 +618,7 @@ pub const Editor = struct {
             ui.drawLabel(text, .{ .x = text_rect.x, .y = text_rect.y }, style.colors.PUNCTUATION);
 
             // Draw cursor
-            const cursor_char_pos = @intToFloat(f32, std.math.clamp(text.len, 0, 100)); // TODO!!!
+            const cursor_char_pos = @intToFloat(f32, text.len);
             const cursor_rect = Rect{
                 .x = text_rect.x + cursor_char_pos * char_size.x,
                 .y = text_rect.y,
