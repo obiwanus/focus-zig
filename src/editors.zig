@@ -608,14 +608,14 @@ pub const Editor = struct {
             ui.drawSolidRect(input_rect, style.colors.BACKGROUND);
 
             var text_rect = input_rect.shrinkEvenly(input_margin);
-            if (text.len > 0 and self.search_box.text_selected) {
+            if (self.search_box.text_selected) {
                 // Draw selection
                 var selection_rect = text_rect;
                 selection_rect.w = char_size.x * @intToFloat(f32, text.len);
                 ui.drawSolidRect(selection_rect, style.colors.SELECTION_ACTIVE);
             }
             // Draw text
-            ui.drawLabel(text, .{ .x = text_rect.x, .y = text_rect.y + 2 * scale }, style.colors.PUNCTUATION);
+            ui.drawLabel(text, .{ .x = text_rect.x, .y = text_rect.y }, style.colors.PUNCTUATION);
 
             // Draw cursor
             const cursor_char_pos = @intToFloat(f32, std.math.clamp(text.len, 0, 100)); // TODO!!!

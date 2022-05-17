@@ -190,8 +190,6 @@ pub const Ui = struct {
             10,
         );
 
-        const adjust_y = 2 * scale; // to align text within boxes
-
         // Draw input box
         {
             var input_rect = dialog_rect.splitTop(input_rect_height, 0).shrinkEvenly(margin);
@@ -230,7 +228,7 @@ pub const Ui = struct {
                 const w = 3 * font.xadvance + 2 * padding;
                 var r = input_rect.splitLeft(w, padding);
                 self.drawSolidRect(r, style.colors.SELECTION_INACTIVE);
-                const text_rect = r.shrink(padding, adjust_y, padding, 0);
+                const text_rect = r.shrink(padding, 0, padding, 0);
                 const name = u.bytesToChars("...", tmp_allocator) catch unreachable;
                 self.drawLabel(name, text_rect.topLeft(), style.colors.PUNCTUATION);
             }
@@ -239,7 +237,7 @@ pub const Ui = struct {
                 const w = @intToFloat(f32, d.name.items.len) * font.xadvance + 2 * padding;
                 var r = input_rect.splitLeft(w, padding);
                 self.drawSolidRect(r, style.colors.SELECTION_INACTIVE);
-                const text_rect = r.shrink(padding, adjust_y, padding, 0);
+                const text_rect = r.shrink(padding, 0, padding, 0);
                 const name = u.bytesToChars(d.name.items, tmp_allocator) catch unreachable;
                 self.drawLabel(name, text_rect.topLeft(), style.colors.PUNCTUATION);
             }
@@ -248,15 +246,15 @@ pub const Ui = struct {
             const filter_text_max_chars = @floatToInt(usize, input_rect.w / font.xadvance) - 1;
             if (dialog.filter_text.items.len > filter_text_max_chars) {
                 // Draw truncated version
-                self.drawLabel(&[_]u.Char{ '.', '.' }, .{ .x = input_rect.x, .y = input_rect.y + adjust_y }, style.colors.PUNCTUATION);
+                self.drawLabel(&[_]u.Char{ '.', '.' }, .{ .x = input_rect.x, .y = input_rect.y }, style.colors.PUNCTUATION);
                 self.drawLabel(
                     dialog.filter_text.items[dialog.filter_text.items.len - filter_text_max_chars + 2 ..],
-                    .{ .x = input_rect.x + 2 * font.xadvance, .y = input_rect.y + adjust_y },
+                    .{ .x = input_rect.x + 2 * font.xadvance, .y = input_rect.y },
                     style.colors.PUNCTUATION,
                 );
             } else {
                 // Draw full version
-                self.drawLabel(dialog.filter_text.items, .{ .x = input_rect.x, .y = input_rect.y + adjust_y }, style.colors.PUNCTUATION);
+                self.drawLabel(dialog.filter_text.items, .{ .x = input_rect.x, .y = input_rect.y }, style.colors.PUNCTUATION);
             }
 
             // Draw cursor
@@ -289,7 +287,7 @@ pub const Ui = struct {
                 self.drawSolidRect(r, style.colors.BACKGROUND_BRIGHT);
             }
             const name = u.bytesToChars(entry.getName(), tmp_allocator) catch unreachable;
-            self.drawLabel(name, .{ .x = r.x + margin + padding, .y = r.y + padding + adjust_y }, style.colors.PUNCTUATION);
+            self.drawLabel(name, .{ .x = r.x + margin + padding, .y = r.y + padding }, style.colors.PUNCTUATION);
         }
 
         // Draw shadow
@@ -318,7 +316,7 @@ pub const Ui = struct {
         if (filtered_entries.len == 0) {
             const r = dialog_rect.shrink(margin + padding, padding, 0, padding);
             const placeholder = u.bytesToChars("...", tmp_allocator) catch unreachable;
-            self.drawLabel(placeholder, .{ .x = r.x, .y = r.y + adjust_y }, style.colors.COMMENT);
+            self.drawLabel(placeholder, .{ .x = r.x, .y = r.y }, style.colors.COMMENT);
         }
     }
 
@@ -464,7 +462,7 @@ pub const Ui = struct {
 
     pub fn drawLabel(self: *Ui, chars: []const u.Char, top_left: Vec2, color: Color) void {
         const font = self.screen.font;
-        var pos = Vec2{ .x = top_left.x, .y = top_left.y + font.baseline };
+        var pos = Vec2{ .x = top_left.x, .y = top_left.y + font.baseline + 2 * self.screen.scale };
         for (chars) |char| {
             self.drawChar(char, pos, font, color);
             pos.x += font.xadvance;

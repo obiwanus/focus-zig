@@ -1,6 +1,6 @@
 # TODO
 - Search within buffer
-    - Scroll text if doesn't fit
+    - Scroll text if it doesn't fit
 - Remove selection on escape
 - Multiple cursors
     + Select words with ctrl+d
