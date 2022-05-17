@@ -1,5 +1,6 @@
 # TODO
 - Search within buffer
+    - Scroll text if doesn't fit
 - Remove selection on escape
 - Multiple cursors
     + Select words with ctrl+d
@@ -28,6 +29,10 @@
 - Search within buffer
 
 # DONE
++ Select text when opening
++ Remove or replace all text on backspace or char_entered if selected
++ Remove all text on ctrl+backspace
++ Remove selection if anything else is pressed
 + Display search box on ctrl+F, hide on escape
 + Fix: when duplicating lines, selection shrinks
 + Fix: invalid cursor when redoing

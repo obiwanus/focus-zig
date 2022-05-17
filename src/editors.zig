@@ -389,18 +389,19 @@ const ScrollAnimation = struct {
 const SearchBox = struct {
     open: bool = false,
     text: ArrayList(Char),
-    found: ArrayList(usize),
+    text_selected: bool = false,
+    results: ArrayList(usize),
 
     fn init(allocator: Allocator) SearchBox {
         return .{
             .text = ArrayList(Char).init(allocator),
-            .found = ArrayList(usize).init(allocator),
+            .results = ArrayList(usize).init(allocator),
         };
     }
 
     fn deinit(self: SearchBox) void {
         self.text.deinit();
-        self.found.deinit();
+        self.results.deinit();
     }
 };
 
@@ -586,6 +587,8 @@ pub const Editor = struct {
 
         // Draw search box
         if (self.search_box.open) {
+            const text = self.search_box.text.items;
+
             const input_margin_top = 8 * scale;
             const input_margin = 5 * scale;
             const input_padding = 5 * scale;
@@ -605,10 +608,17 @@ pub const Editor = struct {
             ui.drawSolidRect(input_rect, style.colors.BACKGROUND);
 
             var text_rect = input_rect.shrinkEvenly(input_margin);
-            ui.drawLabel(self.search_box.text.items, .{ .x = text_rect.x, .y = text_rect.y + 2 * scale }, style.colors.PUNCTUATION);
+            if (text.len > 0 and self.search_box.text_selected) {
+                // Draw selection
+                var selection_rect = text_rect;
+                selection_rect.w = char_size.x * @intToFloat(f32, text.len);
+                ui.drawSolidRect(selection_rect, style.colors.SELECTION_ACTIVE);
+            }
+            // Draw text
+            ui.drawLabel(text, .{ .x = text_rect.x, .y = text_rect.y + 2 * scale }, style.colors.PUNCTUATION);
 
             // Draw cursor
-            const cursor_char_pos = @intToFloat(f32, std.math.clamp(self.search_box.text.items.len, 0, 100)); // TODO!!!
+            const cursor_char_pos = @intToFloat(f32, std.math.clamp(text.len, 0, 100)); // TODO!!!
             const cursor_rect = Rect{
                 .x = text_rect.x + cursor_char_pos * char_size.x,
                 .y = text_rect.y,
@@ -622,6 +632,10 @@ pub const Editor = struct {
     fn typeChar(self: *Editor, char: Char, buf: *Buffer, clock_ms: f64) void {
         // Type into search box
         if (self.search_box.open) {
+            if (self.search_box.text_selected) {
+                self.search_box.text.clearRetainingCapacity();
+                self.search_box.text_selected = false;
+            }
             self.search_box.text.append(char) catch u.oom();
             return;
         }
@@ -649,7 +663,12 @@ pub const Editor = struct {
             switch (key) {
                 .escape => self.search_box.open = false,
                 .backspace => {
-                    _ = self.search_box.text.popOrNull();
+                    if (self.search_box.text_selected or u.modsCmd(mods)) {
+                        self.search_box.text.clearRetainingCapacity();
+                        self.search_box.text_selected = false;
+                    } else {
+                        _ = self.search_box.text.popOrNull();
+                    }
                 },
                 .enter => {
                     if (mods.shift) {
@@ -658,12 +677,14 @@ pub const Editor = struct {
                         // TODO: jump to next search result
                     }
                 },
+                .left, .right, .up, .down => self.search_box.text_selected = false,
                 else => {},
             }
             return;
         }
         if (u.modsOnlyCmd(mods) and key == .f) {
             self.search_box.open = true;
+            self.search_box.text_selected = true;
             return;
         }
 
