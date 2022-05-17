@@ -1,5 +1,6 @@
 # TODO
 - Search within buffer
+- Remove selection on escape
 - Multiple cursors
     + Select words with ctrl+d
     - Refactor code so that we have additional cursors
@@ -27,6 +28,7 @@
 - Search within buffer
 
 # DONE
++ Display search box on ctrl+F, hide on escape
 + Fix: when duplicating lines, selection shrinks
 + Fix: invalid cursor when redoing
 + On windows use the windows subsystem

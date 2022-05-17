@@ -6,6 +6,8 @@ const u = focus.utils;
 const style = focus.style;
 
 const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
+const Char = u.Char;
 const Vec2 = u.Vec2;
 const Rect = u.Rect;
 const Buffer = focus.Buffer;
@@ -14,8 +16,8 @@ const TextColor = focus.style.TextColor;
 const Ui = focus.ui.Ui;
 
 allocator: Allocator,
-open_buffers: std.ArrayList(Buffer),
-open_editors: std.ArrayList(Editor),
+open_buffers: ArrayList(Buffer),
+open_editors: ArrayList(Editor),
 layout: union(enum) {
     none,
     single: usize,
@@ -34,15 +36,15 @@ const UNDO_GROUP_TIMEOUT_MS = 500;
 pub fn init(allocator: Allocator) Editors {
     return .{
         .allocator = allocator,
-        .open_buffers = std.ArrayList(Buffer).initCapacity(allocator, 10) catch u.oom(),
-        .open_editors = std.ArrayList(Editor).initCapacity(allocator, 10) catch u.oom(),
+        .open_buffers = ArrayList(Buffer).initCapacity(allocator, 10) catch u.oom(),
+        .open_editors = ArrayList(Editor).initCapacity(allocator, 10) catch u.oom(),
         .layout = .none,
     };
 }
 
 pub fn deinit(self: Editors) void {
     for (self.open_buffers.items) |buf| buf.deinit(self.allocator);
-    for (self.open_editors.items) |ed| ed.cursor.clipboard.deinit();
+    for (self.open_editors.items) |ed| ed.deinit();
 }
 
 pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: Allocator) void {
@@ -130,7 +132,7 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
     }
 }
 
-pub fn charEntered(self: *Editors, char: u.Char, clock_ms: f64) void {
+pub fn charEntered(self: *Editors, char: Char, clock_ms: f64) void {
     if (self.activeEditor()) |editor| editor.typeChar(char, self.getBuffer(editor.buffer), clock_ms);
 }
 
@@ -316,10 +318,7 @@ fn openNewBuffer(self: *Editors, path: []const u8) usize {
 }
 
 fn createNewEditor(self: *Editors, buffer: usize) usize {
-    const new_editor = Editor{
-        .buffer = buffer,
-        .cursor = Cursor{ .clipboard = std.ArrayList(u.Char).init(self.allocator) },
-    };
+    const new_editor = Editor.init(buffer, self.allocator);
     self.open_editors.append(new_editor) catch u.oom();
     return self.open_editors.items.len - 1;
 }
@@ -331,7 +330,15 @@ const Cursor = struct {
     col_wanted: ?usize = null, // where the cursor wants to be
     selection_start: ?usize = null,
     keep_selection: bool = false,
-    clipboard: std.ArrayList(u.Char),
+    clipboard: ArrayList(Char),
+
+    fn init(allocator: Allocator) Cursor {
+        return .{ .clipboard = ArrayList(Char).init(allocator) };
+    }
+
+    fn deinit(self: Cursor) void {
+        self.clipboard.deinit();
+    }
 
     fn getSelectionRange(self: Cursor) ?Buffer.Range {
         const selection_start = self.selection_start orelse return null;
@@ -347,7 +354,7 @@ const Cursor = struct {
         return .{ .pos = self.pos, .selection_start = self.selection_start };
     }
 
-    fn copyToClipboard(self: *Cursor, chars: []const u.Char) void {
+    fn copyToClipboard(self: *Cursor, chars: []const Char) void {
         self.clipboard.clearRetainingCapacity();
         self.clipboard.appendSlice(chars) catch u.oom();
     }
@@ -379,20 +386,53 @@ const ScrollAnimation = struct {
     }
 };
 
+const SearchBox = struct {
+    open: bool = false,
+    text: ArrayList(Char),
+    found: ArrayList(usize),
+
+    fn init(allocator: Allocator) SearchBox {
+        return .{
+            .text = ArrayList(Char).init(allocator),
+            .found = ArrayList(usize).init(allocator),
+        };
+    }
+
+    fn deinit(self: SearchBox) void {
+        self.text.deinit();
+        self.found.deinit();
+    }
+};
+
 pub const Editor = struct {
     buffer: usize,
 
     // Updated every time we draw UI (because that's when we know the layout and therefore size)
     lines_per_screen: usize = 60,
     cols_per_screen: usize = 120,
-    cursor: Cursor = Cursor{},
+    cursor: Cursor,
     scroll: Vec2 = Vec2{}, // how many px we have scrolled to the left and to the top
     scroll_animation: ?ScrollAnimation = null,
+    search_box: SearchBox,
 
-    pub fn updateAndDraw(self: *Editor, buf: *Buffer, ui: *Ui, rect: Rect, clock_ms: f64, is_active: bool, tmp_allocator: Allocator) void {
+    fn init(buffer: usize, allocator: Allocator) Editor {
+        return .{
+            .buffer = buffer,
+            .cursor = Cursor.init(allocator),
+            .search_box = SearchBox.init(allocator),
+        };
+    }
+
+    fn deinit(self: Editor) void {
+        self.cursor.deinit();
+        self.search_box.deinit();
+    }
+
+    fn updateAndDraw(self: *Editor, buf: *Buffer, ui: *Ui, rect: Rect, clock_ms: f64, is_active: bool, tmp_allocator: Allocator) void {
         const scale = ui.screen.scale;
         const char_size = ui.screen.font.charSize();
         const margin = Vec2{ .x = 30 * scale, .y = 15 * scale };
+        const cursor_active = is_active and !self.search_box.open;
 
         var area = rect.copy();
         var footer_rect = area.splitBottom(char_size.y + 2 * 4 * scale, 0);
@@ -455,7 +495,7 @@ pub const Editor = struct {
                 const start = buf.getLineColFromPos(s.start);
                 const end = buf.getLineColFromPos(s.end);
 
-                const sel_color = if (is_active) style.colors.SELECTION_ACTIVE else style.colors.SELECTION_INACTIVE;
+                const sel_color = if (cursor_active) style.colors.SELECTION_ACTIVE else style.colors.SELECTION_INACTIVE;
 
                 var line: usize = start.line;
                 while (line <= end.line) : (line += 1) {
@@ -481,7 +521,7 @@ pub const Editor = struct {
                 .w = char_size.x,
                 .h = char_size.y,
             };
-            const cursor_color = if (is_active) style.colors.CURSOR_ACTIVE else style.colors.CURSOR_INACTIVE;
+            const cursor_color = if (cursor_active) style.colors.CURSOR_ACTIVE else style.colors.CURSOR_INACTIVE;
             ui.drawSolidRect(cursor_rect, cursor_color);
 
             // Then draw text on top
@@ -536,18 +576,63 @@ pub const Editor = struct {
             // Line:col
             const line_col = std.fmt.allocPrint(tmp_allocator, "{}:{}", .{ self.cursor.line + 1, self.cursor.col + 1 }) catch u.oom();
             const line_col_chars = u.bytesToChars(line_col, tmp_allocator) catch unreachable;
-            const line_col_rect = r.splitRight(margin.x + @intToFloat(f32, line_col_chars.len) * char_size.x, margin.x);
-            ui.drawLabel(line_col_chars, .{ .x = line_col_rect.x, .y = text_y }, style.colors.PUNCTUATION);
+            const line_col_width = margin.x + @intToFloat(f32, line_col_chars.len) * char_size.x;
+            if (r.w > line_col_width) {
+                // Draw only if enough space
+                const line_col_rect = r.splitRight(line_col_width, margin.x);
+                ui.drawLabel(line_col_chars, .{ .x = line_col_rect.x, .y = text_y }, style.colors.PUNCTUATION);
+            }
+        }
+
+        // Draw search box
+        if (self.search_box.open) {
+            const input_margin_top = 8 * scale;
+            const input_margin = 5 * scale;
+            const input_padding = 5 * scale;
+            const box_right_margin = char_size.x * 2 * scale;
+            const min_width = char_size.x * 10 + input_margin * 2 + input_padding * 2;
+
+            var box_rect = rect.copy().splitTop(char_size.y + input_margin_top + input_margin + input_padding * 2 + 2, 0);
+            if (box_rect.w > min_width + box_right_margin) {
+                box_rect = box_rect.shrink(0, 0, box_right_margin, 0);
+                box_rect = box_rect.splitRight(u.max(min_width, box_rect.w / 2), 0);
+            }
+            ui.drawSolidRectWithShadow(box_rect, style.colors.BACKGROUND_LIGHT, 5);
+
+            var input_rect = box_rect.shrink(input_margin, input_margin_top, input_margin, input_margin);
+            ui.drawSolidRect(input_rect, style.colors.BACKGROUND_DARK);
+            input_rect = input_rect.shrinkEvenly(1);
+            ui.drawSolidRect(input_rect, style.colors.BACKGROUND);
+
+            var text_rect = input_rect.shrinkEvenly(input_margin);
+            ui.drawLabel(self.search_box.text.items, .{ .x = text_rect.x, .y = text_rect.y + 2 * scale }, style.colors.PUNCTUATION);
+
+            // Draw cursor
+            const cursor_char_pos = @intToFloat(f32, std.math.clamp(self.search_box.text.items.len, 0, 100)); // TODO!!!
+            const cursor_rect = Rect{
+                .x = text_rect.x + cursor_char_pos * char_size.x,
+                .y = text_rect.y,
+                .w = char_size.x,
+                .h = char_size.y,
+            };
+            ui.drawSolidRect(cursor_rect, style.colors.CURSOR_ACTIVE);
         }
     }
 
-    fn typeChar(self: *Editor, char: u.Char, buf: *Buffer, clock_ms: f64) void {
+    fn typeChar(self: *Editor, char: Char, buf: *Buffer, clock_ms: f64) void {
+        // Type into search box
+        if (self.search_box.open) {
+            self.search_box.text.append(char) catch u.oom();
+            return;
+        }
+
+        // Or type into the editor
         const old_cursor = self.cursor.state();
         var cursor = &self.cursor;
 
         if (cursor.getSelectionRange()) |selection| {
             cursor.pos = selection.start + 1;
-            buf.replaceRange(selection.start, selection.end, &[_]u.Char{char}, old_cursor, cursor.state());
+            buf.replaceRange(selection.start, selection.end, &[_]Char{char}, old_cursor, cursor.state());
         } else {
             cursor.pos += 1;
             buf.insertChar(old_cursor.pos, char, old_cursor, cursor.state());
@@ -559,6 +644,30 @@ pub const Editor = struct {
     }
 
     fn keyPress(self: *Editor, buf: *Buffer, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allocator, clock_ms: f64) void {
+        // Process search box
+        if (self.search_box.open) {
+            switch (key) {
+                .escape => self.search_box.open = false,
+                .backspace => {
+                    _ = self.search_box.text.popOrNull();
+                },
+                .enter => {
+                    if (mods.shift) {
+                        // TODO: jump to previous search result
+                    } else {
+                        // TODO: jump to next search result
+                    }
+                },
+                else => {},
+            }
+            return;
+        }
+        if (u.modsOnlyCmd(mods) and key == .f) {
+            self.search_box.open = true;
+            return;
+        }
+
+        // Otherwise, process normal editor keypress
         const old_cursor = self.cursor.state();
         var cursor = &self.cursor;
 
@@ -596,13 +705,13 @@ pub const Editor = struct {
                 }
             },
             .tab => {
-                const SPACES = [1]u.Char{' '} ** TAB_SIZE;
+                const SPACES = [1]Char{' '} ** TAB_SIZE;
 
                 if (cursor.getSelectionRange()) |selection| {
                     const range = buf.expandRangeToWholeLines(selection.start, selection.end);
                     const lines = buf.lines.items[buf.getLineColFromPos(selection.start).line .. buf.getLineColFromPos(selection.end).line + 1];
 
-                    var new_chars = std.ArrayList(u.Char).init(tmp_allocator);
+                    var new_chars = ArrayList(Char).init(tmp_allocator);
                     new_chars.ensureTotalCapacity(range.len() + lines.len * TAB_SIZE) catch u.oom();
 
                     cursor.keep_selection = true;
@@ -669,8 +778,8 @@ pub const Editor = struct {
             .enter => {
                 const line = buf.getLine(cursor.line);
                 var indent = line.lenWhitespace();
-                var char_buf: [1024]u.Char = undefined;
-                std.mem.set(u.Char, char_buf[0 .. indent + 1], ' '); // if buffer is too small, we safely crash here
+                var char_buf: [1024]Char = undefined;
+                std.mem.set(Char, char_buf[0 .. indent + 1], ' '); // if buffer is too small, we safely crash here
 
                 if (u.modsCmd(mods) and mods.shift) {
                     // Insert line above
@@ -687,7 +796,7 @@ pub const Editor = struct {
                 } else if (cursor.getSelectionRange()) |selection| {
                     // Replace selection with a newline
                     cursor.pos = selection.start + 1;
-                    buf.replaceRange(selection.start, selection.end, &[_]u.Char{'\n'}, old_cursor, cursor.state());
+                    buf.replaceRange(selection.start, selection.end, &[_]Char{'\n'}, old_cursor, cursor.state());
                 } else if (cursor.col <= indent) {
                     // Don't add too much indentation
                     indent = cursor.col;

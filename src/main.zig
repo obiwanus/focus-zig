@@ -72,6 +72,7 @@ pub fn main() !void {
 
     // Move window to the biggest monitor and maximise
     try window.setPosInt(monitor_pos.x, monitor_pos.y);
+    try window.setSizeLimits(.{ .width = 400, .height = 400 }, .{ .width = null, .height = null });
     try window.maximize();
     defer window.destroy();
 
