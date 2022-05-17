@@ -892,6 +892,10 @@ pub const Editor = struct {
             .end => {
                 cursor.pos = line.end;
             },
+            .escape => {
+                // Remove selection
+                cursor.selection_start = null;
+            },
             else => {},
         }
         if (old_cursor.pos != cursor.pos and !cursor.keep_selection) {

@@ -1,6 +1,5 @@
 # TODO
 - Search within buffer
-- Remove selection on escape
 - Multiple cursors
     + Select words with ctrl+d
     - Refactor code so that we have additional cursors
@@ -28,6 +27,7 @@
 - Search within buffer
 
 # DONE
++ Remove selection on escape
 + Scroll text if it doesn't fit
 + Select text when opening
 + Remove or replace all text on backspace or char_entered if selected
