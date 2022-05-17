@@ -1,5 +1,5 @@
 # TODO
-- Fix: invalid cursor when redoing
+- Fix: when duplicating lines, selection shrinks
 - Search within buffer
 - Multiple cursors
     + Select words with ctrl+d
@@ -28,6 +28,7 @@
 - Search within buffer
 
 # DONE
++ Fix: invalid cursor when redoing
 + On windows use the windows subsystem
 + Use cmd on macos and ctrl on other systems
 + Fix: single character left when undoing

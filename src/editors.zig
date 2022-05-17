@@ -54,7 +54,43 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
 
     // Always try to update all open buffers
     for (self.open_buffers.items) |*buf, buf_id| {
-        if (clock_ms - buf.last_edit_ms >= UNDO_GROUP_TIMEOUT_MS) buf.putCurrentEditsIntoUndoGroup();
+        if (clock_ms - buf.last_edit_ms >= UNDO_GROUP_TIMEOUT_MS) {
+
+            // if (buf.undos.items.len != buf.last_undo_len) {
+            //     u.println("= Buffer ====================================================================================", .{});
+            //     u.printChars(buf.chars.items);
+            //     u.println("", .{});
+            //     u.println("= Undos =====================================================================================", .{});
+            //     for (buf.undos.items) |edit_group| {
+            //         for (edit_group.edits) |edit| {
+            //             switch (edit) {
+            //                 .Insert => |e| {
+            //                     u.print("- Insert at pos {}: '", .{e.pos});
+            //                     u.printChars(e.new_chars);
+            //                     u.println("'", .{});
+            //                 },
+            //                 .Delete => |e| {
+            //                     u.print("- Delete [{}..{}]: '", .{ e.range.start, e.range.start + e.old_chars.len });
+            //                     u.printChars(e.old_chars);
+            //                     u.println("'", .{});
+            //                 },
+            //                 .Replace => |e| {
+            //                     u.print("- Replace '", .{});
+            //                     u.printChars(e.old_chars);
+            //                     u.print("' with '", .{});
+            //                     u.printChars(e.new_chars);
+            //                     u.println("'", .{});
+            //                 },
+            //             }
+            //         }
+            //         u.println("-------------------------------------------", .{});
+            //     }
+            //     u.println("\n", .{});
+            //     buf.last_undo_len = buf.undos.items.len;
+            // }
+
+            buf.putCurrentEditsIntoUndoGroup();
+        }
         if (buf.dirty) {
             buf.syncInternalData();
             buf.dirty = false;
@@ -388,6 +424,7 @@ pub const Editor = struct {
 
             const start_char = buf.getLine(line_min).start;
             const end_char = buf.getLine(line_max).end;
+
             const chars = buf.chars.items[start_char..end_char];
             const colors = buf.colors.items[start_char..end_char];
 
@@ -505,14 +542,15 @@ pub const Editor = struct {
     }
 
     fn typeChar(self: *Editor, char: u.Char, buf: *Buffer, clock_ms: f64) void {
+        const old_cursor = self.cursor.state();
         var cursor = &self.cursor;
 
         if (cursor.getSelectionRange()) |selection| {
-            buf.replaceRange(selection.start, selection.end, &[_]u.Char{char}, cursor.state());
             cursor.pos = selection.start + 1;
+            buf.replaceRange(selection.start, selection.end, &[_]u.Char{char}, old_cursor, cursor.state());
         } else {
-            buf.insertChar(cursor.pos, char, cursor.state());
             cursor.pos += 1;
+            buf.insertChar(old_cursor.pos, char, old_cursor, cursor.state());
         }
         cursor.col_wanted = null;
         buf.dirty = true;
@@ -521,8 +559,8 @@ pub const Editor = struct {
     }
 
     fn keyPress(self: *Editor, buf: *Buffer, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allocator, clock_ms: f64) void {
+        const old_cursor = self.cursor.state();
         var cursor = &self.cursor;
-        const old_cursor_pos = cursor.pos;
 
         // Insertions/deletions of sorts
         const TAB_SIZE = 4;
@@ -530,16 +568,16 @@ pub const Editor = struct {
         switch (key) {
             .delete => {
                 if (cursor.getSelectionRange()) |selection| {
-                    buf.deleteRange(selection.start, selection.end, cursor.state());
                     cursor.pos = selection.start;
+                    buf.deleteRange(selection.start, selection.end, old_cursor, cursor.state());
                 } else {
-                    buf.deleteRange(cursor.pos, cursor.pos + 1, cursor.state());
+                    buf.deleteRange(cursor.pos, cursor.pos + 1, old_cursor, cursor.state());
                 }
             },
             .backspace => {
                 if (cursor.getSelectionRange()) |selection| {
-                    buf.deleteRange(selection.start, selection.end, cursor.state());
                     cursor.pos = selection.start;
+                    buf.deleteRange(selection.start, selection.end, old_cursor, cursor.state());
                 } else {
                     // Check if we can delete spaces to the previous tabstop
                     var to_prev_tabstop = cursor.col % TAB_SIZE;
@@ -553,8 +591,8 @@ pub const Editor = struct {
                         }
                     }
                     const spaces_to_remove = if (all_spaces) to_prev_tabstop else 1;
-                    buf.deleteRange(cursor.pos -| spaces_to_remove, cursor.pos, cursor.state());
                     cursor.pos -|= spaces_to_remove;
+                    buf.deleteRange(cursor.pos, old_cursor.pos, old_cursor, cursor.state());
                 }
             },
             .tab => {
@@ -567,6 +605,8 @@ pub const Editor = struct {
                     var new_chars = std.ArrayList(u.Char).init(tmp_allocator);
                     new_chars.ensureTotalCapacity(range.len() + lines.len * TAB_SIZE) catch u.oom();
 
+                    cursor.keep_selection = true;
+
                     if (!mods.shift) {
                         // Indent selected lines
                         for (lines) |line| {
@@ -574,8 +614,6 @@ pub const Editor = struct {
                             new_chars.appendSliceAssumeCapacity(buf.chars.items[line.start..line.end]);
                             if (line.end != range.end) new_chars.appendAssumeCapacity('\n');
                         }
-
-                        buf.replaceRange(range.start, range.end, new_chars.items, cursor.state());
 
                         // Adjust selection
                         const spaces_inserted = lines.len * TAB_SIZE;
@@ -586,6 +624,8 @@ pub const Editor = struct {
                             cursor.selection_start.? += TAB_SIZE;
                             cursor.pos += spaces_inserted;
                         }
+
+                        buf.replaceRange(range.start, range.end, new_chars.items, old_cursor, cursor.state());
                     } else {
                         // Un-indent selected lines
                         var spaces_removed: usize = 0;
@@ -596,15 +636,11 @@ pub const Editor = struct {
                             if (line.end != range.end) new_chars.appendAssumeCapacity('\n');
                         }
 
-                        // TODO: remember cursor and selection
-                        buf.replaceRange(range.start, range.end, new_chars.items, cursor.state());
-
+                        // Adjust selection
                         const first_line = lines[0];
                         const last_line = lines[lines.len - 1];
                         const sel_start_adjust = u.min3(TAB_SIZE, first_line.lenWhitespace(), selection.start - first_line.start);
                         const sel_end_adjust = spaces_removed -| u.min(last_line.text_start -| selection.end, TAB_SIZE);
-
-                        // Adjust selection
                         if (cursor.pos == selection.start) {
                             cursor.pos -= sel_start_adjust;
                             cursor.selection_start.? -|= sel_end_adjust;
@@ -612,20 +648,21 @@ pub const Editor = struct {
                             cursor.selection_start.? -|= sel_start_adjust;
                             cursor.pos -|= sel_end_adjust;
                         }
+
+                        buf.replaceRange(range.start, range.end, new_chars.items, old_cursor, cursor.state());
                     }
-                    cursor.keep_selection = true;
                 } else {
                     if (!mods.shift) {
                         // Insert spaces
                         const to_next_tabstop = TAB_SIZE - cursor.col % TAB_SIZE;
-                        buf.insertSlice(cursor.pos, SPACES[0..to_next_tabstop], cursor.state());
                         cursor.pos += to_next_tabstop;
+                        buf.insertSlice(old_cursor.pos, SPACES[0..to_next_tabstop], old_cursor, cursor.state());
                     } else {
                         // Un-indent current line
                         const line = buf.getLine(cursor.line);
                         const spaces_to_remove = u.min(TAB_SIZE, line.lenWhitespace());
-                        buf.deleteRange(line.start, line.start + spaces_to_remove, cursor.state());
                         cursor.pos -|= u.min(cursor.pos - line.start, spaces_to_remove);
+                        buf.deleteRange(line.start, line.start + spaces_to_remove, old_cursor, cursor.state());
                     }
                 }
             },
@@ -638,35 +675,55 @@ pub const Editor = struct {
                 if (u.modsCmd(mods) and mods.shift) {
                     // Insert line above
                     char_buf[indent] = '\n';
-                    buf.insertSlice(line.start, char_buf[0 .. indent + 1], cursor.state());
                     cursor.pos = line.start + indent;
+                    buf.insertSlice(line.start, char_buf[0 .. indent + 1], old_cursor, cursor.state());
                 } else if (u.modsCmd(mods)) {
                     // Insert line below
                     if (buf.getLineOrNull(cursor.line + 1)) |next_line| {
                         char_buf[indent] = '\n';
-                        buf.insertSlice(next_line.start, char_buf[0 .. indent + 1], cursor.state());
                         cursor.pos = next_line.start + indent;
+                        buf.insertSlice(next_line.start, char_buf[0 .. indent + 1], old_cursor, cursor.state());
                     }
                 } else if (cursor.getSelectionRange()) |selection| {
                     // Replace selection with a newline
-                    buf.replaceRange(selection.start, selection.end, &[_]u.Char{'\n'}, cursor.state());
                     cursor.pos = selection.start + 1;
+                    buf.replaceRange(selection.start, selection.end, &[_]u.Char{'\n'}, old_cursor, cursor.state());
                 } else if (cursor.col <= indent) {
                     // Don't add too much indentation
                     indent = cursor.col;
                     char_buf[indent] = '\n';
-                    buf.insertSlice(line.start, char_buf[0 .. indent + 1], cursor.state());
                     cursor.pos += 1 + indent;
+                    buf.insertSlice(line.start, char_buf[0 .. indent + 1], old_cursor, cursor.state());
                 } else {
                     // Break the line normally
                     char_buf[0] = '\n';
-                    buf.insertSlice(cursor.pos, char_buf[0 .. indent + 1], cursor.state());
                     cursor.pos += 1 + indent;
+                    buf.insertSlice(old_cursor.pos, char_buf[0 .. indent + 1], old_cursor, cursor.state());
                 }
             },
             else => {
                 buf.dirty = false; // nothing needs to be done
             },
+        }
+
+        if (u.modsCmd(mods) and mods.shift and key == .d) {
+            // Duplicate lines
+            const range = if (cursor.getSelectionRange()) |selection|
+                buf.expandRangeToWholeLines(selection.start, selection.end)
+            else
+                buf.expandRangeToWholeLines(cursor.pos, cursor.pos);
+
+            // Move selection forward
+            cursor.pos += range.len();
+            if (cursor.selection_start != null) cursor.selection_start.? += range.len() + 1;
+            cursor.keep_selection = true;
+
+            // Make sure we won't reallocate when copying
+            buf.chars.ensureTotalCapacity(buf.numChars() + range.len()) catch u.oom();
+            buf.insertSlice(range.start, buf.chars.items[range.start..range.end], old_cursor, cursor.state());
+            buf.insertChar(range.end, '\n', old_cursor, cursor.state());
+
+            buf.dirty = true;
         }
 
         const line = buf.getLine(cursor.line);
@@ -707,11 +764,11 @@ pub const Editor = struct {
             },
             else => {},
         }
-        if (old_cursor_pos != cursor.pos and !cursor.keep_selection) {
+        if (old_cursor.pos != cursor.pos and !cursor.keep_selection) {
             if (mods.shift) {
                 if (cursor.selection_start == null) {
                     // Start new selection
-                    cursor.selection_start = old_cursor_pos;
+                    cursor.selection_start = old_cursor.pos;
                 }
             } else {
                 cursor.selection_start = null;
@@ -730,8 +787,8 @@ pub const Editor = struct {
                     if (cursor.getSelectionRange()) |s| {
                         cursor.copyToClipboard(buf.chars.items[s.start..s.end]);
                         if (key == .x) {
-                            buf.deleteRange(s.start, s.end, cursor.state());
                             cursor.pos = s.start;
+                            buf.deleteRange(s.start, s.end, old_cursor, cursor.state());
                             buf.dirty = true;
                         }
                     }
@@ -741,11 +798,11 @@ pub const Editor = struct {
                     if (cursor.clipboard.items.len > 0) {
                         const paste_data = cursor.clipboard.items;
                         if (cursor.getSelectionRange()) |s| {
-                            buf.replaceRange(s.start, s.end, paste_data, cursor.state());
                             cursor.pos = s.start + paste_data.len;
+                            buf.replaceRange(s.start, s.end, paste_data, old_cursor, cursor.state());
                         } else {
-                            buf.insertSlice(cursor.pos, paste_data, cursor.state());
                             cursor.pos += paste_data.len;
+                            buf.insertSlice(old_cursor.pos, paste_data, old_cursor, cursor.state());
                         }
                         buf.dirty = true;
                     }
@@ -791,27 +848,6 @@ pub const Editor = struct {
             }
         }
 
-        if (u.modsCmd(mods) and mods.shift and key == .d) {
-            // Duplicate lines
-            var range = if (cursor.getSelectionRange()) |selection|
-                buf.expandRangeToWholeLines(selection.start, selection.end)
-            else
-                buf.expandRangeToWholeLines(cursor.pos, cursor.pos);
-
-            // Make sure we won't reallocate when copying
-            buf.chars.ensureTotalCapacity(buf.numChars() + range.len()) catch u.oom();
-            buf.insertSlice(range.start, buf.chars.items[range.start..range.end], cursor.state());
-            buf.insertChar(range.end, '\n', cursor.state());
-            range.end += 1;
-
-            // Move selection forward
-            cursor.pos += range.len();
-            if (cursor.selection_start != null) cursor.selection_start.? += range.len();
-            cursor.keep_selection = true;
-
-            buf.dirty = true;
-        }
-
         if (buf.dirty) {
             buf.modified = true;
             buf.last_edit_ms = clock_ms;
@@ -820,7 +856,7 @@ pub const Editor = struct {
         // Keep or reset col_wanted
         switch (key) {
             .up, .down, .page_up, .page_down => {}, // keep on vertical movements
-            else => if (cursor.pos != old_cursor_pos) {
+            else => if (cursor.pos != old_cursor.pos) {
                 cursor.col_wanted = null;
             },
         }

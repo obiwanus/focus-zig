@@ -20,6 +20,18 @@ pub fn println(comptime fmt: []const u8, args: anytype) void {
     print(fmt ++ "\n", args);
 }
 
+pub fn printChars(chars: []const Char) void {
+    for (chars) |c| {
+        if (c == '\n') {
+            print("\\n", .{});
+        } else if (c > 255) {
+            print("#", .{});
+        } else {
+            print("{c}", .{@truncate(u8, c)});
+        }
+    }
+}
+
 pub const Vec2 = extern struct {
     x: f32 = 0,
     y: f32 = 0,

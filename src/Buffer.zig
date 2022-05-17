@@ -17,9 +17,9 @@ colors: std.ArrayList(TextColor),
 lines: std.ArrayList(Line),
 
 edit_alloc: Allocator,
-undos: std.ArrayList([]Edit),
-redos: std.ArrayList([]Edit),
-edits: std.ArrayList(Edit), // most recent edits, which will be put into an undo group soon
+undos: std.ArrayList(EditGroup),
+redos: std.ArrayList(EditGroup),
+edits: std.ArrayList(EditWithCursor), // most recent edits, which will be put into an undo group soon
 
 dirty: bool = true, // needs syncing internal structures
 modified: bool = false, // hasn't been saved to disk
@@ -27,6 +27,7 @@ modified_on_disk: bool = false, //
 deleted: bool = false, // was deleted from disk by someone else
 
 last_edit_ms: f64 = 0,
+last_undo_len: usize = 0,
 
 const File = struct {
     path: []const u8,
@@ -42,18 +43,15 @@ const Edit = union(enum) {
     Insert: struct {
         pos: usize,
         new_chars: []Char,
-        cursor: CursorState,
     },
     Replace: struct {
         range: Range,
         new_chars: []Char,
         old_chars: []Char,
-        cursor: CursorState,
     },
     Delete: struct {
         range: Range,
         old_chars: []Char,
-        cursor: CursorState,
     },
 
     fn deinit(self: Edit, allocator: Allocator) void {
@@ -65,6 +63,25 @@ const Edit = union(enum) {
             },
             .Delete => |edit| allocator.free(edit.old_chars),
         }
+    }
+};
+
+// To store current edits
+const EditWithCursor = struct {
+    edit: Edit,
+    old_cursor: CursorState,
+    new_cursor: CursorState,
+};
+
+// To store multiple edits in an undo/redo group
+const EditGroup = struct {
+    edits: []Edit,
+    old_cursor: CursorState,
+    new_cursor: CursorState,
+
+    fn deinit(self: EditGroup, allocator: Allocator) void {
+        for (self.edits) |edit| edit.deinit(allocator);
+        allocator.free(self.edits);
     }
 };
 
@@ -105,9 +122,9 @@ pub fn init(allocator: Allocator) Buffer {
         .lines = std.ArrayList(Line).init(allocator),
 
         .edit_alloc = allocator,
-        .undos = std.ArrayList([]Edit).init(allocator),
-        .redos = std.ArrayList([]Edit).init(allocator),
-        .edits = std.ArrayList(Edit).init(allocator),
+        .undos = std.ArrayList(EditGroup).init(allocator),
+        .redos = std.ArrayList(EditGroup).init(allocator),
+        .edits = std.ArrayList(EditWithCursor).init(allocator),
     };
 }
 
@@ -118,19 +135,13 @@ pub fn deinit(self: Buffer, allocator: Allocator) void {
     self.lines.deinit();
     if (self.file) |file| allocator.free(file.path);
 
-    for (self.undos.items) |edits| {
-        for (edits) |edit| edit.deinit(self.edit_alloc);
-        self.edit_alloc.free(edits);
-    }
+    for (self.undos.items) |edit_group| edit_group.deinit(self.edit_alloc);
     self.undos.deinit();
 
-    for (self.redos.items) |edits| {
-        for (edits) |edit| edit.deinit(self.edit_alloc);
-        self.edit_alloc.free(edits);
-    }
+    for (self.redos.items) |edit_group| edit_group.deinit(self.edit_alloc);
     self.redos.deinit();
 
-    for (self.edits.items) |edit| edit.deinit(self.edit_alloc);
+    for (self.edits.items) |e| e.edit.deinit(self.edit_alloc);
     self.edits.deinit();
 }
 
@@ -138,7 +149,7 @@ pub fn saveToDisk(self: *Buffer) !void {
     if (self.file == null) return;
 
     self.updateBytesFromChars();
-    if (self.bytes.items[self.bytes.items.len -| 1] != '\n') self.bytes.append('\n') catch u.oom();
+    if (self.bytes.items.len == 0 or self.bytes.items[self.bytes.items.len -| 1] != '\n') self.bytes.append('\n') catch u.oom();
 
     const file_path = self.file.?.path;
     const file = try std.fs.cwd().createFile(file_path, .{ .truncate = true, .read = true });
@@ -366,10 +377,7 @@ fn copyChars(self: Buffer, start: usize, end: usize) []Char {
 }
 
 fn clearRedos(self: *Buffer) void {
-    for (self.redos.items) |edits| {
-        for (edits) |edit| edit.deinit(self.edit_alloc);
-        self.edit_alloc.free(edits);
-    }
+    for (self.redos.items) |edit_group| edit_group.deinit(self.edit_alloc);
     self.redos.clearRetainingCapacity();
 }
 
@@ -385,110 +393,114 @@ fn deleteRaw(self: *Buffer, range: Range) void {
 }
 
 fn insertRaw(self: *Buffer, pos: usize, chars: []const Char) void {
-    if (pos >= self.numChars()) {
-        self.chars.appendSlice(chars) catch u.oom();
-    } else {
-        self.chars.insertSlice(pos, chars) catch u.oom();
-    }
+    self.chars.insertSlice(pos, chars) catch u.oom();
 }
 
 fn replaceRaw(self: *Buffer, start: usize, len: usize, chars: []const Char) void {
     self.chars.replaceRange(start, len, chars) catch u.oom();
 }
 
-pub fn deleteRange(self: *Buffer, start: usize, end: usize, cursor: CursorState) void {
+pub fn deleteRange(self: *Buffer, start: usize, end: usize, old_cursor: CursorState, new_cursor: CursorState) void {
     const range = self.getValidRange(start, end);
     if (range.start == range.end) return;
-    self.edits.append(.{ .Delete = .{
-        .range = range,
-        .old_chars = self.copyChars(range.start, range.end),
-        .cursor = cursor,
-    } }) catch u.oom();
+    self.edits.append(EditWithCursor{
+        .edit = .{ .Delete = .{
+            .range = range,
+            .old_chars = self.copyChars(range.start, range.end),
+        } },
+        .old_cursor = old_cursor,
+        .new_cursor = new_cursor,
+    }) catch u.oom();
     self.clearRedos();
     self.deleteRaw(range);
 }
 
-pub fn replaceRange(self: *Buffer, start: usize, end: usize, new_chars: []const Char, cursor: CursorState) void {
+pub fn replaceRange(self: *Buffer, start: usize, end: usize, new_chars: []const Char, old_cursor: CursorState, new_cursor: CursorState) void {
     const range = self.getValidRange(start, end);
     if (std.mem.eql(Char, new_chars, self.chars.items[start..end])) return;
     self.putCurrentEditsIntoUndoGroup();
-    self.edits.append(.{ .Replace = .{
-        .range = range,
-        .new_chars = self.edit_alloc.dupe(Char, new_chars) catch u.oom(),
-        .old_chars = self.copyChars(range.start, range.end),
-        .cursor = cursor,
-    } }) catch u.oom();
+    self.edits.append(EditWithCursor{
+        .edit = .{ .Replace = .{
+            .range = range,
+            .new_chars = self.edit_alloc.dupe(Char, new_chars) catch u.oom(),
+            .old_chars = self.copyChars(range.start, range.end),
+        } },
+        .old_cursor = old_cursor,
+        .new_cursor = new_cursor,
+    }) catch u.oom();
     self.clearRedos();
     self.replaceRaw(range.start, range.len(), new_chars);
     self.putCurrentEditsIntoUndoGroup();
 }
 
-pub fn insertChar(self: *Buffer, pos: usize, char: Char, cursor: CursorState) void {
-    self.insertSlice(pos, &[_]Char{char}, cursor);
-}
-
-pub fn insertSlice(self: *Buffer, pos: usize, chars: []const Char, cursor: CursorState) void {
-    self.edits.append(.{ .Insert = .{
-        .pos = pos,
-        .new_chars = self.edit_alloc.dupe(Char, chars) catch u.oom(),
-        .cursor = cursor,
-    } }) catch u.oom();
+pub fn insertSlice(self: *Buffer, pos: usize, chars: []const Char, old_cursor: CursorState, new_cursor: CursorState) void {
+    self.edits.append(EditWithCursor{
+        .edit = .{ .Insert = .{
+            .pos = pos,
+            .new_chars = self.edit_alloc.dupe(Char, chars) catch u.oom(),
+        } },
+        .old_cursor = old_cursor,
+        .new_cursor = new_cursor,
+    }) catch u.oom();
     self.clearRedos();
     self.insertRaw(pos, chars);
 }
 
+pub fn insertChar(self: *Buffer, pos: usize, char: Char, old_cursor: CursorState, new_cursor: CursorState) void {
+    self.insertSlice(pos, &[_]Char{char}, old_cursor, new_cursor);
+}
+
 pub fn undo(self: *Buffer) ?CursorState {
-    var cursor: ?CursorState = null;
     self.putCurrentEditsIntoUndoGroup();
-    if (self.undos.popOrNull()) |edits| {
-        for (edits) |edit| switch (edit) {
+    if (self.undos.popOrNull()) |edit_group| {
+        for (edit_group.edits) |edit| switch (edit) {
             .Insert => |e| {
+                // u.print("Reverting insert into pos {} | '", .{e.pos});
+                // u.printChars(e.new_chars);
+                // u.println("'", .{});
                 self.deleteRaw(.{ .start = e.pos, .end = e.pos + e.new_chars.len });
-                cursor = e.cursor;
             },
-            .Delete => |e| {
-                self.insertRaw(e.range.start, e.old_chars);
-                cursor = e.cursor;
-            },
-            .Replace => |e| {
-                self.replaceRaw(e.range.start, e.new_chars.len, e.old_chars);
-                cursor = e.cursor;
-            },
+            .Delete => |e| self.insertRaw(e.range.start, e.old_chars),
+            .Replace => |e| self.replaceRaw(e.range.start, e.new_chars.len, e.old_chars),
         };
-        std.mem.reverse(Edit, edits);
-        self.redos.append(edits) catch u.oom();
+        std.mem.reverse(Edit, edit_group.edits);
+        self.redos.append(edit_group) catch u.oom();
+        return edit_group.old_cursor;
     }
-    return cursor;
+    return null;
 }
 
 pub fn redo(self: *Buffer) ?CursorState {
-    var cursor: ?CursorState = null;
-    if (self.redos.popOrNull()) |edits| {
-        for (edits) |edit| switch (edit) {
-            .Insert => |e| {
-                self.insertRaw(e.pos, e.new_chars);
-                cursor = e.cursor;
-            },
-            .Delete => |e| {
-                self.deleteRaw(e.range);
-                cursor = e.cursor;
-            },
-            .Replace => |e| {
-                self.replaceRaw(e.range.start, e.old_chars.len, e.new_chars);
-                cursor = e.cursor;
-            },
+    if (self.redos.popOrNull()) |edit_group| {
+        for (edit_group.edits) |edit| switch (edit) {
+            .Insert => |e| self.insertRaw(e.pos, e.new_chars),
+            .Delete => |e| self.deleteRaw(e.range),
+            .Replace => |e| self.replaceRaw(e.range.start, e.old_chars.len, e.new_chars),
         };
-        std.mem.reverse(Edit, edits);
-        self.undos.append(edits) catch u.oom();
+        std.mem.reverse(Edit, edit_group.edits);
+        self.undos.append(edit_group) catch u.oom();
+        return edit_group.new_cursor;
     }
-    return cursor;
+    return null;
 }
 
 pub fn putCurrentEditsIntoUndoGroup(self: *Buffer) void {
-    if (self.edits.items.len == 0) return;
-    const edits = self.edits.toOwnedSlice();
-    std.mem.reverse(Edit, edits);
-    self.undos.append(edits) catch u.oom();
+    const num_edits = self.edits.items.len;
+    if (num_edits == 0) return;
+
+    var edits = self.edit_alloc.alloc(Edit, num_edits) catch u.oom();
+    const old_cursor = self.edits.items[0].old_cursor;
+    const new_cursor = self.edits.items[num_edits - 1].new_cursor;
+
+    // Add edits to the group in the reverse order
+    for (self.edits.items) |e, i| edits[num_edits - 1 - i] = e.edit;
+    self.edits.clearRetainingCapacity();
+
+    self.undos.append(EditGroup{
+        .edits = edits,
+        .old_cursor = old_cursor,
+        .new_cursor = new_cursor,
+    }) catch u.oom();
 }
 
 pub fn stripTrailingSpaces(self: *Buffer) void {
