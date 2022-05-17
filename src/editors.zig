@@ -714,7 +714,7 @@ pub const Editor = struct {
                 buf.expandRangeToWholeLines(cursor.pos, cursor.pos);
 
             // Move selection forward
-            cursor.pos += range.len();
+            cursor.pos += range.len() + 1;
             if (cursor.selection_start != null) cursor.selection_start.? += range.len() + 1;
             cursor.keep_selection = true;
 
