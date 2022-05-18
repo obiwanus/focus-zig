@@ -1,5 +1,4 @@
 # TODO
-- Search within buffer
 - Multiple cursors
     + Select words with ctrl+d
     - Refactor code so that we have additional cursors
@@ -27,6 +26,11 @@
 - Search within buffer
 
 # DONE
++ Search within buffer
+    + When text changes, search from cursor and populate the results
+    + Highlight all results
+    + On enter jump to next result, on shift+enter jump to previous
+    + Fix: crash when drawing selections
 + Remove selection on escape
 + Scroll text if it doesn't fit
 + Select text when opening

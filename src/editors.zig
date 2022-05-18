@@ -391,6 +391,7 @@ const SearchBox = struct {
     text: ArrayList(Char),
     text_selected: bool = false,
     results: ArrayList(usize),
+    result_selected: usize = 0,
 
     fn init(allocator: Allocator) SearchBox {
         return .{
@@ -402,6 +403,63 @@ const SearchBox = struct {
     fn deinit(self: SearchBox) void {
         self.text.deinit();
         self.results.deinit();
+    }
+
+    fn search(self: *SearchBox, buf: *const Buffer, cursor_pos: usize) void {
+        self.results.clearRetainingCapacity();
+        self.result_selected = 0;
+        if (self.text.items.len == 0) return;
+
+        const search_str = self.text.items;
+
+        // Search from the beginning
+        var pos: usize = 0;
+        var i: usize = 0;
+        var selected_found = false;
+        while (std.mem.indexOfPos(Char, buf.chars.items, pos, search_str)) |found| : (i += 1) {
+            self.results.append(found) catch u.oom();
+            if (found >= cursor_pos and !selected_found) {
+                self.result_selected = i;
+                selected_found = true;
+            }
+            pos = found + search_str.len;
+            if (pos >= buf.chars.items.len) break;
+        }
+    }
+
+    fn prevResult(self: *SearchBox) void {
+        if (self.result_selected == 0) {
+            self.result_selected = self.results.items.len -| 1;
+        } else {
+            self.result_selected -= 1;
+        }
+    }
+
+    fn nextResult(self: *SearchBox) void {
+        self.result_selected += 1;
+        if (self.result_selected >= self.results.items.len) self.result_selected = 0;
+    }
+
+    fn getCurrentResultPos(self: SearchBox) ?usize {
+        if (!self.open or self.results.items.len == 0) return null;
+        return self.results.items[self.result_selected] + self.text.items.len;
+    }
+
+    fn getVisibleResults(self: SearchBox, start_char: usize, end_char: usize) ?[]const usize {
+        if (!self.open or self.results.items.len == 0 or start_char >= end_char) return null;
+        var start_set = false;
+        var start: usize = 0;
+        var end: usize = 0;
+        for (self.results.items) |result, i| {
+            if (start_char <= result and result <= end_char and !start_set) {
+                start = i;
+                start_set = true;
+            }
+            if (end_char < result) break;
+            end = i + 1;
+        }
+        if (end <= start) return null;
+        return self.results.items[start..end];
     }
 };
 
@@ -451,7 +509,12 @@ pub const Editor = struct {
             self.cursor.col = cursor.col;
         }
 
-        self.moveViewportToCursor(char_size); // depends on lines_per_screen etc
+        if (self.search_box.getCurrentResultPos()) |pos| {
+            self.moveViewportToPos(buf, pos, char_size); // depends on lines_per_screen etc
+        } else {
+            self.moveViewportToPos(buf, self.cursor.pos, char_size); // depends on lines_per_screen etc
+        }
+
         self.animateScrolling(clock_ms);
 
         // Draw the text
@@ -491,12 +554,42 @@ pub const Editor = struct {
                 ui.drawSolidRect(highlight_rect, style.colors.BACKGROUND_HIGHLIGHT);
             }
 
-            // First draw selections
+            // Draw search selections
+            if (self.search_box.getVisibleResults(start_char, end_char)) |results| {
+                const selected_result = self.search_box.results.items[self.search_box.result_selected];
+                const word_len = self.search_box.text.items.len;
+
+                for (results) |start_pos| {
+                    // Draw selection
+                    const color = if (start_pos == selected_result) style.colors.SEARCH_RESULT_ACTIVE else style.colors.SEARCH_RESULT_INACTIVE;
+                    const start = buf.getLineColFromPos(start_pos);
+                    const end = buf.getLineColFromPos(start_pos + word_len);
+
+                    var line: usize = start.line;
+                    while (line <= end.line) : (line += 1) {
+                        const start_col = if (line == start.line) start.col -| col_min else 0;
+                        var end_col = if (line == end.line) end.col else buf.getLine(line).len() + 1;
+                        if (end_col > col_max + 1) end_col = col_max + 1;
+                        end_col -|= col_min;
+
+                        if (start_col < end_col) {
+                            const r = Rect{
+                                .x = top_left.x + @intToFloat(f32, start_col) * char_size.x,
+                                .y = top_left.y + @intToFloat(f32, line -| line_min) * char_size.y - adjust_y,
+                                .w = @intToFloat(f32, end_col - start_col) * char_size.x,
+                                .h = char_size.y,
+                            };
+                            ui.drawSolidRect(r, color);
+                        }
+                    }
+                }
+            }
+
+            // Draw cursor selections
             if (self.cursor.getSelectionRange()) |s| {
+                const color = if (cursor_active) style.colors.SELECTION_ACTIVE else style.colors.SELECTION_INACTIVE;
                 const start = buf.getLineColFromPos(s.start);
                 const end = buf.getLineColFromPos(s.end);
-
-                const sel_color = if (cursor_active) style.colors.SELECTION_ACTIVE else style.colors.SELECTION_INACTIVE;
 
                 var line: usize = start.line;
                 while (line <= end.line) : (line += 1) {
@@ -505,13 +598,15 @@ pub const Editor = struct {
                     if (end_col > col_max + 1) end_col = col_max + 1;
                     end_col -|= col_min;
 
-                    const r = Rect{
-                        .x = top_left.x + @intToFloat(f32, start_col) * char_size.x,
-                        .y = top_left.y + @intToFloat(f32, line -| line_min) * char_size.y - adjust_y,
-                        .w = @intToFloat(f32, end_col - start_col) * char_size.x,
-                        .h = char_size.y,
-                    };
-                    ui.drawSolidRect(r, sel_color);
+                    if (start_col < end_col) {
+                        const r = Rect{
+                            .x = top_left.x + @intToFloat(f32, start_col) * char_size.x,
+                            .y = top_left.y + @intToFloat(f32, line -| line_min) * char_size.y - adjust_y,
+                            .w = @intToFloat(f32, end_col - start_col) * char_size.x,
+                            .h = char_size.y,
+                        };
+                        ui.drawSolidRect(r, color);
+                    }
                 }
             }
 
@@ -630,6 +725,9 @@ pub const Editor = struct {
     }
 
     fn typeChar(self: *Editor, char: Char, buf: *Buffer, clock_ms: f64) void {
+        const old_cursor = self.cursor.state();
+        var cursor = &self.cursor;
+
         // Type into search box
         if (self.search_box.open) {
             if (self.search_box.text_selected) {
@@ -637,13 +735,11 @@ pub const Editor = struct {
                 self.search_box.text_selected = false;
             }
             self.search_box.text.append(char) catch u.oom();
+            self.search_box.search(buf, cursor.pos);
             return;
         }
 
         // Or type into the editor
-        const old_cursor = self.cursor.state();
-        var cursor = &self.cursor;
-
         if (cursor.getSelectionRange()) |selection| {
             cursor.pos = selection.start + 1;
             buf.replaceRange(selection.start, selection.end, &[_]Char{char}, old_cursor, cursor.state());
@@ -658,39 +754,43 @@ pub const Editor = struct {
     }
 
     fn keyPress(self: *Editor, buf: *Buffer, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allocator, clock_ms: f64) void {
+        const old_cursor = self.cursor.state();
+        var cursor = &self.cursor;
+
         // Process search box
-        if (self.search_box.open) {
+        var search_box = &self.search_box;
+        if (search_box.open) {
             switch (key) {
-                .escape => self.search_box.open = false,
-                .backspace => {
-                    if (self.search_box.text_selected or u.modsCmd(mods)) {
-                        self.search_box.text.clearRetainingCapacity();
-                        self.search_box.text_selected = false;
-                    } else {
-                        _ = self.search_box.text.popOrNull();
+                .escape => {
+                    if (search_box.getCurrentResultPos()) |pos| {
+                        cursor.pos = pos;
+                        cursor.selection_start = pos - search_box.text.items.len;
                     }
+                    search_box.open = false;
+                },
+                .backspace => {
+                    if (search_box.text_selected or u.modsCmd(mods)) {
+                        search_box.text.clearRetainingCapacity();
+                        search_box.text_selected = false;
+                    } else {
+                        _ = search_box.text.popOrNull();
+                    }
+                    search_box.search(buf, cursor.pos);
                 },
                 .enter => {
-                    if (mods.shift) {
-                        // TODO: jump to previous search result
-                    } else {
-                        // TODO: jump to next search result
-                    }
+                    if (mods.shift) search_box.prevResult() else search_box.nextResult();
                 },
-                .left, .right, .up, .down => self.search_box.text_selected = false,
+                .left, .right, .up, .down => search_box.text_selected = false,
                 else => {},
             }
             return;
         }
         if (u.modsOnlyCmd(mods) and key == .f) {
-            self.search_box.open = true;
-            self.search_box.text_selected = true;
+            search_box.open = true;
+            search_box.text_selected = true;
+            search_box.search(buf, cursor.pos);
             return;
         }
-
-        // Otherwise, process normal editor keypress
-        const old_cursor = self.cursor.state();
-        var cursor = &self.cursor;
 
         // Insertions/deletions of sorts
         const TAB_SIZE = 4;
@@ -1033,7 +1133,11 @@ pub const Editor = struct {
         self.cursor.pos = target_line.start + new_line_pos;
     }
 
-    fn moveViewportToCursor(self: *Editor, char_size: Vec2) void {
+    fn moveViewportToPos(self: *Editor, buf: *const Buffer, pos: usize, char_size: Vec2) void {
+        const lc = buf.getLineColFromPos(pos);
+        const line = lc.line;
+        const col = lc.col;
+
         // Current scroll offset in characters
         var viewport_top = @floatToInt(usize, self.scroll.y / char_size.y);
         var viewport_left = @floatToInt(usize, self.scroll.x / char_size.x);
@@ -1046,15 +1150,15 @@ pub const Editor = struct {
         const col_max = viewport_left + self.cols_per_screen -| padding -| 1;
 
         // Detect if cursor is outside viewport
-        if (self.cursor.line < line_min) {
-            viewport_top = self.cursor.line -| padding;
-        } else if (self.cursor.line > line_max) {
-            viewport_top = self.cursor.line + padding + 1 -| self.lines_per_screen;
+        if (line < line_min) {
+            viewport_top = line -| padding;
+        } else if (line > line_max) {
+            viewport_top = line + padding + 1 -| self.lines_per_screen;
         }
-        if (self.cursor.col < col_min) {
-            viewport_left -|= (col_min - self.cursor.col);
-        } else if (self.cursor.col > col_max) {
-            viewport_left += (self.cursor.col -| col_max);
+        if (col < col_min) {
+            viewport_left -|= (col_min - col);
+        } else if (col > col_max) {
+            viewport_left += (col -| col_max);
         }
 
         self.scroll.y = @intToFloat(f32, viewport_top) * char_size.y;
