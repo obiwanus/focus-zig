@@ -20,3 +20,6 @@ A simple text editor (work in progress)
 - Ctrl + Shift + Enter - insert new line above
 - Ctrl + D - select word
 - Ctrl + Shift + D - duplicate selected lines
+- Ctrl + F - search within buffer
+- Ctrl + W - close current buffer
+- Ctrl + Alt + W - close the buffer on the side

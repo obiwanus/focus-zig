@@ -3,6 +3,7 @@
     + Select words with ctrl+d
     - Refactor code so that we have additional cursors
     - On subsequent presses search and create more cursors
+- When jumping to search results, align viewport to the left if possible
 - Use a global clipboard unless multiple cursors are used
 - Wrap around when moving selection in the open files dialog
 - Create new files
@@ -16,14 +17,6 @@
   (maybe don't use array lists and instead just allocate slices of exact size from the arena)
 - Measure how expensive it is to rehighlight everything
 - When drawing a buffer with a conflict we need to ask what to do
-
-# WHAT NEEDS TO WORK BEFORE I CAN START USING IT
-+ Open files
-+ Save files
-+ Switch between open files
-+ Select text, copy/cut/paste/duplicate
-+ Undo/redo
-- Search within buffer
 
 # DONE
 + Search within buffer
