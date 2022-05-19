@@ -74,7 +74,7 @@ pub const TextColor = enum(u8) {
     @"error",
     keyword,
 
-    const TYPE_KEYWORDS = [_][]const u8{ "bool", "usize", "type" };
+    const TYPE_KEYWORDS = [_][]const u8{ "bool", "usize", "isize", "type" };
     const VALUE_KEYWORDS = [_][]const u8{ "true", "false", "undefined", "null" };
 
     pub fn getForIdentifier(ident: []Char, next_char: ?Char) TextColor {

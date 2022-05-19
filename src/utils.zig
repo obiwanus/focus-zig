@@ -37,6 +37,11 @@ pub const Vec2 = extern struct {
     y: f32 = 0,
 };
 
+pub const LineCol = struct {
+    line: usize = 0,
+    col: usize = 0,
+};
+
 pub const Rect = struct {
     x: f32,
     y: f32,

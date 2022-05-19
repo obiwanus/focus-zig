@@ -76,7 +76,6 @@ pub fn main() !void {
     // Move window to the biggest monitor and maximise
     try window.setPosInt(monitor_pos.x, monitor_pos.y);
     try window.setSizeLimits(.{ .width = 400, .height = 400 }, .{ .width = null, .height = null });
-    try window.maximize();
 
     defer window.destroy();
 
@@ -207,7 +206,7 @@ pub fn main() !void {
         try glfw.pollEvents();
 
         // Otherwise sleep until something happens
-        while (g_events.items.len == 0 and !editors.haveActiveScrollAnimation() and !window.shouldClose()) {
+        while (g_events.items.len == 0 and !window.shouldClose()) {
             try glfw.waitEventsTimeout(0.5);
 
             // Monotonically increasing clock for animations
@@ -383,6 +382,11 @@ pub fn main() !void {
             .p_signal_semaphores = @ptrCast([*]const vk.Semaphore, &swapchain.render_finished_semaphore),
         }}, swapchain.render_finished_fence);
 
+        if (!window_visible) {
+            try window.maximize();
+            window_visible = true;
+        }
+
         // Present the rendered frame when ready
         _ = try vc.vkd.queuePresentKHR(vc.present_queue.handle, &.{
             .wait_semaphore_count = 1,
@@ -395,12 +399,6 @@ pub fn main() !void {
 
         // Make sure the rendering is finished
         try swapchain.waitUntilLastFrameIsRendered();
-
-        if (!window_visible) {
-            // try vc.vkd.queueWaitIdle(vc.present_queue.handle);
-            try window.show();
-            window_visible = true;
-        }
     }
 
     // Wait for GPU to finish all work before cleaning up

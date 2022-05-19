@@ -115,7 +115,7 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
         .none => {}, // nothing to draw
         .single => |e| {
             var editor = &self.open_editors.items[e];
-            editor.updateAndDraw(self.getBuffer(editor.buffer), ui, area, clock_ms, true, tmp_allocator);
+            editor.updateAndDraw(self.getBuffer(editor.buffer), ui, area, true, tmp_allocator);
         },
         .side_by_side => |e| {
             const left_rect = area.splitLeft(area.w / 2 - 1, 1);
@@ -123,8 +123,8 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
 
             var e1 = &self.open_editors.items[e.left];
             var e2 = &self.open_editors.items[e.right];
-            e1.updateAndDraw(self.getBuffer(e1.buffer), ui, left_rect, clock_ms, e.active == e.left, tmp_allocator);
-            e2.updateAndDraw(self.getBuffer(e2.buffer), ui, right_rect, clock_ms, e.active == e.right, tmp_allocator);
+            e1.updateAndDraw(self.getBuffer(e1.buffer), ui, left_rect, e.active == e.left, tmp_allocator);
+            e2.updateAndDraw(self.getBuffer(e2.buffer), ui, right_rect, e.active == e.right, tmp_allocator);
 
             const splitter_rect = Rect{ .x = area.x - 2, .y = area.y, .w = 2, .h = area.h };
             ui.drawSolidRect(splitter_rect, style.colors.BACKGROUND_BRIGHT);
@@ -160,13 +160,6 @@ pub fn keyPress(self: *Editors, key: glfw.Key, mods: glfw.Mods, tmp_allocator: A
     } else if (self.activeEditor()) |editor| {
         editor.keyPress(self.getBuffer(editor.buffer), key, mods, tmp_allocator, clock_ms);
     }
-}
-
-pub fn haveActiveScrollAnimation(self: *Editors) bool {
-    if (self.activeEditor()) |editor| {
-        return editor.scroll_animation != null;
-    }
-    return false;
 }
 
 pub fn activeEditor(self: *Editors) ?*Editor {
@@ -469,9 +462,10 @@ pub const Editor = struct {
     // Updated every time we draw UI (because that's when we know the layout and therefore size)
     lines_per_screen: usize = 60,
     cols_per_screen: usize = 120,
+    char_size: Vec2 = Vec2{},
+
     cursor: Cursor,
-    scroll: Vec2 = Vec2{}, // how many px we have scrolled to the left and to the top
-    scroll_animation: ?ScrollAnimation = null,
+    scroll: u.LineCol = u.LineCol{},
     search_box: SearchBox,
 
     fn init(buffer: usize, allocator: Allocator) Editor {
@@ -487,7 +481,7 @@ pub const Editor = struct {
         self.search_box.deinit();
     }
 
-    fn updateAndDraw(self: *Editor, buf: *Buffer, ui: *Ui, rect: Rect, clock_ms: f64, is_active: bool, tmp_allocator: Allocator) void {
+    fn updateAndDraw(self: *Editor, buf: *Buffer, ui: *Ui, rect: Rect, is_active: bool, tmp_allocator: Allocator) void {
         const scale = ui.screen.scale;
         const char_size = ui.screen.font.charSize();
         const margin = Vec2{ .x = 30 * scale, .y = 15 * scale };
@@ -500,6 +494,7 @@ pub const Editor = struct {
         // Retain info about size - we only know it now
         self.lines_per_screen = @floatToInt(usize, area.h / char_size.y);
         self.cols_per_screen = @floatToInt(usize, area.w / char_size.x);
+        self.char_size = char_size;
 
         // Update cursor line, col and pos
         {
@@ -509,21 +504,21 @@ pub const Editor = struct {
             self.cursor.col = cursor.col;
         }
 
-        if (self.search_box.getCurrentResultPos()) |pos| {
-            self.moveViewportToPos(buf, pos, char_size); // depends on lines_per_screen etc
-        } else {
-            self.moveViewportToPos(buf, self.cursor.pos, char_size); // depends on lines_per_screen etc
-        }
+        // Move viewport
+        {
+            const pos = self.search_box.getCurrentResultPos() orelse self.cursor.pos;
+            const line_col = buf.getLineColFromPos(pos);
+            const centered = pos != self.cursor.pos; // center viewport on search results only
 
-        self.animateScrolling(clock_ms);
+            self.moveViewportToLineCol(line_col, centered); // depends on lines_per_screen etc
+        }
 
         // Draw the text
         {
             // First and last visible lines
-            // TODO: check how it behaves when scale changes
-            const line_min = @floatToInt(usize, self.scroll.y / char_size.y) -| 1;
+            const line_min = self.scroll.line -| 1;
             const line_max = line_min + self.lines_per_screen + 3;
-            const col_min = @floatToInt(usize, self.scroll.x / char_size.x);
+            const col_min = self.scroll.col;
             const col_max = col_min + self.cols_per_screen;
 
             const start_char = buf.getLine(line_min).start;
@@ -532,27 +527,19 @@ pub const Editor = struct {
             const chars = buf.chars.items[start_char..end_char];
             const colors = buf.colors.items[start_char..end_char];
 
-            // Offset from canonical position (for smooth scrolling)
-            const offset = Vec2{
-                .x = self.scroll.x - @intToFloat(f32, col_min) * char_size.x,
-                .y = self.scroll.y - @intToFloat(f32, line_min) * char_size.y,
-            };
-
-            const top_left = Vec2{ .x = area.x - offset.x, .y = area.y - offset.y };
+            const top_left = area.topLeft();
             const cursor_line = self.cursor.line -| line_min;
             const cursor_col = self.cursor.col -| col_min;
             const adjust_y = 2 * scale;
 
             // Highlight line with cursor
-            {
-                const highlight_rect = Rect{
-                    .x = rect.x,
-                    .y = top_left.y + @intToFloat(f32, cursor_line) * char_size.y - adjust_y,
-                    .w = rect.w,
-                    .h = char_size.y,
-                };
-                ui.drawSolidRect(highlight_rect, style.colors.BACKGROUND_HIGHLIGHT);
-            }
+            const highlight_rect = Rect{
+                .x = rect.x,
+                .y = top_left.y + @intToFloat(f32, cursor_line) * char_size.y - adjust_y,
+                .w = rect.w,
+                .h = char_size.y,
+            };
+            ui.drawSolidRect(highlight_rect, style.colors.BACKGROUND_HIGHLIGHT);
 
             // Draw search selections
             if (self.search_box.getVisibleResults(start_char, end_char)) |results| {
@@ -627,7 +614,7 @@ pub const Editor = struct {
             if (col_min > 0) ui.drawRightShadow(Rect{ .x = area.x - 5, .y = area.y - margin.y, .w = 1, .h = area.h + margin.y }, 7 * scale);
 
             // Draw shadow on top if scrolled down
-            if (self.scroll.y > 0) ui.drawBottomShadow(Rect{ .x = rect.x, .y = rect.y - 1, .w = rect.w, .h = 1 }, 7 * scale);
+            if (self.scroll.line > 0) ui.drawBottomShadow(Rect{ .x = rect.x, .y = rect.y - 1, .w = rect.w, .h = 1 }, 7 * scale);
         }
 
         // Draw footer
@@ -972,17 +959,37 @@ pub const Editor = struct {
                 if (u.modsCmd(mods) and cursor.pos > line.end) cursor.pos = line.end;
                 if (cursor.pos > buf.numChars()) cursor.pos = buf.numChars();
             },
-            .up => {
-                self.moveCursorToLine(cursor.line -| move_by, buf);
-            },
-            .down => {
-                self.moveCursorToLine(cursor.line + move_by, buf);
-            },
-            .page_up => {
-                self.moveCursorToLine(cursor.line -| self.lines_per_screen, buf);
-            },
-            .page_down => {
-                self.moveCursorToLine(cursor.line + self.lines_per_screen, buf);
+            .up, .down, .page_up, .page_down => {
+                if (!mods.alt) {
+                    // Move cursor to new line
+                    const new_line = switch (key) {
+                        .up => cursor.line -| move_by,
+                        .down => cursor.line + move_by,
+                        .page_up => cursor.line -| self.lines_per_screen,
+                        .page_down => cursor.line + self.lines_per_screen,
+                        else => unreachable,
+                    };
+                    const target_line = buf.getLine(new_line);
+                    const wanted_pos = cursor.col_wanted orelse cursor.col;
+                    const new_line_pos = u.min(wanted_pos, target_line.len());
+                    cursor.col_wanted = if (new_line_pos < wanted_pos) wanted_pos else null; // reset or remember wanted position
+                    cursor.pos = target_line.start + new_line_pos;
+                } else {
+                    const new_line = switch (key) {
+                        .up => cursor.line -| 5,
+                        .down => cursor.line + 5,
+                        .page_up => cursor.line -| self.lines_per_screen,
+                        .page_down => cursor.line + self.lines_per_screen,
+                        else => unreachable,
+                    };
+                    // Move viewport
+                    if (new_line < cursor.line) {
+                        self.scroll.line -|= (cursor.line - new_line);
+                    } else {
+                        self.scroll.line += (new_line - cursor.line);
+                    }
+                }
+
             },
             .home => {
                 if (cursor.pos != line.text_start) {
@@ -1109,61 +1116,35 @@ pub const Editor = struct {
         }
     }
 
-    pub fn setNewScrollTarget(self: *Editor, target: f32, clock_ms: f64) void {
-        self.scroll_animation = ScrollAnimation{
-            .start_ms = clock_ms,
-            .target_ms = clock_ms + ScrollAnimation.DURATION_MS,
-            .value1 = self.scroll,
-            .value2 = Vec2{ .x = self.scroll.x, .y = target }, // TODO: support x
-        };
-    }
+    fn moveViewportToLineCol(self: *Editor, line_col: u.LineCol, centered: bool) void {
+        const line = line_col.line;
+        const col = line_col.col;
 
-    pub fn animateScrolling(self: *Editor, clock_ms: f64) void {
-        if (self.scroll_animation) |animation| {
-            self.scroll = animation.getValue(clock_ms);
-            if (animation.isFinished(clock_ms)) {
-                self.scroll_animation = null;
-            }
-        }
-    }
+        var top = self.scroll.line;
+        var left = self.scroll.col;
 
-    fn moveCursorToLine(self: *Editor, line: usize, buf: *Buffer) void {
-        const target_line = buf.getLine(line);
-        const wanted_pos = self.cursor.col_wanted orelse self.cursor.col;
-        const new_line_pos = u.min(wanted_pos, target_line.len());
-        self.cursor.col_wanted = if (new_line_pos < wanted_pos) wanted_pos else null; // reset or remember wanted position
-        self.cursor.pos = target_line.start + new_line_pos;
-    }
-
-    fn moveViewportToPos(self: *Editor, buf: *const Buffer, pos: usize, char_size: Vec2) void {
-        const lc = buf.getLineColFromPos(pos);
-        const line = lc.line;
-        const col = lc.col;
-
-        // Current scroll offset in characters
-        var viewport_top = @floatToInt(usize, self.scroll.y / char_size.y);
-        var viewport_left = @floatToInt(usize, self.scroll.x / char_size.x);
+        _ = centered;
 
         // Allowed cursor positions within viewport
         const padding = 4;
-        const line_min = viewport_top + padding;
-        const line_max = viewport_top + self.lines_per_screen -| padding -| 1;
-        const col_min = viewport_left + padding;
-        const col_max = viewport_left + self.cols_per_screen -| padding -| 1;
+        const line_min = top + padding;
+        const line_max = top + self.lines_per_screen -| (padding + 2);
+        const col_min = left + padding;
+        const col_max = left + self.cols_per_screen -| padding;
 
         // Detect if cursor is outside viewport
         if (line < line_min) {
-            viewport_top = line -| padding;
+            top = line -| padding;
         } else if (line > line_max) {
-            viewport_top = line + padding + 1 -| self.lines_per_screen;
+            top = line + padding + 2 -| self.lines_per_screen;
         }
         if (col < col_min) {
-            viewport_left -|= (col_min - col);
+            left -|= (col_min - col);
         } else if (col > col_max) {
-            viewport_left += (col -| col_max);
+            left += (col -| col_max);
         }
 
-        self.scroll.y = @intToFloat(f32, viewport_top) * char_size.y;
-        self.scroll.x = @intToFloat(f32, viewport_left) * char_size.x;
+        self.scroll.line = top;
+        self.scroll.col = left;
     }
 };

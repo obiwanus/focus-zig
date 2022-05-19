@@ -6,6 +6,7 @@ const u = focus.utils;
 const Allocator = std.mem.Allocator;
 const TextColor = focus.style.TextColor;
 const Char = u.Char;
+const LineCol = u.LineCol;
 
 const Buffer = @This();
 
@@ -83,11 +84,6 @@ const EditGroup = struct {
         for (self.edits) |edit| edit.deinit(allocator);
         allocator.free(self.edits);
     }
-};
-
-pub const LineCol = struct {
-    line: usize,
-    col: usize,
 };
 
 pub const Range = struct {
