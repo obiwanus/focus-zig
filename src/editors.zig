@@ -780,7 +780,9 @@ pub const Editor = struct {
                 .enter => {
                     if (mods.shift) search_box.prevResult() else search_box.nextResult();
                 },
-                .left, .right, .up, .down => search_box.text_selected = false,
+                .up => search_box.prevResult(),
+                .down => search_box.nextResult(),
+                .left, .right => search_box.text_selected = false,
                 else => {},
             }
             return;

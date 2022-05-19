@@ -60,9 +60,12 @@ pub fn main() !void {
     const monitor_pos = try monitor.getPosInt();
 
     // Create window
+    var window_visible = false;
     const window = try glfw.Window.create(1000, 1000, APP_NAME, null, null, .{
         .client_api = .no_api,
         .focused = true,
+        .focus_on_show = true,
+        .visible = window_visible,
         // .maximized = false,
         // .decorated = false,  // NOTE: there's a bug which causes the window to be bigger than the monitor
         //                      // (or causes it to report a bigger size than it actually is)
@@ -74,6 +77,7 @@ pub fn main() !void {
     try window.setPosInt(monitor_pos.x, monitor_pos.y);
     try window.setSizeLimits(.{ .width = 400, .height = 400 }, .{ .width = null, .height = null });
     try window.maximize();
+
     defer window.destroy();
 
     // Set window icon
@@ -391,6 +395,12 @@ pub fn main() !void {
 
         // Make sure the rendering is finished
         try swapchain.waitUntilLastFrameIsRendered();
+
+        if (!window_visible) {
+            // try vc.vkd.queueWaitIdle(vc.present_queue.handle);
+            try window.show();
+            window_visible = true;
+        }
     }
 
     // Wait for GPU to finish all work before cleaning up
