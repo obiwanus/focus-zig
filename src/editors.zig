@@ -950,14 +950,13 @@ pub const Editor = struct {
 
         // Cursor movements
         switch (key) {
-            .left => {
-                cursor.pos -|= move_by;
-                if (u.modsCmd(mods) and cursor.pos < line.start) cursor.pos = line.start;
-            },
-            .right => {
-                cursor.pos += move_by;
-                if (u.modsCmd(mods) and cursor.pos > line.end) cursor.pos = line.end;
-                if (cursor.pos > buf.numChars()) cursor.pos = buf.numChars();
+            .left, .right => {
+                if (cursor.getSelectionRange()) |selection| {
+                    cursor.pos = if (key == .left) selection.start else selection.end;
+                    cursor.selection_start = null;
+                } else {
+                    if (key == .left) cursor.pos -|= move_by else cursor.pos += move_by;
+                }
             },
             .up, .down, .page_up, .page_down => {
                 if (!mods.alt) {

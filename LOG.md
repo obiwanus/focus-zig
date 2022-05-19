@@ -1,10 +1,10 @@
 # TODO
+- Swap lines with alt+shift+up/down
 - Remove search text when closing search window
 - Jump to centered search results
 - Allow to scroll viewport past cursor
     - Only jump to cursor on cursor movement or editing
     - Try scrolling smoothly
-- Swap lines with alt+shift+up/down
 - Multiple cursors
     + Select words with ctrl+d
     - Refactor code so that we have additional cursors
@@ -25,6 +25,7 @@
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
++ When pressing left with a selection, move cursor to the left of selection
 + Move viewport with alt + arrows
 + Auto install the optimised version for use
 + Search within buffer
