@@ -19,6 +19,7 @@
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
++ Auto install the optimised version for use
 + Search within buffer
     + When text changes, search from cursor and populate the results
     + Highlight all results

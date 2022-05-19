@@ -24,7 +24,7 @@ const OpenFileDialog = focus.dialogs.OpenFile;
 var GPA = std.heap.GeneralPurposeAllocator(.{ .never_unmap = false }){};
 
 const APP_NAME = "Focus";
-const FONT_NAME = "fonts/FiraCode-Retina.ttf";
+const FONT_NAME = "../fonts/FiraCode-Retina.ttf"; // relative to "src"
 const FONT_SIZE = 18; // for scale = 1.0
 
 var g_events: std.ArrayList(Event) = undefined;
@@ -77,7 +77,8 @@ pub fn main() !void {
     defer window.destroy();
 
     // Set window icon
-    const window_icon = stbi.load("images/focus.png", .rgb_alpha) catch u.panic("Couldn't load window icon", .{});
+    const window_icon_img_data = @embedFile("../images/focus.png");
+    const window_icon = stbi.load(.{ .buffer = window_icon_img_data }, .rgb_alpha) catch u.panic("Couldn't load window icon", .{});
     defer window_icon.free();
     window.setIcon(static_allocator, &[_]glfw.Image{.{
         .width = window_icon.width,

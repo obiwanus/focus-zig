@@ -25,14 +25,23 @@ pub const Image = struct {
 };
 
 extern fn stbi_load(filename: [*c]const u8, x: [*c]c_int, y: [*c]c_int, comp: [*c]c_int, req_comp: ReqComp) [*c]u8;
+extern fn stbi_load_from_memory(buffer: [*c]const u8, len: c_int, x: [*c]c_int, y: [*c]c_int, comp: [*c]c_int, req_comp: ReqComp) [*c]u8;
 extern fn stbi_image_free(pixels: ?*anyopaque) void;
 
-pub fn load(filename: [:0]const u8, req_comp: ReqComp) !Image {
+pub const Source = union(enum) {
+    filename: [:0]const u8,
+    buffer: []const u8,
+};
+
+pub fn load(source: Source, req_comp: ReqComp) !Image {
     var x: c_int = undefined;
     var y: c_int = undefined;
     var comp: c_int = undefined;
 
-    const pixels: ?[*]u8 = stbi_load(filename, &x, &y, &comp, req_comp);
+    const pixels: ?[*]u8 = switch (source) {
+        .filename => |filename| stbi_load(filename, &x, &y, &comp, req_comp),
+        .buffer => |buffer| stbi_load_from_memory(buffer.ptr, @intCast(c_int, buffer.len), &x, &y, &comp, req_comp),
+    };
     if (pixels == null) {
         return error.ImageLoadError;
     }

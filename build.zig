@@ -5,12 +5,22 @@ const glfw = @import("libs/glfw/build.zig");
 const vulkanzig = @import("libs/vulkan/build.zig");
 
 pub fn build(b: *std.build.Builder) void {
-    const target = b.standardTargetOptions(.{});
-    const mode = b.standardReleaseOptions();
-
     const exe = b.addExecutable("focus", "src/main.zig");
+
+    const target = b.standardTargetOptions(.{});
     exe.setTarget(target);
-    exe.setBuildMode(mode);
+
+    const release = b.option(bool, "release", "Install a release version to C:\\Programs\\focus") orelse false;
+
+    if (release) {
+        if (target.getOsTag() == .windows) {
+            exe.subsystem = .Windows;
+        }
+        exe.setOutputDir("C:\\\\Programs\\focus");
+        exe.setBuildMode(.ReleaseSafe);
+    } else {
+        exe.setBuildMode(b.standardReleaseOptions());
+    }
 
     // stb_image
     exe.addCSourceFile("libs/stb_image/stb_image.c", &.{});
@@ -38,10 +48,6 @@ pub fn build(b: *std.build.Builder) void {
     resources.addShader("ui_frag", "shaders/ui.frag");
     exe.addPackage(resources.package);
 
-    if (target.getOsTag() == .windows) {
-        exe.subsystem = .Windows;
-    }
-
     const run_cmd = exe.run();
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| {
@@ -50,11 +56,4 @@ pub fn build(b: *std.build.Builder) void {
 
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
-
-    const exe_tests = b.addTest("src/main.zig");
-    exe_tests.setTarget(target);
-    exe_tests.setBuildMode(mode);
-
-    const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&exe_tests.step);
 }

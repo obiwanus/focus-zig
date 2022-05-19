@@ -24,12 +24,12 @@ pub const Font = struct {
     ascii: CharRange,
     cyrillic: CharRange,
 
-    pub fn init(vc: *const VulkanContext, allocator: Allocator, filename: []const u8, size: f32, cmd_pool: vk.CommandPool) !Font {
+    pub fn init(vc: *const VulkanContext, allocator: Allocator, comptime filename: []const u8, size: f32, cmd_pool: vk.CommandPool) !Font {
+        // We don't want to have to carry fonts around so we just embed them
+        const font_data = @embedFile(filename);
+
         var pixels = try allocator.alloc(u8, ATLAS_WIDTH * ATLAS_HEIGHT);
         defer allocator.free(pixels); // after they are uploaded we don't need them
-
-        const font_data = try u.readEntireFile(filename, allocator);
-        defer allocator.free(font_data);
 
         var pack_context = try stbtt.packBegin(pixels, ATLAS_WIDTH, ATLAS_HEIGHT, 0, 5, null);
         defer stbtt.packEnd(&pack_context);
