@@ -384,6 +384,7 @@ pub fn main() !void {
 
         if (!window_visible) {
             try window.maximize();
+            try window.show();
             window_visible = true;
         }
 

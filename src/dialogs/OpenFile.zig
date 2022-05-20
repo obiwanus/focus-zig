@@ -119,7 +119,7 @@ pub fn keyPress(self: *Self, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allo
                         return Action{
                             .open_file = .{
                                 .path = f.path.items,
-                                .on_the_side = mods.control,
+                                .on_the_side = u.modsCmd(mods),
                             },
                         };
                     },
