@@ -818,7 +818,7 @@ pub const Editor = struct {
                 const SPACES = [1]Char{' '} ** TAB_SIZE;
 
                 if (cursor.getSelectionRange()) |selection| {
-                    const range = buf.expandRangeToWholeLines(selection.start, selection.end);
+                    const range = buf.expandRangeToWholeLines(selection.start, selection.end, false);
                     const lines = buf.lines.items[buf.getLineColFromPos(selection.start).line .. buf.getLineColFromPos(selection.end).line + 1];
 
                     var new_chars = ArrayList(Char).init(tmp_allocator);
@@ -925,12 +925,12 @@ pub const Editor = struct {
             },
         }
 
+        // Duplicate lines
         if (u.modsCmd(mods) and mods.shift and key == .d) {
-            // Duplicate lines
             const range = if (cursor.getSelectionRange()) |selection|
-                buf.expandRangeToWholeLines(selection.start, selection.end)
+                buf.expandRangeToWholeLines(selection.start, selection.end, false)
             else
-                buf.expandRangeToWholeLines(cursor.pos, cursor.pos);
+                buf.expandRangeToWholeLines(cursor.pos, cursor.pos, false);
 
             // Move selection forward
             cursor.pos += range.len() + 1;
@@ -945,17 +945,59 @@ pub const Editor = struct {
             buf.dirty = true;
         }
 
+        // Swap line or selection
+        if (u.modsOnlyAltShift(mods) and (key == .up or key == .down)) {
+            var range = if (cursor.getSelectionRange()) |selection|
+                buf.expandRangeToWholeLines(selection.start, selection.end, false)
+            else
+                buf.expandRangeToWholeLines(cursor.pos, cursor.pos, false);
+
+            const line_first = buf.getLineColFromPos(range.start).line;
+            const line_last = buf.getLineColFromPos(range.end).line;
+
+            if (key == .up and line_first > 0) {
+                // Move line(s) up
+                const target = buf.getLine(line_first - 1).start;
+                cursor.pos = target + (cursor.pos - range.start);
+                if (cursor.selection_start) |sel_start| {
+                    cursor.selection_start = target + (sel_start - range.start);
+                    cursor.keep_selection = true;
+                }
+                const new_cursor = cursor.state();
+                buf.putCurrentEditsIntoUndoGroup();
+                buf.moveRange(range, target, old_cursor, new_cursor);
+                buf.insertChar(target + range.len(), '\n', new_cursor, new_cursor);
+                buf.deleteChar(range.end, new_cursor, new_cursor);
+                buf.dirty = true;
+            } else if (key == .down and line_last < buf.numLines() -| 1) {
+                // Move line(s) down
+                const target_line = buf.getLine(line_last + 1);
+                cursor.pos += target_line.len() + 1;
+                if (cursor.selection_start) |sel_start| {
+                    cursor.selection_start = sel_start + target_line.len() + 1;
+                    cursor.keep_selection = true;
+                }
+                const new_cursor = cursor.state();
+                buf.putCurrentEditsIntoUndoGroup();
+                buf.insertChar(target_line.end, '\n', old_cursor, old_cursor);
+                buf.moveRange(range, target_line.end + 1, old_cursor, new_cursor);
+                buf.deleteChar(range.start, new_cursor, new_cursor);
+                buf.dirty = true;
+            }
+
+        }
+
         const line = buf.getLine(cursor.line);
         const move_by: usize = if (u.modsCmd(mods)) 5 else 1;
 
         // Cursor movements
         switch (key) {
             .left, .right => {
-                if (cursor.getSelectionRange()) |selection| {
+                if (mods.shift or cursor.selection_start == null) {
+                    if (key == .left) cursor.pos -|= move_by else cursor.pos += move_by;
+                } else if (cursor.getSelectionRange()) |selection| {
                     cursor.pos = if (key == .left) selection.start else selection.end;
                     cursor.selection_start = null;
-                } else {
-                    if (key == .left) cursor.pos -|= move_by else cursor.pos += move_by;
                 }
             },
             .up, .down, .page_up, .page_down => {
@@ -973,7 +1015,7 @@ pub const Editor = struct {
                     const new_line_pos = u.min(wanted_pos, target_line.len());
                     cursor.col_wanted = if (new_line_pos < wanted_pos) wanted_pos else null; // reset or remember wanted position
                     cursor.pos = target_line.start + new_line_pos;
-                } else {
+                } else if (u.modsOnlyAlt(mods)) {
                     const new_line = switch (key) {
                         .up => cursor.line -| 5,
                         .down => cursor.line + 5,
@@ -1052,9 +1094,9 @@ pub const Editor = struct {
                 .l => {
                     // Select line
                     const range = if (cursor.getSelectionRange()) |selection|
-                        buf.expandRangeToWholeLines(selection.start, selection.end)
+                        buf.expandRangeToWholeLines(selection.start, selection.end, true)
                     else
-                        buf.expandRangeToWholeLines(cursor.pos, cursor.pos);
+                        buf.expandRangeToWholeLines(cursor.pos, cursor.pos, true);
                     cursor.selection_start = range.start;
                     cursor.pos = range.end;
                 },

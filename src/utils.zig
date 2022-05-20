@@ -20,6 +20,10 @@ pub fn println(comptime fmt: []const u8, args: anytype) void {
     print(fmt ++ "\n", args);
 }
 
+pub fn printString(comptime str: []const u8) void {
+    print(str ++ "\n", .{});
+}
+
 pub fn printChars(chars: []const Char) void {
     for (chars) |c| {
         if (c == '\n') {
@@ -162,6 +166,14 @@ pub fn modsOnlyCmd(m: glfw.Mods) bool {
         return m.super and !(m.shift or m.alt or m.control);
     }
     return m.control and !(m.shift or m.alt or m.super);
+}
+
+pub fn modsOnlyAlt(m: glfw.Mods) bool {
+    return m.alt and !(m.shift or m.control or m.super);
+}
+
+pub fn modsOnlyAltShift(m: glfw.Mods) bool {
+    return m.alt and m.shift and !(m.control or m.super);
 }
 
 pub fn oom() noreturn {

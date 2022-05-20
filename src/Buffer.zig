@@ -331,14 +331,16 @@ pub fn numLines(self: Buffer) usize {
     return self.lines.items.len;
 }
 
-pub fn expandRangeToWholeLines(self: Buffer, start: usize, end: usize) Range {
+pub fn expandRangeToWholeLines(self: Buffer, start: usize, end: usize, include_end_newline: bool) Range {
     const range = self.getValidRange(start, end);
     const first_line = self.getLineColFromPos(range.start).line;
     const last_line = self.getLineColFromPos(range.end).line;
-    return .{
-        .start = self.lines.items[first_line].start,
-        .end = self.lines.items[last_line].end,
-    };
+
+    const new_start = self.lines.items[first_line].start;
+    var new_end = self.lines.items[last_line].end;
+    if (include_end_newline and last_line < self.numLines() - 1) new_end += 1;
+
+    return .{ .start = new_start, .end = new_end};
 }
 
 pub fn selectWord(self: Buffer, pos: usize) ?Range {
@@ -411,6 +413,10 @@ pub fn deleteRange(self: *Buffer, start: usize, end: usize, old_cursor: CursorSt
     self.deleteRaw(range);
 }
 
+pub fn deleteChar(self: *Buffer, pos: usize, old_cursor: CursorState, new_cursor: CursorState) void {
+    self.deleteRange(pos, pos + 1, old_cursor, new_cursor);
+}
+
 pub fn replaceRange(self: *Buffer, start: usize, end: usize, new_chars: []const Char, old_cursor: CursorState, new_cursor: CursorState) void {
     const range = self.getValidRange(start, end);
     if (std.mem.eql(Char, new_chars, self.chars.items[start..end])) return;
@@ -444,6 +450,18 @@ pub fn insertSlice(self: *Buffer, pos: usize, chars: []const Char, old_cursor: C
 
 pub fn insertChar(self: *Buffer, pos: usize, char: Char, old_cursor: CursorState, new_cursor: CursorState) void {
     self.insertSlice(pos, &[_]Char{char}, old_cursor, new_cursor);
+}
+
+pub fn moveRange(self: *Buffer, range: Range, target_pos: usize, old_cursor: CursorState, new_cursor: CursorState) void {
+    u.assert(target_pos < range.start or range.end < target_pos); // can't copy into itself
+    const chars = self.copyChars(range.start, range.end);
+    self.deleteRange(range.start, range.end, old_cursor, old_cursor);
+    if (target_pos < range.start) {
+        self.insertSlice(target_pos, chars, old_cursor, new_cursor);
+    } else {
+        self.insertSlice(target_pos - range.len(), chars, old_cursor, new_cursor);
+    }
+    self.edit_alloc.free(chars);
 }
 
 pub fn undo(self: *Buffer) ?CursorState {

@@ -1,5 +1,4 @@
 # TODO
-- Swap lines with alt+shift+up/down
 - Remove search text when closing search window
 - Jump to centered search results
 - Allow to scroll viewport past cursor
@@ -25,6 +24,9 @@
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
++ Swap lines with alt+shift+up/down
+    + Fix the crash when moving last line up
+    + Move lines down
 + When pressing left with a selection, move cursor to the left of selection
 + Move viewport with alt + arrows
 + Auto install the optimised version for use
