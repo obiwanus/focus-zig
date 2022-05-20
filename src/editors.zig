@@ -420,6 +420,11 @@ const SearchBox = struct {
         }
     }
 
+    fn clearResults(self: *SearchBox) void {
+        self.results.clearRetainingCapacity();
+        self.result_selected = 0;
+    }
+
     fn prevResult(self: *SearchBox) void {
         if (self.result_selected == 0) {
             self.result_selected = self.results.items.len -| 1;
@@ -765,6 +770,7 @@ pub const Editor = struct {
                     search_box.search(buf, cursor.pos);
                 },
                 .enter => {
+                    if (search_box.results.items.len == 0) search_box.search(buf, cursor.pos);
                     if (mods.shift) search_box.prevResult() else search_box.nextResult();
                 },
                 .up => search_box.prevResult(),
@@ -777,7 +783,7 @@ pub const Editor = struct {
         if (u.modsOnlyCmd(mods) and key == .f) {
             search_box.open = true;
             search_box.text_selected = true;
-            search_box.search(buf, cursor.pos);
+            search_box.clearResults();
             return;
         }
 

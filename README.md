@@ -22,4 +22,4 @@ A simple text editor (work in progress)
 - Ctrl + Shift + D - duplicate selected lines
 - Ctrl + F - search within buffer
 - Ctrl + W - close current buffer
-- Ctrl + Alt + W - close the buffer on the side
+- Alt + Shift + Up/Down - move selection up/down
