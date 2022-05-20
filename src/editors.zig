@@ -387,6 +387,11 @@ const SearchBox = struct {
         }
     }
 
+    fn setText(self: *SearchBox, text: []const Char) void {
+        self.text.clearRetainingCapacity();
+        self.text.appendSlice(text) catch u.oom();
+    }
+
     fn clearResults(self: *SearchBox) void {
         self.results.clearRetainingCapacity();
         self.result_selected = 0;
@@ -516,19 +521,6 @@ pub const Editor = struct {
             };
             ui.drawSolidRect(highlight_rect, style.colors.BACKGROUND_HIGHLIGHT);
 
-            // Draw search selections
-            if (self.search_box.getVisibleResults(start_char, end_char)) |results| {
-                const selected_result = self.search_box.results.items[self.search_box.result_selected];
-                const word_len = self.search_box.text.items.len;
-
-                for (results) |start_pos| {
-                    const color = if (start_pos == selected_result) style.colors.SEARCH_RESULT_ACTIVE else style.colors.SEARCH_RESULT_INACTIVE;
-                    const start = buf.getLineColFromPos(start_pos);
-                    const end = buf.getLineColFromPos(start_pos + word_len);
-                    drawSelection(ui, buf, top_left, start, end, color, line_min, col_min, col_max);
-                }
-            }
-
             // Draw cursor selections
             if (self.cursor.getSelectionRange()) |s| {
                 // Cursor selection
@@ -549,6 +541,19 @@ pub const Editor = struct {
                             drawSelection(ui, buf, top_left, start, end, color, line_min, col_min, col_max);
                         }
                     }
+                }
+            }
+
+            // Draw search selections
+            if (self.search_box.getVisibleResults(start_char, end_char)) |results| {
+                const selected_result = self.search_box.results.items[self.search_box.result_selected];
+                const word_len = self.search_box.text.items.len;
+
+                for (results) |start_pos| {
+                    const color = if (start_pos == selected_result) style.colors.SEARCH_RESULT_ACTIVE else style.colors.SEARCH_RESULT_INACTIVE;
+                    const start = buf.getLineColFromPos(start_pos);
+                    const end = buf.getLineColFromPos(start_pos + word_len);
+                    drawSelection(ui, buf, top_left, start, end, color, line_min, col_min, col_max);
                 }
             }
 
@@ -738,6 +743,7 @@ pub const Editor = struct {
                         cursor.selection_start = pos - search_box.text.items.len;
                     }
                     search_box.open = false;
+                    self.highlights.clearRetainingCapacity();
                 },
                 .backspace => {
                     if (search_box.text_selected or u.modsCmd(mods)) {
@@ -760,9 +766,14 @@ pub const Editor = struct {
             return;
         }
         if (u.modsOnlyCmd(mods) and key == .f) {
+            // Open search box
             search_box.open = true;
             search_box.text_selected = true;
             search_box.clearResults();
+            if (cursor.getSelectionRange()) |s| {
+                search_box.setText(buf.chars.items[s.start..s.end]);
+                search_box.search(buf, s.start);
+            }
             return;
         }
 

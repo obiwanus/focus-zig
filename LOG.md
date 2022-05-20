@@ -23,6 +23,7 @@
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
++ When text is selected, use it for search
 + Highlight selection occurrences in the buffer
     + When selection is created or extended, search within the buffer
     + When buffer is changed, also search
