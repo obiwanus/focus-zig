@@ -1,6 +1,5 @@
 # TODO
 - Multiple cursors
-    - Refactor code so that we have additional cursors
     - On subsequent presses search and create more cursors
     - On escape merge cursors
     - Make sure the undo system remembers cursors
@@ -28,6 +27,7 @@
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
++ Refactor code so that we have additional cursors
 + Use a global clipboard unless multiple cursors are used
     + On ctrl+c, copy text into the system clipboard
     + On ctrl+v, get contents from the system clipboard (handle multiple cursors later)

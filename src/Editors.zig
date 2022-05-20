@@ -65,7 +65,7 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
             // Remove selection on all cursors
             for (self.open_editors.items) |*ed| {
                 if (ed.buffer == buf_id and !ed.keep_selection) {
-                    ed.cursor.selection_start = null;
+                    for (ed.cursors.items) |*cursor| cursor.selection_start = null;
                 }
                 ed.keep_selection = false;
             }
@@ -74,7 +74,7 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
 
     // Update selected text occurrences
     for (self.open_editors.items) |*ed| {
-        if (ed.cursor.selection_start != null and ed.highlights.items.len == 0) {
+        if (ed.cursors.items.len == 1 and ed.mainCursor().selection_start != null and ed.highlights.items.len == 0) {
             ed.updateHighlights(self.getBuffer(ed.buffer));
         }
     }
@@ -452,24 +452,32 @@ pub const Editor = struct {
     char_size: Vec2 = Vec2{},
     keep_selection: bool = false,
 
-    cursor: Cursor,
+    cursors: ArrayList(Cursor),
     scroll: LineCol = LineCol{},
     search_box: SearchBox,
     highlights: ArrayList(usize),
 
     fn init(buffer: usize, allocator: Allocator) Editor {
+        var cursors = ArrayList(Cursor).init(allocator);
+        cursors.append(Cursor.init(allocator)) catch u.oom();
         return .{
             .buffer = buffer,
-            .cursor = Cursor.init(allocator),
+            .cursors = cursors,
             .search_box = SearchBox.init(allocator),
             .highlights = ArrayList(usize).init(allocator),
         };
     }
 
     fn deinit(self: Editor) void {
-        self.cursor.deinit();
+        for (self.cursors.items) |cursor| cursor.deinit();
+        self.cursors.deinit();
         self.search_box.deinit();
         self.highlights.deinit();
+    }
+
+    fn mainCursor(self: *Editor) *Cursor {
+        // We must always have at least one
+        return &self.cursors.items[self.cursors.items.len - 1];
     }
 
     fn updateAndDraw(self: *Editor, buf: *Buffer, ui: *Ui, rect: Rect, is_active: bool, tmp_allocator: Allocator) void {
@@ -488,11 +496,11 @@ pub const Editor = struct {
         self.char_size = char_size;
 
         // Update cursor line, col and pos
-        {
-            if (self.cursor.pos > buf.numChars()) self.cursor.pos = buf.numChars();
-            const cursor = buf.getLineColFromPos(self.cursor.pos);
-            self.cursor.line = cursor.line;
-            self.cursor.col = cursor.col;
+        for (self.cursors.items) |*cursor| {
+            if (cursor.pos > buf.numChars()) cursor.pos = buf.numChars();
+            const line_col = buf.getLineColFromPos(cursor.pos);
+            cursor.line = line_col.line;
+            cursor.col = line_col.col;
         }
 
         // Move viewport
@@ -503,7 +511,7 @@ pub const Editor = struct {
                 self.moveViewportToLineCol(line_col, true); // depends on lines_per_screen etc
             } else {
                 // Move viewport to cursor (not centered)
-                const line_col = buf.getLineColFromPos(self.cursor.pos);
+                const line_col = buf.getLineColFromPos(self.mainCursor().pos);
                 self.moveViewportToLineCol(line_col, false); // depends on lines_per_screen etc
             }
         }
@@ -521,33 +529,33 @@ pub const Editor = struct {
 
             const chars = buf.chars.items[start_char..end_char];
             const colors = buf.colors.items[start_char..end_char];
-
-            const top_left = area.topLeft();
-            const cursor_line = self.cursor.line -| line_min;
-            const cursor_col = self.cursor.col -| col_min;
             const adjust_y = 2 * scale;
 
-            // Highlight line with cursor
-            const highlight_rect = Rect{
-                .x = rect.x,
-                .y = top_left.y + @intToFloat(f32, cursor_line) * char_size.y - adjust_y,
-                .w = rect.w,
-                .h = char_size.y,
-            };
-            ui.drawSolidRect(highlight_rect, style.colors.BACKGROUND_HIGHLIGHT);
+            const top_left = area.topLeft();
 
-            // Draw cursor selections
-            if (self.cursor.getSelectionRange()) |s| {
-                // Cursor selection
-                {
+            // Draw cursor line highlights and selections
+            for (self.cursors.items) |cursor| {
+                // Highlight line with cursor
+                const highlight_rect = Rect{
+                    .x = rect.x,
+                    .y = top_left.y + @intToFloat(f32, cursor.line -| line_min) * char_size.y - adjust_y,
+                    .w = rect.w,
+                    .h = char_size.y,
+                };
+                ui.drawSolidRect(highlight_rect, style.colors.BACKGROUND_HIGHLIGHT);
+
+                // Draw selection
+                if (cursor.getSelectionRange()) |s| {
                     const color = if (cursor_active) style.colors.SELECTION_ACTIVE else style.colors.SELECTION_INACTIVE;
                     const start = buf.getLineColFromPos(s.start);
                     const end = buf.getLineColFromPos(s.end);
                     drawSelection(ui, buf, top_left, start, end, color, line_min, col_min, col_max);
                 }
+            }
 
-                // Highlights
-                if (!self.search_box.open) {
+            // Only draw highlights if we have one cursor
+            if (!self.search_box.open and self.cursors.items.len == 1) {
+                if (self.mainCursor().getSelectionRange()) |s| {
                     if (self.getVisibleHighlights(start_char, end_char)) |highlights| {
                         for (highlights) |start_pos| {
                             const color = style.colors.CURSOR_INACTIVE;
@@ -559,7 +567,7 @@ pub const Editor = struct {
                 }
             }
 
-            // Draw search selections
+            // Draw search results
             if (self.search_box.getVisibleResults(start_char, end_char)) |results| {
                 const selected_result = self.search_box.results.items[self.search_box.result_selected];
                 const word_len = self.search_box.text.items.len;
@@ -572,15 +580,17 @@ pub const Editor = struct {
                 }
             }
 
-            // Then draw cursor
-            const cursor_rect = Rect{
-                .x = top_left.x + @intToFloat(f32, cursor_col) * char_size.x,
-                .y = top_left.y + @intToFloat(f32, cursor_line) * char_size.y - adjust_y,
-                .w = char_size.x,
-                .h = char_size.y,
-            };
-            const cursor_color = if (cursor_active) style.colors.CURSOR_ACTIVE else style.colors.CURSOR_INACTIVE;
-            ui.drawSolidRect(cursor_rect, cursor_color);
+            // Then draw cursors
+            for (self.cursors.items) |cursor| {
+                const cursor_rect = Rect{
+                    .x = top_left.x + @intToFloat(f32, cursor.col -| col_min) * char_size.x,
+                    .y = top_left.y + @intToFloat(f32, cursor.line -| line_min) * char_size.y - adjust_y,
+                    .w = char_size.x,
+                    .h = char_size.y,
+                };
+                const cursor_color = if (cursor_active) style.colors.CURSOR_ACTIVE else style.colors.CURSOR_INACTIVE;
+                ui.drawSolidRect(cursor_rect, cursor_color);
+            }
 
             // Then draw text on top
             ui.drawText(chars, colors, top_left, col_min, col_max);
@@ -632,7 +642,8 @@ pub const Editor = struct {
             }
 
             // Line:col
-            const line_col = std.fmt.allocPrint(tmp_allocator, "{}:{}", .{ self.cursor.line + 1, self.cursor.col + 1 }) catch u.oom();
+            const main_cursor = self.mainCursor();
+            const line_col = std.fmt.allocPrint(tmp_allocator, "{}:{}", .{ main_cursor.line + 1, main_cursor.col + 1 }) catch u.oom();
             const line_col_chars = u.bytesToChars(line_col, tmp_allocator) catch unreachable;
             const line_col_width = margin.x + @intToFloat(f32, line_col_chars.len) * char_size.x;
             if (r.w > line_col_width) {
@@ -688,8 +699,9 @@ pub const Editor = struct {
 
     fn updateHighlights(self: *Editor, buf: *const Buffer) void {
         u.assert(self.highlights.items.len == 0);
+        if (self.cursors.items.len > 1) return;
 
-        if (self.cursor.getSelectionRange()) |s| {
+        if (self.mainCursor().getSelectionRange()) |s| {
             const search_str = buf.chars.items[s.start..s.end];
             var results_iter = buf.search(search_str);
             while (results_iter.next()) |pos| {
@@ -716,8 +728,8 @@ pub const Editor = struct {
     }
 
     fn typeChar(self: *Editor, char: Char, buf: *Buffer, clock_ms: f64) void {
-        const old_cursor = self.cursor.state();
-        var cursor = &self.cursor;
+        const old_cursor = self.mainCursor().state();
+        var cursor = self.mainCursor();
 
         // Type into search box
         if (self.search_box.open) {
@@ -745,8 +757,8 @@ pub const Editor = struct {
     }
 
     fn keyPress(self: *Editor, buf: *Buffer, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allocator, clock_ms: f64) void {
-        const old_cursor = self.cursor.state();
-        var cursor = &self.cursor;
+        const old_cursor = self.mainCursor().state();
+        var cursor = self.mainCursor();
 
         // Process search box
         var search_box = &self.search_box;
