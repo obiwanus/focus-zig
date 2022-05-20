@@ -24,7 +24,7 @@ edits: std.ArrayList(EditWithCursor), // most recent edits, which will be put in
 
 dirty: bool = true, // needs syncing internal structures
 modified: bool = false, // hasn't been saved to disk
-modified_on_disk: bool = false, //
+modified_on_disk: bool = false, // modified on disk by someone else
 deleted: bool = false, // was deleted from disk by someone else
 
 last_edit_ms: f64 = 0,
@@ -401,14 +401,17 @@ pub fn getValidRange(self: Buffer, start: usize, end: usize) Range {
 
 fn deleteRaw(self: *Buffer, range: Range) void {
     self.chars.replaceRange(range.start, range.len(), &[_]Char{}) catch unreachable;
+    self.dirty = true;
 }
 
 fn insertRaw(self: *Buffer, pos: usize, chars: []const Char) void {
     self.chars.insertSlice(pos, chars) catch u.oom();
+    self.dirty = true;
 }
 
 fn replaceRaw(self: *Buffer, start: usize, len: usize, chars: []const Char) void {
     self.chars.replaceRange(start, len, chars) catch u.oom();
+    self.dirty = true;
 }
 
 pub fn deleteRange(self: *Buffer, start: usize, end: usize, old_cursor: CursorState, new_cursor: CursorState) void {

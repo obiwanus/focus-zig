@@ -29,6 +29,7 @@ layout: union(enum) {
     },
 },
 last_update_from_disk_ms: f64 = 0,
+focused: bool = true,
 
 const Editors = @This();
 const BUFFER_REFRESH_TIMEOUT_MS = 500;
@@ -87,7 +88,7 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
         .none => {}, // nothing to draw
         .single => |e| {
             var editor = &self.open_editors.items[e];
-            editor.updateAndDraw(self.getBuffer(editor.buffer), ui, area, true, tmp_allocator);
+            editor.updateAndDraw(self.getBuffer(editor.buffer), ui, area, self.focused, tmp_allocator);
         },
         .side_by_side => |e| {
             const left_rect = area.splitLeft(area.w / 2 - 1, 1);
@@ -95,8 +96,8 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
 
             var e1 = &self.open_editors.items[e.left];
             var e2 = &self.open_editors.items[e.right];
-            e1.updateAndDraw(self.getBuffer(e1.buffer), ui, left_rect, e.active == e.left, tmp_allocator);
-            e2.updateAndDraw(self.getBuffer(e2.buffer), ui, right_rect, e.active == e.right, tmp_allocator);
+            e1.updateAndDraw(self.getBuffer(e1.buffer), ui, left_rect, self.focused and e.active == e.left, tmp_allocator);
+            e2.updateAndDraw(self.getBuffer(e2.buffer), ui, right_rect, self.focused and e.active == e.right, tmp_allocator);
 
             const splitter_rect = Rect{ .x = area.x - 2, .y = area.y, .w = 2, .h = area.h };
             ui.drawSolidRect(splitter_rect, style.colors.BACKGROUND_BRIGHT);
@@ -757,56 +758,65 @@ pub const Editor = struct {
     }
 
     fn keyPress(self: *Editor, buf: *Buffer, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allocator, clock_ms: f64) void {
-        const old_cursor = self.mainCursor().state();
-        var cursor = self.mainCursor();
-
         // Process search box
-        var search_box = &self.search_box;
-        if (search_box.open) {
-            switch (key) {
-                .escape => {
-                    if (search_box.getCurrentResultPos()) |pos| {
-                        cursor.pos = pos;
-                        cursor.selection_start = pos - search_box.text.items.len;
-                    }
-                    search_box.open = false;
-                    self.highlights.clearRetainingCapacity();
-                },
-                .backspace => {
-                    if (search_box.text_selected or u.modsCmd(mods)) {
-                        search_box.text.clearRetainingCapacity();
-                        search_box.text_selected = false;
-                    } else {
-                        _ = search_box.text.popOrNull();
-                    }
-                    search_box.search(buf, cursor.pos);
-                },
-                .enter => {
-                    if (search_box.results.items.len == 0) search_box.search(buf, cursor.pos);
-                    if (mods.shift) search_box.prevResult() else search_box.nextResult();
-                },
-                .up => search_box.prevResult(),
-                .down => search_box.nextResult(),
-                .left, .right => search_box.text_selected = false,
-                else => {},
+        {
+            var search_box = &self.search_box;
+            var cursor = self.mainCursor();
+
+            if (search_box.open) {
+                switch (key) {
+                    .escape => {
+                        if (search_box.getCurrentResultPos()) |pos| {
+                            cursor.pos = pos;
+                            cursor.selection_start = pos - search_box.text.items.len;
+                        }
+                        search_box.open = false;
+                        self.highlights.clearRetainingCapacity();
+                    },
+                    .backspace => {
+                        if (search_box.text_selected or u.modsCmd(mods)) {
+                            search_box.text.clearRetainingCapacity();
+                            search_box.text_selected = false;
+                        } else {
+                            _ = search_box.text.popOrNull();
+                        }
+                        search_box.search(buf, cursor.pos);
+                    },
+                    .enter => {
+                        if (search_box.results.items.len == 0) {
+                            search_box.search(buf, cursor.pos);
+                        } else {
+                            if (mods.shift) search_box.prevResult() else search_box.nextResult();
+                        }
+                    },
+                    .up => search_box.prevResult(),
+                    .down => search_box.nextResult(),
+                    .left, .right => search_box.text_selected = false,
+                    else => {},
+                }
+                return;
             }
-            return;
-        }
-        if (u.modsOnlyCmd(mods) and key == .f) {
+
             // Open search box
-            search_box.open = true;
-            search_box.text_selected = true;
-            search_box.clearResults();
-            if (cursor.getSelectionRange()) |s| {
-                search_box.setText(buf.chars.items[s.start..s.end]);
-                search_box.search(buf, s.start);
+            if (u.modsOnlyCmd(mods) and key == .f) {
+                search_box.open = true;
+                search_box.text_selected = true;
+                search_box.clearResults();
+                if (cursor.getSelectionRange()) |s| {
+                    search_box.setText(buf.chars.items[s.start..s.end]);
+                    search_box.search(buf, s.start);
+                }
+                return;
             }
-            return;
         }
 
         // Insertions/deletions of sorts
         const TAB_SIZE = 4;
-        buf.dirty = true;
+
+        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        const old_cursor = self.mainCursor().state();
+        var cursor = self.mainCursor();
+
         switch (key) {
             .delete => {
                 if (cursor.getSelectionRange()) |selection| {
@@ -943,9 +953,7 @@ pub const Editor = struct {
                     buf.insertSlice(old_cursor.pos, char_buf[0 .. indent + 1], old_cursor, cursor.state());
                 }
             },
-            else => {
-                buf.dirty = false; // nothing needs to be done
-            },
+            else => {},
         }
 
         // Duplicate lines
@@ -964,8 +972,6 @@ pub const Editor = struct {
             buf.chars.ensureTotalCapacity(buf.numChars() + range.len()) catch u.oom();
             buf.insertSlice(range.start, buf.chars.items[range.start..range.end], old_cursor, cursor.state());
             buf.insertChar(range.end, '\n', old_cursor, cursor.state());
-
-            buf.dirty = true;
         }
 
         // Swap line or selection
@@ -991,7 +997,6 @@ pub const Editor = struct {
                 buf.moveRange(range, target, old_cursor, new_cursor);
                 buf.insertChar(target + range.len(), '\n', new_cursor, new_cursor);
                 buf.deleteChar(range.end, new_cursor, new_cursor);
-                buf.dirty = true;
             } else if (key == .down and line_last < buf.numLines() -| 1) {
                 // Move line(s) down
                 const target_line = buf.getLine(line_last + 1);
@@ -1005,7 +1010,6 @@ pub const Editor = struct {
                 buf.insertChar(target_line.end, '\n', old_cursor, old_cursor);
                 buf.moveRange(range, target_line.end + 1, old_cursor, new_cursor);
                 buf.deleteChar(range.start, new_cursor, new_cursor);
-                buf.dirty = true;
             }
         }
 
@@ -1095,7 +1099,6 @@ pub const Editor = struct {
                         if (key == .x) {
                             cursor.pos = s.start;
                             buf.deleteRange(s.start, s.end, old_cursor, cursor.state());
-                            buf.dirty = true;
                         }
                     }
                 },
@@ -1110,7 +1113,6 @@ pub const Editor = struct {
                             cursor.pos += paste_data.len;
                             buf.insertSlice(old_cursor.pos, paste_data, old_cursor, cursor.state());
                         }
-                        buf.dirty = true;
                     }
                 },
                 .l => {

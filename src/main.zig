@@ -150,6 +150,7 @@ pub fn main() !void {
     window.setKeyCallback(newKeyEvent);
     window.setCharCallback(newCharEvent);
     window.setSizeCallback(newWindowSizeEvent);
+    window.setFocusCallback(windowFocusChanged);
 
     var ui = try Ui.init(gpa, &vc);
     defer ui.deinit(&vc);
@@ -256,6 +257,9 @@ pub fn main() !void {
                 switch (event) {
                     .char_entered => |char| {
                         editors.charEntered(char, clock_ms);
+                    },
+                    .focus_changed => |focused| {
+                        editors.focused = focused;
                     },
                     .key_pressed => |kp| {
                         if (u.modsOnlyCmd(kp.mods) and kp.key == .p) {
@@ -410,6 +414,7 @@ pub fn main() !void {
 pub const Event = union(enum) {
     key_pressed: KeyPress,
     char_entered: u.Char,
+    focus_changed: bool,
     window_resized: WindowResize,
     redraw_requested: void,
 
@@ -439,6 +444,11 @@ fn newCharEvent(window: glfw.Window, char: u.Char) void {
 fn newWindowSizeEvent(window: glfw.Window, width: i32, height: i32) void {
     _ = window;
     g_events.append(Event{ .window_resized = .{ .width = width, .height = height } }) catch u.oom();
+}
+
+fn windowFocusChanged(window: glfw.Window, focused: bool) void {
+    _ = window;
+    g_events.append(Event{ .focus_changed = focused }) catch u.oom();
 }
 
 fn createRenderPass(vc: *const VulkanContext, attachment_format: vk.Format) !vk.RenderPass {
