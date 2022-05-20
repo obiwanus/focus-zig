@@ -23,7 +23,7 @@ const OpenFileDialog = focus.dialogs.OpenFile;
 
 var GPA = std.heap.GeneralPurposeAllocator(.{ .never_unmap = false }){};
 
-const APP_NAME = if (builtin.mode == .Debug) "Focus (debug)" else "Focus";
+const APP_NAME = if (focus.DEBUG_MODE) "Focus (debug)" else "Focus";
 const FONT_NAME = "../fonts/FiraCode-Retina.ttf"; // relative to "src"
 const FONT_SIZE = 18; // for scale = 1.0
 
@@ -37,7 +37,7 @@ pub fn main() !void {
 
     // General-purpose allocator for things that live for more than 1 frame
     // but need to be freed before the end of the program
-    const gpa = if (builtin.mode == .Debug) GPA.allocator() else std.heap.c_allocator;
+    const gpa = if (focus.DEBUG_MODE) GPA.allocator() else std.heap.c_allocator;
 
     try glfw.init(.{});
     defer glfw.terminate();
@@ -214,6 +214,7 @@ pub fn main() !void {
 
             // Always update at least once in 0.5 seconds
             const redraw = true; // set to false for printf debugging
+            if (focus.RELEASE_MODE and !redraw) @compileError("Auto-redraw should be enabled for release");
             if (redraw and clock_ms - last_redraw_ms >= 500) {
                 g_events.append(.redraw_requested) catch u.oom();
             }

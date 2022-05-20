@@ -4,6 +4,9 @@
 pub const std = @import("std");
 pub const builtin = @import("builtin");
 
+pub const DEBUG_MODE = builtin.mode == .Debug;
+pub const RELEASE_MODE = (builtin.mode == .ReleaseSafe or builtin.mode == .ReleaseFast or builtin.mode == .ReleaseSafe);
+
 // Our stuff
 pub const utils = @import("utils.zig");
 pub const style = @import("style.zig");
