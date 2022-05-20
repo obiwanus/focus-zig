@@ -109,6 +109,19 @@ pub const Line = struct {
     }
 };
 
+pub const SearchResultsIter = struct {
+    buf: []const Char,
+    search_str: []const Char,
+    pos: usize = 0,
+
+    pub fn next(self: *SearchResultsIter) ?usize {
+        if (self.pos >= self.buf.len) return null;
+        const found = std.mem.indexOfPos(Char, self.buf, self.pos, self.search_str) orelse return null;
+        self.pos = found + self.search_str.len;
+        return found;
+    }
+};
+
 pub fn init(allocator: Allocator) Buffer {
     return .{
         .file = null,
@@ -535,6 +548,10 @@ pub fn stripTrailingSpaces(self: *Buffer) void {
         }
     }
     if (start) |s| self.deleteRaw(.{ .start = s, .end = self.numChars() });
+}
+
+pub fn search(self: Buffer, search_str: []const Char) SearchResultsIter {
+    return .{ .buf = self.chars.items, .search_str = search_str };
 }
 
 fn updateBytesFromChars(self: *Buffer) void {

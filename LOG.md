@@ -23,6 +23,10 @@
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
++ Highlight selection occurrences in the buffer
+    + When selection is created or extended, search within the buffer
+    + When buffer is changed, also search
+    + Highlight visible occurrences
 + Remove search text when closing search window
 + Swap lines with alt+shift+up/down
     + Fix the crash when moving last line up

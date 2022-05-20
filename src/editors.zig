@@ -10,6 +10,7 @@ const ArrayList = std.ArrayList;
 const Char = u.Char;
 const Vec2 = u.Vec2;
 const Rect = u.Rect;
+const LineCol = u.LineCol;
 const Buffer = focus.Buffer;
 const Font = focus.fonts.Font;
 const TextColor = focus.style.TextColor;
@@ -56,43 +57,7 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
 
     // Always try to update all open buffers
     for (self.open_buffers.items) |*buf, buf_id| {
-        if (clock_ms - buf.last_edit_ms >= UNDO_GROUP_TIMEOUT_MS) {
-
-            // if (buf.undos.items.len != buf.last_undo_len) {
-            //     u.println("= Buffer ====================================================================================", .{});
-            //     u.printChars(buf.chars.items);
-            //     u.println("", .{});
-            //     u.println("= Undos =====================================================================================", .{});
-            //     for (buf.undos.items) |edit_group| {
-            //         for (edit_group.edits) |edit| {
-            //             switch (edit) {
-            //                 .Insert => |e| {
-            //                     u.print("- Insert at pos {}: '", .{e.pos});
-            //                     u.printChars(e.new_chars);
-            //                     u.println("'", .{});
-            //                 },
-            //                 .Delete => |e| {
-            //                     u.print("- Delete [{}..{}]: '", .{ e.range.start, e.range.start + e.old_chars.len });
-            //                     u.printChars(e.old_chars);
-            //                     u.println("'", .{});
-            //                 },
-            //                 .Replace => |e| {
-            //                     u.print("- Replace '", .{});
-            //                     u.printChars(e.old_chars);
-            //                     u.print("' with '", .{});
-            //                     u.printChars(e.new_chars);
-            //                     u.println("'", .{});
-            //                 },
-            //             }
-            //         }
-            //         u.println("-------------------------------------------", .{});
-            //     }
-            //     u.println("\n", .{});
-            //     buf.last_undo_len = buf.undos.items.len;
-            // }
-
-            buf.putCurrentEditsIntoUndoGroup();
-        }
+        if (clock_ms - buf.last_edit_ms >= UNDO_GROUP_TIMEOUT_MS) buf.putCurrentEditsIntoUndoGroup();
         if (buf.dirty) {
             buf.syncInternalData();
             buf.dirty = false;
@@ -104,6 +69,13 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
                 }
                 ed.cursor.keep_selection = false;
             }
+        }
+    }
+
+    // Update selected text occurrences
+    for (self.open_editors.items) |*ed| {
+        if (ed.cursor.selection_start != null and ed.highlights.items.len == 0) {
+            ed.updateHighlights(self.getBuffer(ed.buffer));
         }
     }
 
@@ -403,20 +375,15 @@ const SearchBox = struct {
         self.result_selected = 0;
         if (self.text.items.len == 0) return;
 
-        const search_str = self.text.items;
-
-        // Search from the beginning
-        var pos: usize = 0;
         var i: usize = 0;
         var selected_found = false;
-        while (std.mem.indexOfPos(Char, buf.chars.items, pos, search_str)) |found| : (i += 1) {
-            self.results.append(found) catch u.oom();
-            if (found >= cursor_pos and !selected_found) {
+        var results_iter = buf.search(self.text.items);
+        while (results_iter.next()) |pos| : (i += 1) {
+            self.results.append(pos) catch u.oom();
+            if (pos >= cursor_pos and !selected_found) {
                 self.result_selected = i;
                 selected_found = true;
             }
-            pos = found + search_str.len;
-            if (pos >= buf.chars.items.len) break;
         }
     }
 
@@ -470,20 +437,23 @@ pub const Editor = struct {
     char_size: Vec2 = Vec2{},
 
     cursor: Cursor,
-    scroll: u.LineCol = u.LineCol{},
+    scroll: LineCol = LineCol{},
     search_box: SearchBox,
+    highlights: ArrayList(usize),
 
     fn init(buffer: usize, allocator: Allocator) Editor {
         return .{
             .buffer = buffer,
             .cursor = Cursor.init(allocator),
             .search_box = SearchBox.init(allocator),
+            .highlights = ArrayList(usize).init(allocator),
         };
     }
 
     fn deinit(self: Editor) void {
         self.cursor.deinit();
         self.search_box.deinit();
+        self.highlights.deinit();
     }
 
     fn updateAndDraw(self: *Editor, buf: *Buffer, ui: *Ui, rect: Rect, is_active: bool, tmp_allocator: Allocator) void {
@@ -552,52 +522,32 @@ pub const Editor = struct {
                 const word_len = self.search_box.text.items.len;
 
                 for (results) |start_pos| {
-                    // Draw selection
                     const color = if (start_pos == selected_result) style.colors.SEARCH_RESULT_ACTIVE else style.colors.SEARCH_RESULT_INACTIVE;
                     const start = buf.getLineColFromPos(start_pos);
                     const end = buf.getLineColFromPos(start_pos + word_len);
-
-                    var line: usize = start.line;
-                    while (line <= end.line) : (line += 1) {
-                        const start_col = if (line == start.line) start.col -| col_min else 0;
-                        var end_col = if (line == end.line) end.col else buf.getLine(line).len() + 1;
-                        if (end_col > col_max + 1) end_col = col_max + 1;
-                        end_col -|= col_min;
-
-                        if (start_col < end_col) {
-                            const r = Rect{
-                                .x = top_left.x + @intToFloat(f32, start_col) * char_size.x,
-                                .y = top_left.y + @intToFloat(f32, line -| line_min) * char_size.y - adjust_y,
-                                .w = @intToFloat(f32, end_col - start_col) * char_size.x,
-                                .h = char_size.y,
-                            };
-                            ui.drawSolidRect(r, color);
-                        }
-                    }
+                    drawSelection(ui, buf, top_left, start, end, color, line_min, col_min, col_max);
                 }
             }
 
             // Draw cursor selections
             if (self.cursor.getSelectionRange()) |s| {
-                const color = if (cursor_active) style.colors.SELECTION_ACTIVE else style.colors.SELECTION_INACTIVE;
-                const start = buf.getLineColFromPos(s.start);
-                const end = buf.getLineColFromPos(s.end);
+                // Cursor selection
+                {
+                    const color = if (cursor_active) style.colors.SELECTION_ACTIVE else style.colors.SELECTION_INACTIVE;
+                    const start = buf.getLineColFromPos(s.start);
+                    const end = buf.getLineColFromPos(s.end);
+                    drawSelection(ui, buf, top_left, start, end, color, line_min, col_min, col_max);
+                }
 
-                var line: usize = start.line;
-                while (line <= end.line) : (line += 1) {
-                    const start_col = if (line == start.line) start.col -| col_min else 0;
-                    var end_col = if (line == end.line) end.col else buf.getLine(line).len() + 1;
-                    if (end_col > col_max + 1) end_col = col_max + 1;
-                    end_col -|= col_min;
-
-                    if (start_col < end_col) {
-                        const r = Rect{
-                            .x = top_left.x + @intToFloat(f32, start_col) * char_size.x,
-                            .y = top_left.y + @intToFloat(f32, line -| line_min) * char_size.y - adjust_y,
-                            .w = @intToFloat(f32, end_col - start_col) * char_size.x,
-                            .h = char_size.y,
-                        };
-                        ui.drawSolidRect(r, color);
+                // Highlights
+                if (!self.search_box.open) {
+                    if (self.getVisibleHighlights(start_char, end_char)) |highlights| {
+                        for (highlights) |start_pos| {
+                            const color = style.colors.CURSOR_INACTIVE;
+                            const start = buf.getLineColFromPos(start_pos);
+                            const end = buf.getLineColFromPos(start_pos + s.len());
+                            drawSelection(ui, buf, top_left, start, end, color, line_min, col_min, col_max);
+                        }
                     }
                 }
             }
@@ -714,6 +664,35 @@ pub const Editor = struct {
             };
             ui.drawSolidRect(cursor_rect, style.colors.CURSOR_ACTIVE);
         }
+    }
+
+    fn updateHighlights(self: *Editor, buf: *const Buffer) void {
+        u.assert(self.highlights.items.len == 0);
+
+        if (self.cursor.getSelectionRange()) |s| {
+            const search_str = buf.chars.items[s.start..s.end];
+            var results_iter = buf.search(search_str);
+            while (results_iter.next()) |pos| {
+                if (pos != s.start) self.highlights.append(pos) catch u.oom();
+            }
+        }
+    }
+
+    fn getVisibleHighlights(self: Editor, start_char: usize, end_char: usize) ?[]const usize {
+        if (self.highlights.items.len == 0 or start_char >= end_char) return null;
+        var start_set = false;
+        var start: usize = 0;
+        var end: usize = 0;
+        for (self.highlights.items) |pos, i| {
+            if (start_char <= pos and pos <= end_char and !start_set) {
+                start = i;
+                start_set = true;
+            }
+            if (end_char < pos) break;
+            end = i + 1;
+        }
+        if (end <= start) return null;
+        return self.highlights.items[start..end];
     }
 
     fn typeChar(self: *Editor, char: Char, buf: *Buffer, clock_ms: f64) void {
@@ -1063,6 +1042,7 @@ pub const Editor = struct {
             } else {
                 cursor.selection_start = null;
             }
+            self.highlights.clearRetainingCapacity();
         }
 
         if (u.modsOnlyCmd(mods)) {
@@ -1140,6 +1120,7 @@ pub const Editor = struct {
 
         if (buf.dirty) {
             buf.modified = true;
+            self.highlights.clearRetainingCapacity();
             buf.last_edit_ms = clock_ms;
         }
 
@@ -1163,7 +1144,7 @@ pub const Editor = struct {
         }
     }
 
-    fn moveViewportToLineCol(self: *Editor, line_col: u.LineCol, centered: bool) void {
+    fn moveViewportToLineCol(self: *Editor, line_col: LineCol, centered: bool) void {
         const line = line_col.line;
         const col = line_col.col;
 
@@ -1193,5 +1174,27 @@ pub const Editor = struct {
 
         self.scroll.line = top;
         self.scroll.col = left;
+    }
+
+    fn drawSelection(ui: *Ui, buf: *const Buffer, top_left: Vec2, start: LineCol, end: LineCol, color: style.Color, line_min: usize, col_min: usize, col_max: usize) void {
+        const char_size = ui.screen.font.charSize();
+
+        var line: usize = start.line;
+        while (line <= end.line) : (line += 1) {
+            const start_col = if (line == start.line) start.col -| col_min else 0;
+            var end_col = if (line == end.line) end.col else buf.getLine(line).len() + 1;
+            if (end_col > col_max + 1) end_col = col_max + 1;
+            end_col -|= col_min;
+
+            if (start_col < end_col) {
+                const r = Rect{
+                    .x = top_left.x + @intToFloat(f32, start_col) * char_size.x,
+                    .y = top_left.y + @intToFloat(f32, line -| line_min) * char_size.y - 2 * ui.screen.scale,
+                    .w = @intToFloat(f32, end_col - start_col) * char_size.x,
+                    .h = char_size.y,
+                };
+                ui.drawSolidRect(r, color);
+            }
+        }
     }
 };

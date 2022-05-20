@@ -23,7 +23,7 @@ const OpenFileDialog = focus.dialogs.OpenFile;
 
 var GPA = std.heap.GeneralPurposeAllocator(.{ .never_unmap = false }){};
 
-const APP_NAME = "Focus";
+const APP_NAME = if (builtin.mode == .Debug) "Focus (debug)" else "Focus";
 const FONT_NAME = "../fonts/FiraCode-Retina.ttf"; // relative to "src"
 const FONT_SIZE = 18; // for scale = 1.0
 
