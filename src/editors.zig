@@ -625,7 +625,7 @@ pub const Editor = struct {
         // Draw footer
         {
             var r = footer_rect;
-            const text_y = r.y + 6 * scale;
+            const text_y = r.y + 4 * scale;
             ui.drawSolidRect(footer_rect, style.colors.BACKGROUND_BRIGHT);
             ui.drawTopShadow(footer_rect, 5);
             _ = r.splitLeft(margin.x, 0);
@@ -653,7 +653,7 @@ pub const Editor = struct {
                     // Strike through
                     const strikethrough_rect = Rect{
                         .x = name_pos.x,
-                        .y = name_pos.y + char_size.y / 2 - 2 * scale,
+                        .y = name_pos.y + char_size.y / 2,
                         .w = char_size.x * @intToFloat(f32, name_chars.len),
                         .h = 2,
                     };

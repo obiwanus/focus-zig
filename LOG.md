@@ -1,5 +1,4 @@
 # TODO
-- Remove search text when closing search window
 - Jump to centered search results
 - Allow to scroll viewport past cursor
     - Only jump to cursor on cursor movement or editing
@@ -24,6 +23,7 @@
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
++ Remove search text when closing search window
 + Swap lines with alt+shift+up/down
     + Fix the crash when moving last line up
     + Move lines down
