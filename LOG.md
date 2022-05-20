@@ -1,20 +1,25 @@
 # TODO
-- Jump to centered search results
-- Allow to scroll viewport past cursor
-    - Only jump to cursor on cursor movement or editing
-    - Try scrolling smoothly
 - Multiple cursors
-    + Select words with ctrl+d
     - Refactor code so that we have additional cursors
     - On subsequent presses search and create more cursors
-- When jumping to search results, align viewport to the left if possible
-- Use a global clipboard unless multiple cursors are used
+    - On escape merge cursors
+    - Make sure the undo system remembers cursors
+    - Handle individual cursor clipboards
 - Wrap around when moving selection in the open files dialog
+- Handle minimisation without crashing
+- Draw scrollbars and other info
+    - Draw scrollbars
+    - Draw cursor position(s) and selections
+    - Draw highlight rects
+- Search box: show the number of results / current result
 - Create new files
 - Format on save
 - Enlarge the current editor on shift+ctrl+L
 - [bug] Colors are off when non-ascii bytes are present (tokenizer doesn't support utf-8)
 - [asus] Crash when resizing
+- Allow to scroll viewport past cursor
+    - Only jump to cursor on cursor movement or editing
+    - Try scrolling smoothly
 - Highlight: implement a few languages, not just Zig
 - When scanning the root folder, ignore the ignored folders right away (modify dir walker)
 - When building a directory tree, see if we can use a memory arena
@@ -23,6 +28,11 @@
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
++ Use a global clipboard unless multiple cursors are used
+    + On ctrl+c, copy text into the system clipboard
+    + On ctrl+v, get contents from the system clipboard (handle multiple cursors later)
++ When jumping to search results, align viewport to the left if possible
++ Jump to centered search results
 + When text is selected, use it for search
 + Highlight selection occurrences in the buffer
     + When selection is created or extended, search within the buffer

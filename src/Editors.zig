@@ -64,10 +64,10 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
 
             // Remove selection on all cursors
             for (self.open_editors.items) |*ed| {
-                if (ed.buffer == buf_id and !ed.cursor.keep_selection) {
+                if (ed.buffer == buf_id and !ed.keep_selection) {
                     ed.cursor.selection_start = null;
                 }
-                ed.cursor.keep_selection = false;
+                ed.keep_selection = false;
             }
         }
     }
@@ -250,6 +250,17 @@ fn closeActivePane(self: *Editors) void {
     }
 }
 
+fn copyToClipboard(chars: []const Char, tmp_allocator: Allocator) void {
+    const bytes = u.charsToBytes(chars, tmp_allocator) catch return;
+    glfw.setClipboardString(bytes.ptr) catch unreachable;
+}
+
+/// Returns a temporarily allocated string, so don't store it anywhere
+fn getClipboardString(tmp_allocator: Allocator) []const Char {
+    const bytes = glfw.getClipboardString() catch unreachable;
+    return u.bytesToChars(bytes, tmp_allocator) catch unreachable;
+}
+
 fn closeOtherPane(self: *Editors) void {
     switch (self.layout) {
         .none => {},
@@ -294,7 +305,6 @@ const Cursor = struct {
     col: usize = 0, // actual column
     col_wanted: ?usize = null, // where the cursor wants to be
     selection_start: ?usize = null,
-    keep_selection: bool = false,
     clipboard: ArrayList(Char),
 
     fn init(allocator: Allocator) Cursor {
@@ -440,6 +450,7 @@ pub const Editor = struct {
     lines_per_screen: usize = 60,
     cols_per_screen: usize = 120,
     char_size: Vec2 = Vec2{},
+    keep_selection: bool = false,
 
     cursor: Cursor,
     scroll: LineCol = LineCol{},
@@ -486,11 +497,15 @@ pub const Editor = struct {
 
         // Move viewport
         {
-            const pos = self.search_box.getCurrentResultPos() orelse self.cursor.pos;
-            const line_col = buf.getLineColFromPos(pos);
-            const centered = pos != self.cursor.pos; // center viewport on search results only
-
-            self.moveViewportToLineCol(line_col, centered); // depends on lines_per_screen etc
+            if (self.search_box.getCurrentResultPos()) |pos| {
+                // Center viewport on current search result
+                const line_col = buf.getLineColFromPos(pos);
+                self.moveViewportToLineCol(line_col, true); // depends on lines_per_screen etc
+            } else {
+                // Move viewport to cursor (not centered)
+                const line_col = buf.getLineColFromPos(self.cursor.pos);
+                self.moveViewportToLineCol(line_col, false); // depends on lines_per_screen etc
+            }
         }
 
         // Draw the text
@@ -820,7 +835,7 @@ pub const Editor = struct {
                     var new_chars = ArrayList(Char).init(tmp_allocator);
                     new_chars.ensureTotalCapacity(range.len() + lines.len * TAB_SIZE) catch u.oom();
 
-                    cursor.keep_selection = true;
+                    self.keep_selection = true;
 
                     if (!mods.shift) {
                         // Indent selected lines
@@ -931,7 +946,7 @@ pub const Editor = struct {
             // Move selection forward
             cursor.pos += range.len() + 1;
             if (cursor.selection_start != null) cursor.selection_start.? += range.len() + 1;
-            cursor.keep_selection = true;
+            self.keep_selection = true;
 
             // Make sure we won't reallocate when copying
             buf.chars.ensureTotalCapacity(buf.numChars() + range.len()) catch u.oom();
@@ -957,7 +972,7 @@ pub const Editor = struct {
                 cursor.pos = target + (cursor.pos - range.start);
                 if (cursor.selection_start) |sel_start| {
                     cursor.selection_start = target + (sel_start - range.start);
-                    cursor.keep_selection = true;
+                    self.keep_selection = true;
                 }
                 const new_cursor = cursor.state();
                 buf.putCurrentEditsIntoUndoGroup();
@@ -971,7 +986,7 @@ pub const Editor = struct {
                 cursor.pos += target_line.len() + 1;
                 if (cursor.selection_start) |sel_start| {
                     cursor.selection_start = sel_start + target_line.len() + 1;
-                    cursor.keep_selection = true;
+                    self.keep_selection = true;
                 }
                 const new_cursor = cursor.state();
                 buf.putCurrentEditsIntoUndoGroup();
@@ -1042,7 +1057,7 @@ pub const Editor = struct {
             },
             else => {},
         }
-        if (old_cursor.pos != cursor.pos and !cursor.keep_selection) {
+        if (old_cursor.pos != cursor.pos and !self.keep_selection) {
             if (mods.shift) {
                 if (cursor.selection_start == null) {
                     // Start new selection
@@ -1064,7 +1079,7 @@ pub const Editor = struct {
                 .c, .x => {
                     // Copy / cut
                     if (cursor.getSelectionRange()) |s| {
-                        cursor.copyToClipboard(buf.chars.items[s.start..s.end]);
+                        copyToClipboard(buf.chars.items[s.start..s.end], tmp_allocator);
                         if (key == .x) {
                             cursor.pos = s.start;
                             buf.deleteRange(s.start, s.end, old_cursor, cursor.state());
@@ -1074,8 +1089,8 @@ pub const Editor = struct {
                 },
                 .v => {
                     // Paste
-                    if (cursor.clipboard.items.len > 0) {
-                        const paste_data = cursor.clipboard.items;
+                    const paste_data = getClipboardString(tmp_allocator);
+                    if (paste_data.len > 0) {
                         if (cursor.getSelectionRange()) |s| {
                             cursor.pos = s.start + paste_data.len;
                             buf.replaceRange(s.start, s.end, paste_data, old_cursor, cursor.state());
@@ -1110,7 +1125,7 @@ pub const Editor = struct {
                     if (buf.undo()) |cursor_state| {
                         cursor.pos = cursor_state.pos;
                         cursor.selection_start = cursor_state.selection_start;
-                        cursor.keep_selection = true;
+                        self.keep_selection = true;
                         buf.dirty = true;
                     }
                 },
@@ -1122,7 +1137,7 @@ pub const Editor = struct {
             if (buf.redo()) |cursor_state| {
                 cursor.pos = cursor_state.pos;
                 cursor.selection_start = cursor_state.selection_start;
-                cursor.keep_selection = true;
+                self.keep_selection = true;
                 buf.dirty = true;
             }
         }
@@ -1160,7 +1175,11 @@ pub const Editor = struct {
         var top = self.scroll.line;
         var left = self.scroll.col;
 
-        _ = centered;
+        if (centered) {
+            // Set the desired scroll coordinates and let the code below adjust it
+            top = line -| self.lines_per_screen / 2;
+            left= 0;
+        }
 
         // Allowed cursor positions within viewport
         const padding = 4;

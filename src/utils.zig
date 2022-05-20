@@ -124,9 +124,9 @@ pub fn bytesToChars(bytes: []const u8, allocator: Allocator) ![]Char {
     return chars.toOwnedSlice();
 }
 
-pub fn charsToBytes(chars: []const Char, allocator: Allocator) ![]u8 {
+pub fn charsToBytes(chars: []const Char, allocator: Allocator) ![:0]u8 {
     var bytes = std.ArrayList(u8).init(allocator);
-    bytes.ensureTotalCapacity(chars.len * 4) catch oom();
+    bytes.ensureTotalCapacity(chars.len * 4 + 1) catch oom();
     bytes.expandToCapacity();
     var total_bytes: usize = 0;
     for (chars) |char| {
@@ -134,7 +134,7 @@ pub fn charsToBytes(chars: []const Char, allocator: Allocator) ![]u8 {
         total_bytes += num_bytes;
     }
     bytes.shrinkRetainingCapacity(total_bytes);
-    return bytes.toOwnedSlice();
+    return bytes.toOwnedSliceSentinel(0);
 }
 
 pub fn readEntireFile(file_path: []const u8, allocator: Allocator) ![]u8 {
