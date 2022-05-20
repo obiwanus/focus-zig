@@ -980,7 +980,6 @@ pub const Editor = struct {
                 buf.deleteChar(range.start, new_cursor, new_cursor);
                 buf.dirty = true;
             }
-
         }
 
         const line = buf.getLine(cursor.line);
@@ -1026,7 +1025,6 @@ pub const Editor = struct {
                         self.scroll.line += (new_line - cursor.line);
                     }
                 }
-
             },
             .home => {
                 if (cursor.pos != line.text_start) {
