@@ -75,8 +75,10 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
 
     // Update selected text occurrences
     for (self.open_editors.items) |*ed| {
-        if (ed.cursors.items.len == 1 and ed.mainCursor().selection_start != null and ed.highlights.items.len == 0) {
-            ed.updateHighlights(self.getBuffer(ed.buffer));
+        const buf = self.getBuffer(ed.buffer);
+        const selected_text = ed.selectedText(buf);
+        if (selected_text != null and ed.highlights.items.len == 0) {
+            ed.updateHighlights(buf, selected_text.?);
         }
     }
 
@@ -131,7 +133,7 @@ pub fn keyPress(self: *Editors, key: glfw.Key, mods: glfw.Mods, tmp_allocator: A
             self.closeActivePane();
         }
     } else if (self.activeEditor()) |editor| {
-        editor.keyPress(self.getBuffer(editor.buffer), key, mods, tmp_allocator, clock_ms);
+        editor.keyPress(self.getBuffer(editor.buffer), key, mods, self.allocator, tmp_allocator, clock_ms);
     }
 }
 
@@ -306,7 +308,7 @@ const Cursor = struct {
     col: usize = 0, // actual column
     col_wanted: ?usize = null, // where the cursor wants to be
     selection_start: ?usize = null,
-    clipboard: ArrayList(Char),
+    clipboard: ArrayList(Char) = undefined,
 
     fn init(allocator: Allocator) Cursor {
         return .{ .clipboard = ArrayList(Char).init(allocator) };
@@ -325,6 +327,40 @@ const Cursor = struct {
         };
     }
 
+    fn hasSelection(self: Cursor) bool {
+        return self.selection_start != null;
+    }
+
+    fn range(self: Cursor) Buffer.Range {
+        return self.getSelectionRange() orelse .{ .start = self.pos, .end = self.pos };
+    }
+
+    fn start(self: Cursor) usize {
+        return self.range().start;
+    }
+
+    fn end(self: Cursor) usize {
+        return self.range().end;
+    }
+
+    fn maybeSubsume(self: *Cursor, other_cursor: Cursor) bool {
+        const this = self.range();
+        const other = other_cursor.range();
+        if (this.end < other.start or other.end < this.start) return false; // disjoint
+        const new_start = u.min(this.start, other.start);
+        const new_end = u.max(this.end, other.end);
+        const on_right = ((self.selection_start orelse self.pos) < self.pos) or ((other_cursor.selection_start orelse other_cursor.pos) < other_cursor.pos);
+        if (on_right) {
+            self.selection_start = new_start;
+            self.pos = new_end;
+        } else {
+            self.pos = new_start;
+            self.selection_start = new_end;
+        }
+        if (new_start == new_end) self.selection_start = null;
+        return true;
+    }
+
     fn state(self: Cursor) Buffer.CursorState {
         // Used to save in undos/redos
         return .{ .pos = self.pos, .selection_start = self.selection_start };
@@ -333,6 +369,21 @@ const Cursor = struct {
     fn copyToClipboard(self: *Cursor, chars: []const Char) void {
         self.clipboard.clearRetainingCapacity();
         self.clipboard.appendSlice(chars) catch u.oom();
+    }
+
+    fn adjust(self: *Cursor, delta: isize) void {
+        if (delta < 0) self.moveLeft(@intCast(usize, -delta));
+        if (delta > 0) self.moveRight(@intCast(usize, delta));
+    }
+
+    fn moveLeft(self: *Cursor, delta: usize) void {
+        self.pos -|= delta;
+        if (self.selection_start) |sel_start| self.selection_start = sel_start - delta;
+    }
+
+    fn moveRight(self: *Cursor, delta: usize) void {
+        self.pos += delta;
+        if (self.selection_start) |sel_start| self.selection_start = sel_start + delta;
     }
 };
 
@@ -454,6 +505,7 @@ pub const Editor = struct {
     keep_selection: bool = false,
 
     cursors: ArrayList(Cursor),
+    main_cursor_index: usize = 0,
     scroll: LineCol = LineCol{},
     search_box: SearchBox,
     highlights: ArrayList(usize),
@@ -478,7 +530,14 @@ pub const Editor = struct {
 
     fn mainCursor(self: *Editor) *Cursor {
         // We must always have at least one
-        return &self.cursors.items[self.cursors.items.len - 1];
+        return &self.cursors.items[self.main_cursor_index];
+    }
+
+    fn removeExtraCursors(self: *Editor) void {
+        const main_cursor = self.cursors.items[self.main_cursor_index];
+        self.cursors.clearRetainingCapacity();
+        self.cursors.append(main_cursor) catch unreachable;
+        self.main_cursor_index = 0;
     }
 
     fn updateAndDraw(self: *Editor, buf: *Buffer, ui: *Ui, rect: Rect, is_active: bool, tmp_allocator: Allocator) void {
@@ -534,9 +593,8 @@ pub const Editor = struct {
 
             const top_left = area.topLeft();
 
-            // Draw cursor line highlights and selections
+            // Draw cursor line highlights
             for (self.cursors.items) |cursor| {
-                // Highlight line with cursor
                 const highlight_rect = Rect{
                     .x = rect.x,
                     .y = top_left.y + @intToFloat(f32, cursor.line -| line_min) * char_size.y - adjust_y,
@@ -544,18 +602,10 @@ pub const Editor = struct {
                     .h = char_size.y,
                 };
                 ui.drawSolidRect(highlight_rect, style.colors.BACKGROUND_HIGHLIGHT);
-
-                // Draw selection
-                if (cursor.getSelectionRange()) |s| {
-                    const color = if (cursor_active) style.colors.SELECTION_ACTIVE else style.colors.SELECTION_INACTIVE;
-                    const start = buf.getLineColFromPos(s.start);
-                    const end = buf.getLineColFromPos(s.end);
-                    drawSelection(ui, buf, top_left, start, end, color, line_min, col_min, col_max);
-                }
             }
 
-            // Only draw highlights if we have one cursor
-            if (!self.search_box.open and self.cursors.items.len == 1) {
+            // Draw selected text occurrences
+            if (!self.search_box.open) {
                 if (self.mainCursor().getSelectionRange()) |s| {
                     if (self.getVisibleHighlights(start_char, end_char)) |highlights| {
                         for (highlights) |start_pos| {
@@ -565,6 +615,16 @@ pub const Editor = struct {
                             drawSelection(ui, buf, top_left, start, end, color, line_min, col_min, col_max);
                         }
                     }
+                }
+            }
+
+            // Draw selections
+            for (self.cursors.items) |cursor| {
+                if (cursor.getSelectionRange()) |s| {
+                    const color = if (cursor_active) style.colors.SELECTION_ACTIVE else style.colors.SELECTION_INACTIVE;
+                    const start = buf.getLineColFromPos(s.start);
+                    const end = buf.getLineColFromPos(s.end);
+                    drawSelection(ui, buf, top_left, start, end, color, line_min, col_min, col_max);
                 }
             }
 
@@ -698,16 +758,12 @@ pub const Editor = struct {
         }
     }
 
-    fn updateHighlights(self: *Editor, buf: *const Buffer) void {
+    fn updateHighlights(self: *Editor, buf: *const Buffer, selected_text: []const Char) void {
         u.assert(self.highlights.items.len == 0);
-        if (self.cursors.items.len > 1) return;
-
-        if (self.mainCursor().getSelectionRange()) |s| {
-            const search_str = buf.chars.items[s.start..s.end];
-            var results_iter = buf.search(search_str);
-            while (results_iter.next()) |pos| {
-                if (pos != s.start) self.highlights.append(pos) catch u.oom();
-            }
+        const main_cursor_pos = self.mainCursor().start();
+        var results_iter = buf.search(selected_text);
+        while (results_iter.next()) |pos| {
+            if (pos != main_cursor_pos) self.highlights.append(pos) catch u.oom();
         }
     }
 
@@ -729,9 +785,6 @@ pub const Editor = struct {
     }
 
     fn typeChar(self: *Editor, char: Char, buf: *Buffer, clock_ms: f64) void {
-        const old_cursor = self.mainCursor().state();
-        var cursor = self.mainCursor();
-
         // Type into search box
         if (self.search_box.open) {
             if (self.search_box.text_selected) {
@@ -739,25 +792,41 @@ pub const Editor = struct {
                 self.search_box.text_selected = false;
             }
             self.search_box.text.append(char) catch u.oom();
-            self.search_box.search(buf, cursor.pos);
+            self.search_box.search(buf, self.mainCursor().pos);
             return;
         }
 
         // Or type into the editor
-        if (cursor.getSelectionRange()) |selection| {
-            cursor.pos = selection.start + 1;
-            buf.replaceRange(selection.start, selection.end, &[_]Char{char}, old_cursor, cursor.state());
-        } else {
-            cursor.pos += 1;
-            buf.insertChar(old_cursor.pos, char, old_cursor, cursor.state());
+        var adjust: isize = 0;
+        var buf_len = @intCast(isize, buf.numChars());
+        for (self.cursors.items) |*cursor| {
+            // Adjust cursor pos if the previous cursor has changed the buffer
+            const new_len = @intCast(isize, buf.numChars());
+            if (new_len != buf_len) {
+                buf.recalculateLines();
+                adjust += (new_len - buf_len);
+                cursor.adjust(adjust);
+                buf_len = new_len;
+            }
+
+            const old_cursor = cursor.state();
+
+            // Type
+            if (cursor.getSelectionRange()) |selection| {
+                cursor.pos = selection.start + 1;
+                buf.replaceRange(selection.start, selection.end, &[_]Char{char}, old_cursor, cursor.state());
+            } else {
+                cursor.pos += 1;
+                buf.insertChar(old_cursor.pos, char, old_cursor, cursor.state());
+            }
+            cursor.col_wanted = null;
         }
-        cursor.col_wanted = null;
-        buf.dirty = true;
+
         buf.modified = true;
         buf.last_edit_ms = clock_ms;
     }
 
-    fn keyPress(self: *Editor, buf: *Buffer, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allocator, clock_ms: f64) void {
+    fn keyPress(self: *Editor, buf: *Buffer, key: glfw.Key, mods: glfw.Mods, allocator: Allocator, tmp_allocator: Allocator, clock_ms: f64) void {
         // Process search box
         {
             var search_box = &self.search_box;
@@ -810,150 +879,324 @@ pub const Editor = struct {
             }
         }
 
-        // Insertions/deletions of sorts
+        if (key == .escape) self.removeExtraCursors();
+
+        // Maybe create more cursors
+        var new_cursor_created = false;
+        if (key == .d and u.modsOnlyCmd(mods)) more_cursors: {
+            // Should only try to create a new cursor if all cursors have the same text selected
+            const selected_text = self.selectedText(buf) orelse break :more_cursors;
+
+            // Search from main cursor downwards, possibly with a wraparound
+            const start_pos = self.mainCursor().end();
+            const new_cursor_pos = blk: {
+                if (self.main_cursor_index == self.cursors.items.len - 1) {
+                    // Main cursor is last - search with a wraparound
+                    const end_pos = self.cursors.items[0].start();
+                    if (std.mem.indexOfPos(Char, buf.chars.items, start_pos, selected_text)) |pos| break :blk pos;
+                    if (std.mem.indexOf(Char, buf.chars.items[0..end_pos], selected_text)) |pos| break :blk pos;
+                } else {
+                    // Main cursor is not last - search until the next cursor
+                    const end_pos = self.cursors.items[self.main_cursor_index + 1].start();
+                    if (std.mem.indexOfPos(Char, buf.chars.items[0..end_pos], start_pos, selected_text)) |pos| break :blk pos;
+                }
+                break :more_cursors; // not found
+            };
+
+            const line_col = buf.getLineColFromPos(new_cursor_pos);
+            self.cursors.append(Cursor{
+                .selection_start = new_cursor_pos,
+                .pos = new_cursor_pos + selected_text.len,
+                .line = line_col.line,
+                .col = line_col.col,
+                .clipboard = ArrayList(Char).init(allocator),
+            }) catch u.oom();
+            self.main_cursor_index = self.cursors.items.len - 1;
+            new_cursor_created = true;
+        }
+
+        // Process multiple cursors
+        if (!new_cursor_created) {
+            var adjust: isize = 0;
+            var buf_len = @intCast(isize, buf.numChars());
+            for (self.cursors.items) |*cursor| {
+                // Adjust cursor pos if the previous cursor has changed the buffer
+                const new_len = @intCast(isize, buf.numChars());
+                if (new_len != buf_len) {
+                    buf.recalculateLines();
+                    adjust += (new_len - buf_len);
+                    cursor.adjust(adjust);
+                    buf_len = new_len;
+                }
+                self.processKeyForCursor(buf, key, mods, cursor, tmp_allocator);
+            }
+        }
+
+        // Organise cursors
+        {
+            const main_cursor = self.mainCursor().start();
+
+            // Sort cursors so that they are strictly ordered by pos
+            std.sort.sort(
+                Cursor,
+                self.cursors.items,
+                {},
+                struct { fn lessThan(_: void, lhs: Cursor, rhs: Cursor) bool { return lhs.start() <= rhs.start(); } }.lessThan,
+            );
+
+            // Reset main cursor index because it could have moved
+            for (self.cursors.items) |cursor, i| {
+                if (cursor.start() == main_cursor) {
+                    self.main_cursor_index = i;
+                    break;
+                }
+            } else unreachable;
+
+            // Merge overlapping cursors
+            {
+                var i: usize = 0;
+                while (i + 1 < self.cursors.items.len) {
+                    var cursor = &self.cursors.items[i];
+                    if (cursor.maybeSubsume(self.cursors.items[i + 1])) {
+                        _ = self.cursors.orderedRemove(i + 1);
+                        if (self.main_cursor_index > i) self.main_cursor_index -= 1;
+                    } else {
+                        i += 1;
+                    }
+                }
+            }
+        }
+
+        if (buf.dirty) {
+            buf.modified = true;
+            self.highlights.clearRetainingCapacity();
+            buf.last_edit_ms = clock_ms;
+        }
+
+        // Save to disk
+        if (u.modsCmd(mods) and key == .s and buf.file != null) {
+            buf.stripTrailingSpaces();
+
+            // Adjust cursor in case it was on the trimmed whitespace
+            buf.recalculateLines();
+            for (self.cursors.items) |*cursor| cursor.pos = buf.getPosFromLineCol(cursor.line, cursor.col);
+
+            buf.saveToDisk() catch unreachable; // TODO: handle
+        }
+    }
+
+    fn processKeyForCursor(self: *Editor, buf: *Buffer, key: glfw.Key, mods: glfw.Mods, cursor: *Cursor, tmp_allocator: Allocator) void {
         const TAB_SIZE = 4;
+        const old_cursor = cursor.state();
 
-        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        const old_cursor = self.mainCursor().state();
-        var cursor = self.mainCursor();
+        // Cursor movements
+        {
+            const line = buf.getLine(cursor.line);
+            const move_by: usize = if (u.modsCmd(mods)) 5 else 1;
 
-        switch (key) {
-            .delete => {
-                if (cursor.getSelectionRange()) |selection| {
-                    cursor.pos = selection.start;
-                    buf.deleteRange(selection.start, selection.end, old_cursor, cursor.state());
-                } else {
-                    buf.deleteRange(cursor.pos, cursor.pos + 1, old_cursor, cursor.state());
-                }
-            },
-            .backspace => {
-                if (cursor.getSelectionRange()) |selection| {
-                    cursor.pos = selection.start;
-                    buf.deleteRange(selection.start, selection.end, old_cursor, cursor.state());
-                } else {
-                    // Check if we can delete spaces to the previous tabstop
-                    var to_prev_tabstop = cursor.col % TAB_SIZE;
-                    if (to_prev_tabstop == 0 and cursor.col > 0) to_prev_tabstop = TAB_SIZE;
-                    var all_spaces: bool = false;
-                    if (to_prev_tabstop > 0) {
-                        for (buf.chars.items[cursor.pos - to_prev_tabstop .. cursor.pos]) |char| {
-                            if (char != ' ') break;
+            switch (key) {
+                .left, .right => {
+                    if (mods.shift or !cursor.hasSelection()) {
+                        if (key == .left) cursor.pos -|= move_by else cursor.pos += move_by;
+                    } else if (cursor.getSelectionRange()) |selection| {
+                        cursor.pos = if (key == .left) selection.start else selection.end;
+                        cursor.selection_start = null;
+                    }
+                },
+                .up, .down, .page_up, .page_down => {
+                    if (!mods.alt) {
+                        // Move cursor to new line
+                        const new_line = switch (key) {
+                            .up => cursor.line -| move_by,
+                            .down => cursor.line + move_by,
+                            .page_up => cursor.line -| self.lines_per_screen,
+                            .page_down => cursor.line + self.lines_per_screen,
+                            else => unreachable,
+                        };
+                        const target_line = buf.getLine(new_line);
+                        const wanted_pos = cursor.col_wanted orelse cursor.col;
+                        const new_line_pos = u.min(wanted_pos, target_line.len());
+                        cursor.col_wanted = if (new_line_pos < wanted_pos) wanted_pos else null; // reset or remember wanted position
+                        cursor.pos = target_line.start + new_line_pos;
+                    } else if (u.modsOnlyAlt(mods)) {
+                        const new_line = switch (key) {
+                            .up => cursor.line -| 5,
+                            .down => cursor.line + 5,
+                            .page_up => cursor.line -| self.lines_per_screen,
+                            .page_down => cursor.line + self.lines_per_screen,
+                            else => unreachable,
+                        };
+                        // Move viewport
+                        if (new_line < cursor.line) {
+                            self.scroll.line -|= (cursor.line - new_line);
                         } else {
-                            all_spaces = true;
+                            self.scroll.line += (new_line - cursor.line);
                         }
                     }
-                    const spaces_to_remove = if (all_spaces) to_prev_tabstop else 1;
-                    cursor.pos -|= spaces_to_remove;
-                    buf.deleteRange(cursor.pos, old_cursor.pos, old_cursor, cursor.state());
-                }
-            },
-            .tab => {
-                const SPACES = [1]Char{' '} ** TAB_SIZE;
-
-                if (cursor.getSelectionRange()) |selection| {
-                    const range = buf.expandRangeToWholeLines(selection.start, selection.end, false);
-                    const lines = buf.lines.items[buf.getLineColFromPos(selection.start).line .. buf.getLineColFromPos(selection.end).line + 1];
-
-                    var new_chars = ArrayList(Char).init(tmp_allocator);
-                    new_chars.ensureTotalCapacity(range.len() + lines.len * TAB_SIZE) catch u.oom();
-
-                    self.keep_selection = true;
-
-                    if (!mods.shift) {
-                        // Indent selected lines
-                        for (lines) |line| {
-                            new_chars.appendSliceAssumeCapacity(&SPACES);
-                            new_chars.appendSliceAssumeCapacity(buf.chars.items[line.start..line.end]);
-                            if (line.end != range.end) new_chars.appendAssumeCapacity('\n');
-                        }
-
-                        // Adjust selection
-                        const spaces_inserted = lines.len * TAB_SIZE;
-                        if (cursor.pos == selection.start) {
-                            cursor.pos += TAB_SIZE;
-                            cursor.selection_start.? += spaces_inserted;
-                        } else {
-                            cursor.selection_start.? += TAB_SIZE;
-                            cursor.pos += spaces_inserted;
-                        }
-
-                        buf.replaceRange(range.start, range.end, new_chars.items, old_cursor, cursor.state());
+                },
+                .home => {
+                    if (cursor.pos != line.text_start) {
+                        cursor.pos = line.text_start;
                     } else {
-                        // Un-indent selected lines
-                        var spaces_removed: usize = 0;
-                        for (lines) |line| {
-                            const spaces_to_remove = u.min(TAB_SIZE, line.lenWhitespace());
-                            spaces_removed += spaces_to_remove;
-                            new_chars.appendSliceAssumeCapacity(buf.chars.items[line.start + spaces_to_remove .. line.end]);
-                            if (line.end != range.end) new_chars.appendAssumeCapacity('\n');
-                        }
-
-                        // Adjust selection
-                        const first_line = lines[0];
-                        const last_line = lines[lines.len - 1];
-                        const sel_start_adjust = u.min3(TAB_SIZE, first_line.lenWhitespace(), selection.start - first_line.start);
-                        const sel_end_adjust = spaces_removed -| u.min(last_line.text_start -| selection.end, TAB_SIZE);
-                        if (cursor.pos == selection.start) {
-                            cursor.pos -= sel_start_adjust;
-                            cursor.selection_start.? -|= sel_end_adjust;
-                        } else {
-                            cursor.selection_start.? -|= sel_start_adjust;
-                            cursor.pos -|= sel_end_adjust;
-                        }
-
-                        buf.replaceRange(range.start, range.end, new_chars.items, old_cursor, cursor.state());
+                        cursor.pos = line.start;
                     }
+                },
+                .end => {
+                    cursor.pos = line.end;
+                },
+                .escape => {
+                    // Remove selection
+                    cursor.selection_start = null;
+                },
+                else => {},
+            }
+
+            // Start new selection or remove selection
+            if (old_cursor.pos != cursor.pos) {
+                if (mods.shift) {
+                    if (!cursor.hasSelection()) cursor.selection_start = old_cursor.pos; // new selection
                 } else {
-                    if (!mods.shift) {
-                        // Insert spaces
-                        const to_next_tabstop = TAB_SIZE - cursor.col % TAB_SIZE;
-                        cursor.pos += to_next_tabstop;
-                        buf.insertSlice(old_cursor.pos, SPACES[0..to_next_tabstop], old_cursor, cursor.state());
+                    cursor.selection_start = null;
+                }
+                self.highlights.clearRetainingCapacity();
+            }
+        }
+
+        // Insertions/deletions of sorts
+        if (key == .delete) {
+            if (cursor.getSelectionRange()) |selection| {
+                cursor.pos = selection.start;
+                buf.deleteRange(selection.start, selection.end, old_cursor, cursor.state());
+            } else {
+                buf.deleteRange(cursor.pos, cursor.pos + 1, old_cursor, cursor.state());
+            }
+        }
+        if (key == .backspace) {
+            if (cursor.getSelectionRange()) |selection| {
+                cursor.pos = selection.start;
+                buf.deleteRange(selection.start, selection.end, old_cursor, cursor.state());
+            } else {
+                // Check if we can delete spaces to the previous tabstop
+                var to_prev_tabstop = cursor.col % TAB_SIZE;
+                if (to_prev_tabstop == 0 and cursor.col > 0) to_prev_tabstop = TAB_SIZE;
+                var all_spaces: bool = false;
+                if (to_prev_tabstop > 0) {
+                    for (buf.chars.items[cursor.pos - to_prev_tabstop .. cursor.pos]) |char| {
+                        if (char != ' ') break;
                     } else {
-                        // Un-indent current line
-                        const line = buf.getLine(cursor.line);
+                        all_spaces = true;
+                    }
+                }
+                const spaces_to_remove = if (all_spaces) to_prev_tabstop else 1;
+                cursor.pos -|= spaces_to_remove;
+                buf.deleteRange(cursor.pos, old_cursor.pos, old_cursor, cursor.state());
+            }
+        }
+        if (key == .tab) {
+            const SPACES = [1]Char{' '} ** TAB_SIZE;
+
+            if (cursor.getSelectionRange()) |selection| {
+                const range = buf.expandRangeToWholeLines(selection.start, selection.end, false);
+                const lines = buf.lines.items[buf.getLineColFromPos(selection.start).line .. buf.getLineColFromPos(selection.end).line + 1];
+
+                var new_chars = ArrayList(Char).init(tmp_allocator);
+                new_chars.ensureTotalCapacity(range.len() + lines.len * TAB_SIZE) catch u.oom();
+
+                self.keep_selection = true;
+
+                if (!mods.shift) {
+                    // Indent selected lines
+                    for (lines) |line| {
+                        new_chars.appendSliceAssumeCapacity(&SPACES);
+                        new_chars.appendSliceAssumeCapacity(buf.chars.items[line.start..line.end]);
+                        if (line.end != range.end) new_chars.appendAssumeCapacity('\n');
+                    }
+
+                    // Adjust selection
+                    const spaces_inserted = lines.len * TAB_SIZE;
+                    if (cursor.pos == selection.start) {
+                        cursor.pos += TAB_SIZE;
+                        cursor.selection_start.? += spaces_inserted;
+                    } else {
+                        cursor.selection_start.? += TAB_SIZE;
+                        cursor.pos += spaces_inserted;
+                    }
+
+                    buf.replaceRange(range.start, range.end, new_chars.items, old_cursor, cursor.state());
+                } else {
+                    // Un-indent selected lines
+                    var spaces_removed: usize = 0;
+                    for (lines) |line| {
                         const spaces_to_remove = u.min(TAB_SIZE, line.lenWhitespace());
-                        cursor.pos -|= u.min(cursor.pos - line.start, spaces_to_remove);
-                        buf.deleteRange(line.start, line.start + spaces_to_remove, old_cursor, cursor.state());
+                        spaces_removed += spaces_to_remove;
+                        new_chars.appendSliceAssumeCapacity(buf.chars.items[line.start + spaces_to_remove .. line.end]);
+                        if (line.end != range.end) new_chars.appendAssumeCapacity('\n');
                     }
-                }
-            },
-            .enter => {
-                const line = buf.getLine(cursor.line);
-                var indent = line.lenWhitespace();
-                var char_buf: [1024]Char = undefined;
-                std.mem.set(Char, char_buf[0 .. indent + 1], ' '); // if buffer is too small, we safely crash here
 
-                if (u.modsCmd(mods) and mods.shift) {
-                    // Insert line above
-                    char_buf[indent] = '\n';
-                    cursor.pos = line.start + indent;
-                    buf.insertSlice(line.start, char_buf[0 .. indent + 1], old_cursor, cursor.state());
-                } else if (u.modsCmd(mods)) {
-                    // Insert line below
-                    if (buf.getLineOrNull(cursor.line + 1)) |next_line| {
-                        char_buf[indent] = '\n';
-                        cursor.pos = next_line.start + indent;
-                        buf.insertSlice(next_line.start, char_buf[0 .. indent + 1], old_cursor, cursor.state());
+                    // Adjust selection
+                    const first_line = lines[0];
+                    const last_line = lines[lines.len - 1];
+                    const sel_start_adjust = u.min3(TAB_SIZE, first_line.lenWhitespace(), selection.start - first_line.start);
+                    const sel_end_adjust = spaces_removed -| u.min(last_line.text_start -| selection.end, TAB_SIZE);
+                    if (cursor.pos == selection.start) {
+                        cursor.pos -= sel_start_adjust;
+                        cursor.selection_start.? -|= sel_end_adjust;
+                    } else {
+                        cursor.selection_start.? -|= sel_start_adjust;
+                        cursor.pos -|= sel_end_adjust;
                     }
-                } else if (cursor.getSelectionRange()) |selection| {
-                    // Replace selection with a newline
-                    cursor.pos = selection.start + 1;
-                    buf.replaceRange(selection.start, selection.end, &[_]Char{'\n'}, old_cursor, cursor.state());
-                } else if (cursor.col <= indent) {
-                    // Don't add too much indentation
-                    indent = cursor.col;
-                    char_buf[indent] = '\n';
-                    cursor.pos += 1 + indent;
-                    buf.insertSlice(line.start, char_buf[0 .. indent + 1], old_cursor, cursor.state());
-                } else {
-                    // Break the line normally
-                    char_buf[0] = '\n';
-                    cursor.pos += 1 + indent;
-                    buf.insertSlice(old_cursor.pos, char_buf[0 .. indent + 1], old_cursor, cursor.state());
+
+                    buf.replaceRange(range.start, range.end, new_chars.items, old_cursor, cursor.state());
                 }
-            },
-            else => {},
+            } else {
+                if (!mods.shift) {
+                    // Insert spaces
+                    const to_next_tabstop = TAB_SIZE - cursor.col % TAB_SIZE;
+                    cursor.pos += to_next_tabstop;
+                    buf.insertSlice(old_cursor.pos, SPACES[0..to_next_tabstop], old_cursor, cursor.state());
+                } else {
+                    // Un-indent current line
+                    const line = buf.getLine(cursor.line);
+                    const spaces_to_remove = u.min(TAB_SIZE, line.lenWhitespace());
+                    cursor.pos -|= u.min(cursor.pos - line.start, spaces_to_remove);
+                    buf.deleteRange(line.start, line.start + spaces_to_remove, old_cursor, cursor.state());
+                }
+            }
+        }
+        if (key == .enter) {
+            const line = buf.getLine(cursor.line);
+            var indent = line.lenWhitespace();
+            var char_buf: [1024]Char = undefined;
+            std.mem.set(Char, char_buf[0 .. indent + 1], ' '); // if buffer is too small, we safely crash here
+
+            if (u.modsCmd(mods) and mods.shift) {
+                // Insert line above
+                char_buf[indent] = '\n';
+                cursor.pos = line.start + indent;
+                buf.insertSlice(line.start, char_buf[0 .. indent + 1], old_cursor, cursor.state());
+            } else if (u.modsCmd(mods)) {
+                // Insert line below
+                if (buf.getLineOrNull(cursor.line + 1)) |next_line| {
+                    char_buf[indent] = '\n';
+                    cursor.pos = next_line.start + indent;
+                    buf.insertSlice(next_line.start, char_buf[0 .. indent + 1], old_cursor, cursor.state());
+                }
+            } else if (cursor.getSelectionRange()) |selection| {
+                // Replace selection with a newline
+                cursor.pos = selection.start + 1;
+                buf.replaceRange(selection.start, selection.end, &[_]Char{'\n'}, old_cursor, cursor.state());
+            } else if (cursor.col <= indent) {
+                // Don't add too much indentation
+                indent = cursor.col;
+                char_buf[indent] = '\n';
+                cursor.pos += 1 + indent;
+                buf.insertSlice(line.start, char_buf[0 .. indent + 1], old_cursor, cursor.state());
+            } else {
+                // Break the line normally
+                char_buf[0] = '\n';
+                cursor.pos += 1 + indent;
+                buf.insertSlice(old_cursor.pos, char_buf[0 .. indent + 1], old_cursor, cursor.state());
+            }
         }
 
         // Duplicate lines
@@ -1013,78 +1256,7 @@ pub const Editor = struct {
             }
         }
 
-        const line = buf.getLine(cursor.line);
-        const move_by: usize = if (u.modsCmd(mods)) 5 else 1;
-
-        // Cursor movements
-        switch (key) {
-            .left, .right => {
-                if (mods.shift or cursor.selection_start == null) {
-                    if (key == .left) cursor.pos -|= move_by else cursor.pos += move_by;
-                } else if (cursor.getSelectionRange()) |selection| {
-                    cursor.pos = if (key == .left) selection.start else selection.end;
-                    cursor.selection_start = null;
-                }
-            },
-            .up, .down, .page_up, .page_down => {
-                if (!mods.alt) {
-                    // Move cursor to new line
-                    const new_line = switch (key) {
-                        .up => cursor.line -| move_by,
-                        .down => cursor.line + move_by,
-                        .page_up => cursor.line -| self.lines_per_screen,
-                        .page_down => cursor.line + self.lines_per_screen,
-                        else => unreachable,
-                    };
-                    const target_line = buf.getLine(new_line);
-                    const wanted_pos = cursor.col_wanted orelse cursor.col;
-                    const new_line_pos = u.min(wanted_pos, target_line.len());
-                    cursor.col_wanted = if (new_line_pos < wanted_pos) wanted_pos else null; // reset or remember wanted position
-                    cursor.pos = target_line.start + new_line_pos;
-                } else if (u.modsOnlyAlt(mods)) {
-                    const new_line = switch (key) {
-                        .up => cursor.line -| 5,
-                        .down => cursor.line + 5,
-                        .page_up => cursor.line -| self.lines_per_screen,
-                        .page_down => cursor.line + self.lines_per_screen,
-                        else => unreachable,
-                    };
-                    // Move viewport
-                    if (new_line < cursor.line) {
-                        self.scroll.line -|= (cursor.line - new_line);
-                    } else {
-                        self.scroll.line += (new_line - cursor.line);
-                    }
-                }
-            },
-            .home => {
-                if (cursor.pos != line.text_start) {
-                    cursor.pos = line.text_start;
-                } else {
-                    cursor.pos = line.start;
-                }
-            },
-            .end => {
-                cursor.pos = line.end;
-            },
-            .escape => {
-                // Remove selection
-                cursor.selection_start = null;
-            },
-            else => {},
-        }
-        if (old_cursor.pos != cursor.pos and !self.keep_selection) {
-            if (mods.shift) {
-                if (cursor.selection_start == null) {
-                    // Start new selection
-                    cursor.selection_start = old_cursor.pos;
-                }
-            } else {
-                cursor.selection_start = null;
-            }
-            self.highlights.clearRetainingCapacity();
-        }
-
+        // Cmd + key
         if (u.modsOnlyCmd(mods)) {
             switch (key) {
                 .a => {
@@ -1125,14 +1297,11 @@ pub const Editor = struct {
                     cursor.pos = range.end;
                 },
                 .d => {
-                    // TODO:
-                    // - When single cursor has a selection, create more cursors
-                    // - When more than one cursor:
-                    //     - select words under each
-                    //     - do nothing else
-                    if (buf.selectWord(cursor.pos)) |range| {
-                        cursor.selection_start = range.start;
-                        cursor.pos = range.end;
+                    if (!cursor.hasSelection()) {
+                        if (buf.selectWord(cursor.pos)) |range| {
+                            cursor.selection_start = range.start;
+                            cursor.pos = range.end;
+                        }
                     }
                 },
                 .z => {
@@ -1140,26 +1309,19 @@ pub const Editor = struct {
                         cursor.pos = cursor_state.pos;
                         cursor.selection_start = cursor_state.selection_start;
                         self.keep_selection = true;
-                        buf.dirty = true;
                     }
                 },
                 else => {},
             }
         }
 
+        // Redo
         if (u.modsCmd(mods) and mods.shift and key == .z) {
             if (buf.redo()) |cursor_state| {
                 cursor.pos = cursor_state.pos;
                 cursor.selection_start = cursor_state.selection_start;
                 self.keep_selection = true;
-                buf.dirty = true;
             }
-        }
-
-        if (buf.dirty) {
-            buf.modified = true;
-            self.highlights.clearRetainingCapacity();
-            buf.last_edit_ms = clock_ms;
         }
 
         // Keep or reset col_wanted
@@ -1168,17 +1330,6 @@ pub const Editor = struct {
             else => if (cursor.pos != old_cursor.pos) {
                 cursor.col_wanted = null;
             },
-        }
-
-        // Save to disk
-        if (u.modsCmd(mods) and key == .s and buf.file != null) {
-            buf.stripTrailingSpaces();
-
-            // Adjust cursor in case it was on the trimmed whitespace
-            buf.recalculateLines();
-            cursor.pos = buf.getPosFromLineCol(cursor.line, cursor.col);
-
-            buf.saveToDisk() catch unreachable; // TODO: handle
         }
     }
 
@@ -1216,6 +1367,18 @@ pub const Editor = struct {
 
         self.scroll.line = top;
         self.scroll.col = left;
+    }
+
+    fn selectedText(self: *Editor, buf: *const Buffer) ?[]const Char {
+        const text = if (self.mainCursor().getSelectionRange()) |s| buf.chars.items[s.start..s.end] else return null;
+        for (self.cursors.items) |cursor| {
+            if (cursor.getSelectionRange()) |s| {
+                if (!std.mem.eql(Char, text, buf.chars.items[s.start..s.end])) return null;
+            } else {
+                return null;
+            }
+        }
+        return text;
     }
 
     fn drawSelection(ui: *Ui, buf: *const Buffer, top_left: Vec2, start: LineCol, end: LineCol, color: style.Color, line_min: usize, col_min: usize, col_max: usize) void {

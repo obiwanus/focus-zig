@@ -1,13 +1,22 @@
 {
+vasia
     "version": "0.2.0",
+
+vasia
     "configurations": [
+        vasia
         {
             "type": "lldb",
             "request": "launch",
+            vasia
             "name": "Debug",
             "program": "${workspaceFolder}/zig-out/bin/focus.exe",
             "args": [],
+            vasia
             "cwd": "${workspaceFolder}"
         }
-    ]
+    ]vasia
+
+
+    vasia
 }

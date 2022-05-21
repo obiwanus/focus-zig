@@ -1,9 +1,15 @@
 # TODO
 - Multiple cursors
-    - On subsequent presses search and create more cursors
-    - On escape merge cursors
+    + On subsequent presses search and create more cursors
+    + Handle wrap around
+    + Sort cursors by pos
+    + Fix merging of selections
+    + On escape remove extra cursors
+    + Fix cursor inserts and deletions
+    - Make sure line inserts and swaps are handled correctly
     - Make sure the undo system remembers cursors
     - Handle individual cursor clipboards
+- Do not highlight cursor line on inactive panes
 - Wrap around when moving selection in the open files dialog
 - Handle minimisation without crashing
 - Draw scrollbars and other info
