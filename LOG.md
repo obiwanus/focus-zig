@@ -5,7 +5,6 @@
         - When done editing, collect edits into a new undo group with cursor information
         - On undo strip all clipboard information and just preserve the positions
     - Handle individual cursor clipboards
-- Wrap around when moving selection in the open files dialog
 - Handle minimisation without crashing
 - Draw scrollbars and other info
     - Draw scrollbars
@@ -28,7 +27,8 @@
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
-- Do not highlight cursor line on inactive panes
++ Wrap around when moving selection in the open files dialog
++ Do not highlight cursor line on inactive panes
 + On subsequent presses search and create more cursors
 + Handle wrap around
 + Sort cursors by pos

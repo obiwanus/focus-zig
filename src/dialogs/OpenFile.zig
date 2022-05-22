@@ -95,21 +95,40 @@ pub fn getCurrentDir(self: *Self) *Dir {
 pub fn keyPress(self: *Self, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allocator) ?Action {
     _ = mods;
     var dir = self.getCurrentDir();
+    const entries = dir.filteredEntries(self.filter_text.items, tmp_allocator);
+    const last_entry = entries.len -| 1;
     switch (key) {
         .up => {
-            dir.selected -|= 1;
+            if (dir.selected == 0) {
+                dir.selected = last_entry;
+            } else {
+                dir.selected -|= 1;
+            }
         },
         .down => {
             dir.selected += 1;
-            const num_entries = dir.filteredEntries(self.filter_text.items, tmp_allocator).len;
-            if (dir.selected >= num_entries) {
-                dir.selected = num_entries -| 1;
+            if (dir.selected >= entries.len) {
+                dir.selected = 0;
             }
         },
+        .page_up => {
+            dir.selected -|= 10;
+        },
+        .page_down => {
+            dir.selected += 10;
+            if (dir.selected >= entries.len) {
+                dir.selected = last_entry;
+            }
+        },
+        .home => {
+            dir.selected = 0;
+        },
+        .end => {
+            dir.selected = last_entry;
+        },
         .enter, .tab => {
-            const filtered_entries = dir.filteredEntries(self.filter_text.items, tmp_allocator);
-            if (filtered_entries.len > 0) {
-                const entry = filtered_entries[dir.selected];
+            if (entries.len > 0) {
+                const entry = entries[dir.selected];
                 switch (entry) {
                     .dir => |*d| {
                         self.open_dirs.append(d.*) catch u.oom();
