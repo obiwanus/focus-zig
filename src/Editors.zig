@@ -599,14 +599,16 @@ pub const Editor = struct {
             const top_left = area.topLeft();
 
             // Draw cursor line highlights
-            for (self.cursors.items) |cursor| {
-                const highlight_rect = Rect{
-                    .x = rect.x,
-                    .y = top_left.y + @intToFloat(f32, cursor.line -| line_min) * char_size.y - adjust_y,
-                    .w = rect.w,
-                    .h = char_size.y,
-                };
-                ui.drawSolidRect(highlight_rect, style.colors.BACKGROUND_HIGHLIGHT);
+            if (is_active) {
+                for (self.cursors.items) |cursor| {
+                    const highlight_rect = Rect{
+                        .x = rect.x,
+                        .y = top_left.y + @intToFloat(f32, cursor.line -| line_min) * char_size.y - adjust_y,
+                        .w = rect.w,
+                        .h = char_size.y,
+                    };
+                    ui.drawSolidRect(highlight_rect, style.colors.BACKGROUND_HIGHLIGHT);
+                }
             }
 
             // Draw selected text occurrences

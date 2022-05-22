@@ -1,15 +1,10 @@
 # TODO
 - Multiple cursors
-    + On subsequent presses search and create more cursors
-    + Handle wrap around
-    + Sort cursors by pos
-    + Fix merging of selections
-    + On escape remove extra cursors
-    + Fix cursor inserts and deletions
-    + Disable line swaps for multiple cursors
     - Make sure the undo system remembers cursors
+        - When multiple cursors, always start a new undo group
+        - When done editing, collect edits into a new undo group with cursor information
+        - On undo strip all clipboard information and just preserve the positions
     - Handle individual cursor clipboards
-- Do not highlight cursor line on inactive panes
 - Wrap around when moving selection in the open files dialog
 - Handle minimisation without crashing
 - Draw scrollbars and other info
@@ -33,6 +28,14 @@
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
+- Do not highlight cursor line on inactive panes
++ On subsequent presses search and create more cursors
++ Handle wrap around
++ Sort cursors by pos
++ Fix merging of selections
++ On escape remove extra cursors
++ Fix cursor inserts and deletions
++ Disable line swaps for multiple cursors
 + Refactor code so that we have additional cursors
 + Use a global clipboard unless multiple cursors are used
     + On ctrl+c, copy text into the system clipboard
