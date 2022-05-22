@@ -6,7 +6,7 @@
     + Fix merging of selections
     + On escape remove extra cursors
     + Fix cursor inserts and deletions
-    - Make sure line inserts and swaps are handled correctly
+    + Disable line swaps for multiple cursors
     - Make sure the undo system remembers cursors
     - Handle individual cursor clipboards
 - Do not highlight cursor line on inactive panes

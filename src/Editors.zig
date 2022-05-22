@@ -371,9 +371,14 @@ const Cursor = struct {
         self.clipboard.appendSlice(chars) catch u.oom();
     }
 
-    fn adjust(self: *Cursor, delta: isize) void {
+    fn adjust(self: *Cursor, delta: isize, buf: *const Buffer) void {
         if (delta < 0) self.moveLeft(@intCast(usize, -delta));
         if (delta > 0) self.moveRight(@intCast(usize, delta));
+        if (delta != 0) {
+            const line_col = buf.getLineColFromPos(self.pos);
+            self.line = line_col.line;
+            self.col = line_col.col;
+        }
     }
 
     fn moveLeft(self: *Cursor, delta: usize) void {
@@ -805,7 +810,7 @@ pub const Editor = struct {
             if (new_len != buf_len) {
                 buf.recalculateLines();
                 adjust += (new_len - buf_len);
-                cursor.adjust(adjust);
+                cursor.adjust(adjust, buf);
                 buf_len = new_len;
             }
 
@@ -925,9 +930,10 @@ pub const Editor = struct {
                 if (new_len != buf_len) {
                     buf.recalculateLines();
                     adjust += (new_len - buf_len);
-                    cursor.adjust(adjust);
+                    cursor.adjust(adjust, buf);
                     buf_len = new_len;
                 }
+
                 self.processKeyForCursor(buf, key, mods, cursor, tmp_allocator);
             }
         }
@@ -941,7 +947,7 @@ pub const Editor = struct {
                 Cursor,
                 self.cursors.items,
                 {},
-                struct { fn lessThan(_: void, lhs: Cursor, rhs: Cursor) bool { return lhs.start() <= rhs.start(); } }.lessThan,
+                struct { fn lessThan(_: void, lhs: Cursor, rhs: Cursor) bool { return lhs.start() < rhs.start(); } }.lessThan,
             );
 
             // Reset main cursor index because it could have moved
@@ -988,6 +994,7 @@ pub const Editor = struct {
     fn processKeyForCursor(self: *Editor, buf: *Buffer, key: glfw.Key, mods: glfw.Mods, cursor: *Cursor, tmp_allocator: Allocator) void {
         const TAB_SIZE = 4;
         const old_cursor = cursor.state();
+        const single_cursor = self.cursors.items.len == 1; // some actions are only for single cursor
 
         // Cursor movements
         {
@@ -1218,7 +1225,7 @@ pub const Editor = struct {
         }
 
         // Swap line or selection
-        if (u.modsOnlyAltShift(mods) and (key == .up or key == .down)) {
+        if (single_cursor and u.modsOnlyAltShift(mods) and (key == .up or key == .down)) {
             var range = if (cursor.getSelectionRange()) |selection|
                 buf.expandRangeToWholeLines(selection.start, selection.end, false)
             else
