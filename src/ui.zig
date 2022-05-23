@@ -17,7 +17,7 @@ const OpenFileDialog = focus.dialogs.OpenFile;
 
 // Probably temporary - this is just to preallocate buffers on the GPU
 // and not worry about more sophisticated allocation strategies
-const MAX_VERTEX_COUNT = 100000;
+const MAX_VERTEX_COUNT = 300000;
 
 pub const Screen = struct {
     size: vk.Extent2D,

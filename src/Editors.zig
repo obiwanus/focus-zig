@@ -859,6 +859,7 @@ pub const Editor = struct {
     }
 
     fn updateHighlights(self: *Editor, buf: *const Buffer, selected_text: []const Char) void {
+        if (selected_text.len <= 2) return;
         u.assert(self.highlights.items.len == 0);
         const main_cursor_pos = self.mainCursor().start();
         var results_iter = buf.search(selected_text);
