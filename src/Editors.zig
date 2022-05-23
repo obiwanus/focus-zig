@@ -541,7 +541,8 @@ pub const Editor = struct {
     }
 
     fn removeExtraCursors(self: *Editor) void {
-        const main_cursor = self.cursors.items[self.main_cursor_index];
+        var main_cursor = self.cursors.items[self.main_cursor_index];
+        main_cursor.clipboard.clearRetainingCapacity();
         self.cursors.clearRetainingCapacity();
         self.cursors.append(main_cursor) catch unreachable;
         self.main_cursor_index = 0;
@@ -1291,7 +1292,13 @@ pub const Editor = struct {
                 .c, .x => {
                     // Copy / cut
                     if (cursor.getSelectionRange()) |s| {
-                        copyToClipboard(buf.chars.items[s.start..s.end], tmp_allocator);
+                        if (single_cursor) {
+                            // Copy to global clipboard
+                            copyToClipboard(buf.chars.items[s.start..s.end], tmp_allocator);
+                        } else {
+                            // Copy to individual clipboard
+                            cursor.copyToClipboard(buf.chars.items[s.start..s.end]);
+                        }
                         if (key == .x) {
                             cursor.pos = s.start;
                             buf.deleteRange(s.start, s.end);
@@ -1300,7 +1307,15 @@ pub const Editor = struct {
                 },
                 .v => {
                     // Paste
-                    const paste_data = getClipboardString(tmp_allocator);
+                    var paste_data: []const Char = undefined;
+                    if (single_cursor) {
+                        paste_data = getClipboardString(tmp_allocator);
+                    } else {
+                        const has_individual_data = for (self.cursors.items) |c| {
+                            if (c.clipboard.items.len > 0) break true;
+                        } else false;
+                        paste_data = if (has_individual_data) cursor.clipboard.items else getClipboardString(tmp_allocator);
+                    }
                     if (paste_data.len > 0) {
                         if (cursor.getSelectionRange()) |s| {
                             cursor.pos = s.start + paste_data.len;

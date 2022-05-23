@@ -1,12 +1,16 @@
 # TODO
-- Multiple cursors
-    - Handle individual cursor clipboards
 - Fix: don't draw cursors that should not be visible
 - Handle minimisation without crashing
 - Draw scrollbars and other info
     - Draw scrollbars
     - Draw cursor position(s) and selections
     - Draw highlight rects
+- Refactor action system:
+    - Assign key combinations to actions
+    - Handle actions in a switch, even if it means repeating some code
+- On some actions, create new edit groups:
+    - Any replacements with a selection (we want to have the selection back on undo)
+    - Moving lines up/down
 - Search box: show the number of results / current result
 - Save current session (per working directory)
 - Create new files
@@ -25,6 +29,7 @@
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
++ Handle individual cursor clipboards
 + Make sure the undo system remembers cursors
     + Fix: selection isn't remembered
     + Fix: ctrl + D stopped working
