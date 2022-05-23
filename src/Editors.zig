@@ -33,7 +33,7 @@ focused: bool = true,
 
 const Editors = @This();
 const BUFFER_REFRESH_TIMEOUT_MS = 500;
-const UNDO_GROUP_TIMEOUT_MS = 500;
+const UNDO_GROUP_TIMEOUT_MS = 200;
 
 pub fn init(allocator: Allocator) Editors {
     return .{
@@ -905,7 +905,9 @@ pub const Editor = struct {
                 // Redo
                 if (buf.redo()) |cursors| self.replaceCursors(cursors, buf);
             }
-        } else if (key == .d and u.modsOnlyCmd(mods)) more_cursors: {
+        }
+
+        if (key == .d and u.modsOnlyCmd(mods)) more_cursors: {
             // Should only try to create a new cursor if all cursors have the same text selected
             const selected_text = self.selectedText(buf) orelse break :more_cursors;
 
@@ -935,8 +937,10 @@ pub const Editor = struct {
             }) catch u.oom();
             self.main_cursor_index = self.cursors.items.len - 1;
             new_cursor_created = true;
-        } else if (!new_cursor_created) {
-            // Process multiple cursors
+        }
+
+        // Process multiple cursors
+        if (!new_cursor_created) {
             var adjust: isize = 0;
             var buf_len = @intCast(isize, buf.numChars());
             for (self.cursors.items) |*cursor| {
@@ -1338,6 +1342,8 @@ pub const Editor = struct {
     }
 
     fn replaceCursors(self: *Editor, cursors: []const Buffer.CursorState, buf: *const Buffer) void {
+        if (cursors.len == 0) return; // the first undo doesn't have any remembered cursors
+
         for (self.cursors.items) |cursor| cursor.deinit();
         self.cursors.clearRetainingCapacity();
         self.cursors.ensureUnusedCapacity(cursors.len) catch u.oom();
@@ -1352,6 +1358,7 @@ pub const Editor = struct {
             });
         }
         if (self.main_cursor_index >= self.cursors.items.len) self.main_cursor_index = self.cursors.items.len - 1;
+        self.keep_selection = true;
     }
 
     fn moveViewportToLineCol(self: *Editor, line_col: LineCol, centered: bool) void {

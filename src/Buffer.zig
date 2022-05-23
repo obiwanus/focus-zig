@@ -120,9 +120,6 @@ pub const SearchResultsIter = struct {
 };
 
 pub fn init(allocator: Allocator) Buffer {
-    var cursors = ArrayList(CursorState).init(allocator);
-    cursors.append(CursorState{}) catch u.oom();
-
     return .{
         .file = null,
         .bytes = ArrayList(u8).init(allocator),
@@ -134,7 +131,7 @@ pub fn init(allocator: Allocator) Buffer {
         .undos = ArrayList(EditGroup).init(allocator),
         .redos = ArrayList(EditGroup).init(allocator),
         .edits = ArrayList(Edit).init(allocator),
-        .cursors = cursors,
+        .cursors = ArrayList(CursorState).init(allocator),
     };
 }
 
@@ -509,11 +506,12 @@ pub fn newEditGroup(self: *Buffer, current_cursors: []const Cursor) void {
     const edits = self.edits.toOwnedSlice();
     std.mem.reverse(Edit, edits);
 
-    // Remember cursor state
-    var cursors = self.edit_alloc.alloc(CursorState, current_cursors.len) catch u.oom();
-    for (current_cursors) |cursor, i| cursors[i] = cursor.state();
+    self.undos.append(EditGroup{ .edits = edits, .cursors = self.cursors.toOwnedSlice() }) catch u.oom();
 
-    self.undos.append(EditGroup{ .edits = edits, .cursors = cursors }) catch u.oom();
+    // Remember current cursor state
+    self.cursors.ensureUnusedCapacity(current_cursors.len) catch u.oom();
+    for (current_cursors) |cursor| self.cursors.appendAssumeCapacity(cursor.state());
+
     self.new_edit_group_required = false;
 }
 
