@@ -6,6 +6,7 @@
     - Any replacements with a selection (we want to have the selection back on undo)
     - Moving lines up/down
 - Search box: show the number of results / current result
+- Jump to line on ctrl+G
 - Save current session (per working directory)
 - Create new files
 - Format on save

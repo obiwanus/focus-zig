@@ -523,6 +523,7 @@ pub const Editor = struct {
     highlights: ArrayList(usize),
 
     scrollbar: struct {
+        line: usize = 0,
         opacity: f32 = 0,
         start_fade_ms: f64 = 0,
         started_fading: bool = false,
@@ -607,7 +608,6 @@ pub const Editor = struct {
         }
 
         // Move viewport
-        const old_scroll_line = self.scroll.line;
         if (self.search_box.getCurrentResultPos()) |pos| {
             // Center viewport on current search result
             const line_col = buf.getLineColFromPos(pos);
@@ -617,7 +617,10 @@ pub const Editor = struct {
             const line_col = buf.getLineColFromPos(self.mainCursor().pos);
             self.moveViewportToLineCol(line_col, false); // depends on lines_per_screen etc
         }
-        if (self.scroll.line != old_scroll_line) self.showScrollbar(clock_ms);
+        if (self.scroll.line != self.scrollbar.line) {
+            self.showScrollbar(clock_ms);
+            self.scrollbar.line = self.scroll.line;
+        }
 
         const need_redraw = self.maybeFadeOutScrollbar(clock_ms);
 
