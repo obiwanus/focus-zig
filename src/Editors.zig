@@ -709,9 +709,9 @@ pub const Editor = struct {
                                 .x = scroll_area_rect.x,
                                 .y = scroll_area_rect.y + top,
                                 .w = width,
-                                .h = @intToFloat(f32, bottom_line - top_line + 1) * real_height,
+                                .h = u.max(@intToFloat(f32, bottom_line - top_line + 1) * real_height, height),
                             };
-                            ui.drawSolidRect(cursor_rect, style.colors.SELECTION_ACTIVE);
+                            ui.drawSolidRect(cursor_rect, style.colors.CURSOR_ACTIVE);
                         } else {
                             const top = scroll_area_rect.h *  @intToFloat(f32, cursor.line) / scrollable_lines;
                             const cursor_rect = Rect{
@@ -724,7 +724,7 @@ pub const Editor = struct {
                         }
                     }
 
-                    if (self.search_box.open) {
+                    if (self.search_box.open and self.search_box.results.items.len > 0) {
                         // Search results
                         const search_str_len = self.search_box.text.items.len;
                         const selected_result = self.search_box.results.items[self.search_box.result_selected];
@@ -1516,7 +1516,7 @@ pub const Editor = struct {
     fn drawSelection(ui: *Ui, buf: *const Buffer, top_left: Vec2, start: LineCol, end: LineCol, color: style.Color, line_min: usize, col_min: usize, col_max: usize) void {
         const char_size = ui.screen.font.charSize();
 
-        var line: usize = start.line;
+        var line: usize = u.max(start.line, line_min);
         while (line <= end.line) : (line += 1) {
             const start_col = if (line == start.line) start.col -| col_min else 0;
             var end_col = if (line == end.line) end.col else buf.getLine(line).len() + 1;
@@ -1526,7 +1526,7 @@ pub const Editor = struct {
             if (start_col < end_col) {
                 const r = Rect{
                     .x = top_left.x + @intToFloat(f32, start_col) * char_size.x,
-                    .y = top_left.y + @intToFloat(f32, line -| line_min) * char_size.y - 2 * ui.screen.scale,
+                    .y = top_left.y + @intToFloat(f32, line - line_min) * char_size.y - 2 * ui.screen.scale,
                     .w = @intToFloat(f32, end_col - start_col) * char_size.x,
                     .h = char_size.y,
                 };
