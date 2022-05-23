@@ -5,12 +5,14 @@
         - When done editing, collect edits into a new undo group with cursor information
         - On undo strip all clipboard information and just preserve the positions
     - Handle individual cursor clipboards
+- Fix: don't draw cursors that should not be visible
 - Handle minimisation without crashing
 - Draw scrollbars and other info
     - Draw scrollbars
     - Draw cursor position(s) and selections
     - Draw highlight rects
 - Search box: show the number of results / current result
+- Save current session (per working directory)
 - Create new files
 - Format on save
 - Enlarge the current editor on shift+ctrl+L
