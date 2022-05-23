@@ -653,6 +653,7 @@ pub const Editor = struct {
 
             // Then draw cursors
             for (self.cursors.items) |cursor| {
+                if (cursor.col < col_min or cursor.line < line_min) continue;
                 const cursor_rect = Rect{
                     .x = top_left.x + @intToFloat(f32, cursor.col -| col_min) * char_size.x,
                     .y = top_left.y + @intToFloat(f32, cursor.line -| line_min) * char_size.y - adjust_y,
