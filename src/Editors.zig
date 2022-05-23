@@ -694,6 +694,72 @@ pub const Editor = struct {
                     };
                     ui.drawSolidRect(scrollbar_rect, style.colors.SCROLLBAR);
                 }
+
+                if (is_active) {
+                    // Cursors and selections
+                    const width = scroll_area_rect.w / 2;
+                    const real_height = scroll_area_rect.h / scrollable_lines;
+                    const height = 4 * scale;
+                    for (self.cursors.items) |cursor| {
+                        if (cursor.getSelectionRange()) |s| {
+                            const top_line = if (cursor.pos == s.start) cursor.line else buf.getLineColFromPos(s.start).line;
+                            const bottom_line = if (cursor.pos == s.end) cursor.line else buf.getLineColFromPos(s.end).line;
+                            const top = scroll_area_rect.h *  @intToFloat(f32, top_line) / scrollable_lines;
+                            const cursor_rect = Rect{
+                                .x = scroll_area_rect.x,
+                                .y = scroll_area_rect.y + top,
+                                .w = width,
+                                .h = @intToFloat(f32, bottom_line - top_line + 1) * real_height,
+                            };
+                            ui.drawSolidRect(cursor_rect, style.colors.SELECTION_ACTIVE);
+                        } else {
+                            const top = scroll_area_rect.h *  @intToFloat(f32, cursor.line) / scrollable_lines;
+                            const cursor_rect = Rect{
+                                .x = scroll_area_rect.x,
+                                .y = scroll_area_rect.y + top,
+                                .w = width,
+                                .h = height,
+                            };
+                            ui.drawSolidRect(cursor_rect, style.colors.CURSOR_ACTIVE);
+                        }
+                    }
+
+                    if (self.search_box.open) {
+                        // Search results
+                        const search_str_len = self.search_box.text.items.len;
+                        const selected_result = self.search_box.results.items[self.search_box.result_selected];
+
+                        for (self.search_box.results.items) |start_pos| {
+                            const end_pos = start_pos + search_str_len;
+                            const top_line = buf.getLineColFromPos(start_pos).line;
+                            const bottom_line = buf.getLineColFromPos(end_pos).line;
+                            const top = scroll_area_rect.h *  @intToFloat(f32, top_line) / scrollable_lines;
+                            const highlight_rect = Rect{
+                                .x = scroll_area_rect.x + width,
+                                .y = scroll_area_rect.y + top,
+                                .w = width,
+                                .h = if (top_line != bottom_line) @intToFloat(f32, bottom_line - top_line + 1) * real_height else height,
+                            };
+                            const color = if (start_pos == selected_result) style.colors.SEARCH_RESULT_ACTIVE else style.colors.SEARCH_RESULT_INACTIVE;
+                            ui.drawSolidRect(highlight_rect, color);
+                        }
+                    } else if (self.mainCursor().getSelectionRange()) |s| {
+                        // Selection occurrence highlights
+                        for (self.highlights.items) |start_pos| {
+                            const end_pos = start_pos + s.len();
+                            const top_line = buf.getLineColFromPos(start_pos).line;
+                            const bottom_line = buf.getLineColFromPos(end_pos).line;
+                            const top = scroll_area_rect.h *  @intToFloat(f32, top_line) / scrollable_lines;
+                            const highlight_rect = Rect{
+                                .x = scroll_area_rect.x + width,
+                                .y = scroll_area_rect.y + top,
+                                .w = width,
+                                .h = if (top_line != bottom_line) @intToFloat(f32, bottom_line - top_line + 1) * real_height else height,
+                            };
+                            ui.drawSolidRect(highlight_rect, style.colors.CURSOR_INACTIVE);
+                        }
+                    }
+                }
             }
         }
 
