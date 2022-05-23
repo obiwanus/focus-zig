@@ -178,7 +178,13 @@ pub fn main() !void {
         const is_optimal = swapchain.acquireNextImage();
         if (!is_optimal) {
             // Recreate swapchain if necessary
-            const new_size = try window.getFramebufferSize();
+            var new_size = try window.getFramebufferSize();
+            while (new_size.width == 0 or new_size.height == 0) {
+                // Window is minimised. Pause until it's back
+                try glfw.waitEvents();
+                new_size = try window.getFramebufferSize();
+            }
+
             screen.size.width = new_size.width;
             screen.size.height = new_size.height;
 

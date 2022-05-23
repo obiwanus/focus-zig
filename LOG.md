@@ -1,5 +1,4 @@
 # TODO
-- Handle minimisation without crashing
 - Draw scrollbars and other info
     - Draw scrollbars
     - Draw cursor position(s) and selections
@@ -28,6 +27,7 @@
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
++ Handle minimisation without crashing
 + Fix: don't draw cursors that should not be visible
 + Handle individual cursor clipboards
 + Make sure the undo system remembers cursors
