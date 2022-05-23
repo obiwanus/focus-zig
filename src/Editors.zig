@@ -51,7 +51,7 @@ pub fn deinit(self: Editors) void {
     for (self.open_editors.items) |ed| ed.deinit();
 }
 
-pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: Allocator) void {
+pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: Allocator) bool {
     // Reload buffers from disk and check for conflicts
     if (clock_ms - self.last_update_from_disk_ms > BUFFER_REFRESH_TIMEOUT_MS) {
         for (self.open_buffers.items) |*buf| buf.refreshFromDisk(self.allocator);
@@ -88,11 +88,12 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
     var area = ui.screen.getRect();
 
     // Lay out the editors in rects and draw each
+    var need_redraw = false;
     switch (self.layout) {
         .none => {}, // nothing to draw
         .single => |e| {
             var editor = &self.open_editors.items[e];
-            editor.updateAndDraw(self.getBuffer(editor.buffer), ui, area, self.focused, tmp_allocator);
+            need_redraw = editor.updateAndDraw(self.getBuffer(editor.buffer), ui, area, self.focused, clock_ms, tmp_allocator);
         },
         .side_by_side => |e| {
             const left_rect = area.splitLeft(area.w / 2 - 1, 1);
@@ -100,13 +101,16 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
 
             var e1 = &self.open_editors.items[e.left];
             var e2 = &self.open_editors.items[e.right];
-            e1.updateAndDraw(self.getBuffer(e1.buffer), ui, left_rect, self.focused and e.active == e.left, tmp_allocator);
-            e2.updateAndDraw(self.getBuffer(e2.buffer), ui, right_rect, self.focused and e.active == e.right, tmp_allocator);
+            var redraw1 = e1.updateAndDraw(self.getBuffer(e1.buffer), ui, left_rect, self.focused and e.active == e.left, clock_ms, tmp_allocator);
+            var redraw2 = e2.updateAndDraw(self.getBuffer(e2.buffer), ui, right_rect, self.focused and e.active == e.right, clock_ms, tmp_allocator);
+            need_redraw = redraw1 or redraw2;
 
             const splitter_rect = Rect{ .x = area.x - 2, .y = area.y, .w = 2, .h = area.h };
             ui.drawSolidRect(splitter_rect, style.colors.BACKGROUND_BRIGHT);
         },
     }
+
+    return need_redraw;
 }
 
 pub fn charEntered(self: *Editors, char: Char, clock_ms: f64) void {
@@ -518,6 +522,14 @@ pub const Editor = struct {
     search_box: SearchBox,
     highlights: ArrayList(usize),
 
+    scrollbar: struct {
+        opacity: f32 = 0,
+        start_fade_ms: f64 = 0,
+        started_fading: bool = false,
+    },
+    const scrollbar_fade_timeout_ms = 500;
+    const scrollbar_fade_duration_ms = 500;
+
     fn init(buffer: usize, allocator: Allocator) Editor {
         var cursors = ArrayList(Cursor).init(allocator);
         cursors.append(Cursor.init(allocator)) catch u.oom();
@@ -527,6 +539,7 @@ pub const Editor = struct {
             .cursors = cursors,
             .search_box = SearchBox.init(allocator),
             .highlights = ArrayList(usize).init(allocator),
+            .scrollbar = .{},
         };
     }
 
@@ -550,7 +563,26 @@ pub const Editor = struct {
         self.main_cursor_index = 0;
     }
 
-    fn updateAndDraw(self: *Editor, buf: *Buffer, ui: *Ui, rect: Rect, is_active: bool, tmp_allocator: Allocator) void {
+    fn showScrollbar(self: *Editor, clock_ms: f64) void {
+        self.scrollbar.opacity = 1.0;
+        self.scrollbar.start_fade_ms = clock_ms + scrollbar_fade_timeout_ms;
+        self.scrollbar.started_fading = false;
+    }
+
+    fn maybeFadeOutScrollbar(self: *Editor, clock_ms: f64) bool {
+        if (self.scrollbar.opacity <= 0 or clock_ms < self.scrollbar.start_fade_ms) return false;
+        if (!self.scrollbar.started_fading) {
+            // Remember the exact time we started fading so it's consistent (we could've been sleeping)
+            self.scrollbar.start_fade_ms = clock_ms;
+            self.scrollbar.started_fading = true;
+        }
+
+        const t = (clock_ms - self.scrollbar.start_fade_ms) / scrollbar_fade_duration_ms;
+        self.scrollbar.opacity = if (t <= 1) @floatCast(f32, 1 - t) else 0;
+        return true;
+    }
+
+    fn updateAndDraw(self: *Editor, buf: *Buffer, ui: *Ui, rect: Rect, is_active: bool, clock_ms: f64, tmp_allocator: Allocator) bool {
         const scale = ui.screen.scale;
         const char_size = ui.screen.font.charSize();
         const margin = Vec2{ .x = 30 * scale, .y = 15 * scale };
@@ -575,17 +607,19 @@ pub const Editor = struct {
         }
 
         // Move viewport
-        {
-            if (self.search_box.getCurrentResultPos()) |pos| {
-                // Center viewport on current search result
-                const line_col = buf.getLineColFromPos(pos);
-                self.moveViewportToLineCol(line_col, true); // depends on lines_per_screen etc
-            } else {
-                // Move viewport to cursor (not centered)
-                const line_col = buf.getLineColFromPos(self.mainCursor().pos);
-                self.moveViewportToLineCol(line_col, false); // depends on lines_per_screen etc
-            }
+        const old_scroll_line = self.scroll.line;
+        if (self.search_box.getCurrentResultPos()) |pos| {
+            // Center viewport on current search result
+            const line_col = buf.getLineColFromPos(pos);
+            self.moveViewportToLineCol(line_col, true); // depends on lines_per_screen etc
+        } else {
+            // Move viewport to cursor (not centered)
+            const line_col = buf.getLineColFromPos(self.mainCursor().pos);
+            self.moveViewportToLineCol(line_col, false); // depends on lines_per_screen etc
         }
+        if (self.scroll.line != old_scroll_line) self.showScrollbar(clock_ms);
+
+        const need_redraw = self.maybeFadeOutScrollbar(clock_ms);
 
         // Draw the text
         {
@@ -692,7 +726,7 @@ pub const Editor = struct {
                         .w = scroll_area_rect.w,
                         .h = height,
                     };
-                    ui.drawSolidRect(scrollbar_rect, style.colors.SCROLLBAR);
+                    ui.drawSolidRectWithOpacity(scrollbar_rect, style.colors.SCROLLBAR, self.scrollbar.opacity);
                 }
 
                 if (is_active) {
@@ -856,6 +890,8 @@ pub const Editor = struct {
             };
             ui.drawSolidRect(cursor_rect, style.colors.CURSOR_ACTIVE);
         }
+
+        return need_redraw;
     }
 
     fn updateHighlights(self: *Editor, buf: *const Buffer, selected_text: []const Char) void {

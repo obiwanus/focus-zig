@@ -212,19 +212,18 @@ pub fn main() !void {
         // Check if we have events and immediately continue
         try glfw.pollEvents();
 
+        // Monotonically increasing clock for animations
+        clock_ms = @intToFloat(f64, std.time.nanoTimestamp() - app_start_ms) / 1_000_000;
+
         // Otherwise sleep until something happens
         while (g_events.items.len == 0 and !window.shouldClose()) {
             try glfw.waitEventsTimeout(0.5);
-
-            // Monotonically increasing clock for animations
             clock_ms = @intToFloat(f64, std.time.nanoTimestamp() - app_start_ms) / 1_000_000;
 
             // Always update at least once in 0.5 seconds
             const redraw = true; // set to false for printf debugging
             if (focus.RELEASE_MODE and !redraw) @compileError("Auto-redraw should be enabled for release");
-            if (redraw and clock_ms - last_redraw_ms >= 500) {
-                g_events.append(.redraw_requested) catch u.oom();
-            }
+            if (redraw and clock_ms - last_redraw_ms >= 500) break;
         }
         last_redraw_ms = clock_ms;
 
@@ -297,7 +296,8 @@ pub fn main() !void {
         {
             ui.startFrame(screen);
 
-            editors.updateAndDrawAll(&ui, clock_ms, frame_allocator);
+            const need_redraw = editors.updateAndDrawAll(&ui, clock_ms, frame_allocator);
+            if (need_redraw) g_events.append(.redraw_requested) catch u.oom();
 
             if (open_file_dialog) |*dialog| {
                 ui.drawOpenFileDialog(dialog, frame_allocator);

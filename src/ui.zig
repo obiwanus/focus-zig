@@ -350,6 +350,12 @@ pub const Ui = struct {
         self.drawRect(r, color, color, color, color);
     }
 
+    pub fn drawSolidRectWithOpacity(self: *Ui, r: Rect, color: Color, opacity: f32) void {
+        var new_color = color;
+        new_color.a = opacity;
+        self.drawRect(r, new_color, new_color, new_color, new_color);
+    }
+
     pub fn drawSolidRectWithShadow(self: *Ui, r: Rect, color: Color, shadow_size: f32) void {
         const size = shadow_size * self.screen.scale;
         const dark = style.colors.SHADOW_DARK;

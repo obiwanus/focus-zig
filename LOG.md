@@ -1,5 +1,4 @@
 # TODO
-- Hide scrollbar after scrolling
 - Refactor action system:
     - Assign key combinations to actions
     - Handle actions in a switch, even if it means repeating some code
@@ -24,6 +23,7 @@
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
++ Hide scrollbar after scrolling
 + Draw cursor position(s) and selections
 + Draw highlight rects
 + Draw scrollbars
