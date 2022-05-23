@@ -16,6 +16,8 @@ const Font = focus.fonts.Font;
 const TextColor = focus.style.TextColor;
 const Ui = focus.ui.Ui;
 
+const SCROLL_PADDING = 4;
+
 allocator: Allocator,
 open_buffers: ArrayList(Buffer),
 open_editors: ArrayList(Editor),
@@ -556,6 +558,7 @@ pub const Editor = struct {
 
         var area = rect.copy();
         var footer_rect = area.splitBottom(char_size.y + 2 * 4 * scale, 0);
+        const scroll_area_rect = area.copy().splitRight(10 * scale, 0);
         area = area.shrink(margin.x, margin.y, margin.x, 0);
 
         // Retain info about size - we only know it now
@@ -672,6 +675,26 @@ pub const Editor = struct {
 
             // Draw shadow on top if scrolled down
             if (self.scroll.line > 0) ui.drawBottomShadow(Rect{ .x = rect.x, .y = rect.y - 1, .w = rect.w, .h = 1 }, 7 * scale);
+
+            // Draw scrollbar-area elements
+            {
+                const lines_per_screen = @intToFloat(f32, self.lines_per_screen);
+                const scrollable_lines = @intToFloat(f32, buf.numLines() + self.lines_per_screen - SCROLL_PADDING);
+
+                // Scrollbar
+                const height_percentage = lines_per_screen / scrollable_lines;
+                if (height_percentage <= 1.0) {
+                    const height = scroll_area_rect.h * height_percentage;
+                    const top = (scroll_area_rect.h - height) * @intToFloat(f32, self.scroll.line) / (scrollable_lines - lines_per_screen - 1);
+                    const scrollbar_rect = Rect{
+                        .x = scroll_area_rect.x,
+                        .y = scroll_area_rect.y + top,
+                        .w = scroll_area_rect.w,
+                        .h = height,
+                    };
+                    ui.drawSolidRect(scrollbar_rect, style.colors.SCROLLBAR);
+                }
+            }
         }
 
         // Draw footer
@@ -1391,17 +1414,16 @@ pub const Editor = struct {
         }
 
         // Allowed cursor positions within viewport
-        const padding = 4;
-        const line_min = top + padding;
-        const line_max = top + self.lines_per_screen -| (padding + 2);
-        const col_min = left + padding;
-        const col_max = left + self.cols_per_screen -| padding;
+        const line_min = top + SCROLL_PADDING;
+        const line_max = top + self.lines_per_screen -| (SCROLL_PADDING + 2);
+        const col_min = left + SCROLL_PADDING;
+        const col_max = left + self.cols_per_screen -| SCROLL_PADDING;
 
         // Detect if cursor is outside viewport
         if (line < line_min) {
-            top = line -| padding;
+            top = line -| SCROLL_PADDING;
         } else if (line > line_max) {
-            top = line + padding + 2 -| self.lines_per_screen;
+            top = line + SCROLL_PADDING + 2 -| self.lines_per_screen;
         }
         if (col < col_min) {
             left -|= (col_min - col);
