@@ -168,6 +168,13 @@ pub fn modsOnlyCmd(m: glfw.Mods) bool {
     return m.control and !(m.shift or m.alt or m.super);
 }
 
+pub fn modsOnlyCmdShift(m: glfw.Mods) bool {
+    if (is_macos) {
+        return m.super and m.shift and !(m.alt or m.control);
+    }
+    return m.control and m.shift and !(m.alt or m.super);
+}
+
 pub fn modsOnlyAlt(m: glfw.Mods) bool {
     return m.alt and !(m.shift or m.control or m.super);
 }

@@ -349,6 +349,14 @@ pub const Cursor = struct {
         return self.range().end;
     }
 
+    fn moveToLine(self: *Cursor, new_line: usize, buf: *const Buffer) void {
+        const target_line = buf.getLine(new_line);
+        const wanted_pos = self.col_wanted orelse self.col;
+        const new_line_pos = u.min(wanted_pos, target_line.len());
+        self.col_wanted = if (new_line_pos < wanted_pos) wanted_pos else null; // reset or remember wanted position
+        self.pos = target_line.start + new_line_pos;
+    }
+
     fn maybeSubsume(self: *Cursor, other_cursor: Cursor) bool {
         const this = self.range();
         const other = other_cursor.range();
@@ -531,6 +539,31 @@ pub const Editor = struct {
     const scrollbar_fade_timeout_ms = 500;
     const scrollbar_fade_duration_ms = 500;
 
+    const Action = union(enum) {
+        none,
+        escape,
+        undo,
+        redo,
+        save,
+        move_cursor: union (enum) {
+            up: usize,
+            down: usize,
+            left: usize,
+            right: usize,
+            page_up,
+            page_down,
+            home,
+            end,
+        },
+        move_viewport: enum {
+            up,
+            down,
+            page_up,
+            page_down,
+        },
+
+    };
+
     fn init(buffer: usize, allocator: Allocator) Editor {
         var cursors = ArrayList(Cursor).init(allocator);
         cursors.append(Cursor.init(allocator)) catch u.oom();
@@ -551,6 +584,41 @@ pub const Editor = struct {
         self.highlights.deinit();
     }
 
+    fn getAction(key: glfw.Key, mods: glfw.Mods) Action {
+        switch (key) {
+            .escape => return .escape,
+            .z => {
+                if (u.modsOnlyCmd(mods)) return .undo;
+                if (u.modsOnlyCmdShift(mods)) return .redo;
+            },
+            .s => {
+                if (u.modsOnlyCmd(mods)) return .save;
+            },
+            .up => {
+                if (u.modsOnlyAlt(mods)) {
+                    return .{ .move_viewport = .up };
+                } else {
+                    return .{ .move_cursor = .{ .up = if (u.modsCmd(mods)) 5 else 1 } };
+                }
+            },
+            .down => {
+                if (u.modsOnlyAlt(mods)) {
+                    return .{ .move_viewport = .down };
+                } else {
+                    return .{ .move_cursor = .{ .down = if (u.modsCmd(mods)) 5 else 1 } };
+                }
+            },
+            .page_up => if (u.modsOnlyAlt(mods)) return .{ .move_viewport = .page_up } else return .{ .move_cursor = .page_up },
+            .page_down => if (u.modsOnlyAlt(mods)) return .{ .move_viewport = .page_down } else return .{ .move_cursor = .page_down },
+            .left => return .{ .move_cursor = .{ .left = if (u.modsCmd(mods)) 5 else 1 } },
+            .right => return .{ .move_cursor = .{ .right = if (u.modsCmd(mods)) 5 else 1 } },
+            .home => return .{ .move_cursor = .home },
+            .end => return .{ .move_cursor = .end },
+            else => {},
+        }
+        return .none;
+    }
+
     fn mainCursor(self: *Editor) *Cursor {
         // We must always have at least one
         return &self.cursors.items[self.main_cursor_index];
@@ -559,6 +627,7 @@ pub const Editor = struct {
     fn removeExtraCursors(self: *Editor) void {
         var main_cursor = self.cursors.items[self.main_cursor_index];
         main_cursor.clipboard.clearRetainingCapacity();
+        main_cursor.selection_start = null;
         self.cursors.clearRetainingCapacity();
         self.cursors.append(main_cursor) catch unreachable;
         self.main_cursor_index = 0;
@@ -1023,21 +1092,9 @@ pub const Editor = struct {
 
         if (buf.new_edit_group_required) buf.newEditGroup(self.cursors.items);
 
-        if (key == .escape) self.removeExtraCursors();
+        var handled_keypress = false;
 
         // Maybe create more cursors
-        var new_cursor_created = false;
-        if (key == .z and u.modsCmd(mods)) {
-            if (!mods.shift) {
-                // Undo
-                buf.newEditGroup(self.cursors.items);
-                if (buf.undo()) |cursors| self.replaceCursors(cursors, buf);
-            } else {
-                // Redo
-                if (buf.redo()) |cursors| self.replaceCursors(cursors, buf);
-            }
-        }
-
         if (key == .d and u.modsOnlyCmd(mods)) more_cursors: {
             // Should only try to create a new cursor if all cursors have the same text selected
             const selected_text = self.selectedText(buf) orelse break :more_cursors;
@@ -1067,11 +1124,32 @@ pub const Editor = struct {
                 .clipboard = ArrayList(Char).init(self.allocator),
             }) catch u.oom();
             self.main_cursor_index = self.cursors.items.len - 1;
-            new_cursor_created = true;
+
+            handled_keypress = true;
         }
 
-        // Process multiple cursors
-        if (!new_cursor_created) {
+        const action = getAction(key, mods);
+
+        // Process general actions
+        switch (action) {
+            .escape => {
+                self.removeExtraCursors();
+                handled_keypress = true;
+            },
+            .undo => {
+                buf.newEditGroup(self.cursors.items);
+                if (buf.undo()) |cursors| self.replaceCursors(cursors, buf);
+                handled_keypress = true;
+            },
+            .redo => {
+                if (buf.redo()) |cursors| self.replaceCursors(cursors, buf);
+                handled_keypress = true;
+            },
+            else => {},
+        }
+
+        // Process individual cursors
+        if (!handled_keypress) {
             var adjust: isize = 0;
             var buf_len = @intCast(isize, buf.numChars());
             for (self.cursors.items) |*cursor| {
@@ -1083,8 +1161,7 @@ pub const Editor = struct {
                     cursor.adjust(adjust, buf);
                     buf_len = new_len;
                 }
-
-                self.processKeyForCursor(buf, key, mods, cursor, tmp_allocator);
+                self.handleActionForCursor(action, cursor, buf, tmp_allocator, key, mods);
             }
         }
 
@@ -1129,11 +1206,11 @@ pub const Editor = struct {
             buf.last_edit_ms = clock_ms;
         }
 
-        // Save to disk
-        if (u.modsCmd(mods) and key == .s and buf.file != null) {
+        // Handle save last so that the buffer is not marked as modified
+        if (action == .save and buf.file != null) {
             buf.stripTrailingSpaces();
 
-            // Adjust cursor in case it was on the trimmed whitespace
+            // Adjust cursors in case they were on the trimmed whitespace
             buf.recalculateLines();
             for (self.cursors.items) |*cursor| cursor.pos = buf.getPosFromLineCol(cursor.line, cursor.col);
 
@@ -1141,82 +1218,48 @@ pub const Editor = struct {
         }
     }
 
-    fn processKeyForCursor(self: *Editor, buf: *Buffer, key: glfw.Key, mods: glfw.Mods, cursor: *Cursor, tmp_allocator: Allocator) void {
+    fn handleActionForCursor(self: *Editor, action: Action, cursor: *Cursor, buf: *Buffer, tmp_allocator: Allocator, key: glfw.Key, mods: glfw.Mods) void {
         const TAB_SIZE = 4;
         const old_cursor = cursor.state();
         const single_cursor = self.cursors.items.len == 1; // some actions are only for single cursor
 
-        // Cursor movements
-        {
-            const line = buf.getLine(cursor.line);
-            const move_by: usize = if (u.modsCmd(mods)) 5 else 1;
+        switch (action) {
+            .move_cursor => |move| {
+                switch (move) {
+                    // Vertical
+                    .up => |move_by| cursor.moveToLine(cursor.line -| move_by, buf),
+                    .down => |move_by| cursor.moveToLine(cursor.line + move_by, buf),
+                    .page_up => cursor.moveToLine(cursor.line -| self.lines_per_screen, buf),
+                    .page_down => cursor.moveToLine(cursor.line + self.lines_per_screen, buf),
 
-            switch (key) {
-                .left, .right => {
-                    if (mods.shift or !cursor.hasSelection()) {
-                        if (key == .left) cursor.pos -|= move_by else cursor.pos += move_by;
-                    } else if (cursor.getSelectionRange()) |selection| {
-                        cursor.pos = if (key == .left) selection.start else selection.end;
-                        cursor.selection_start = null;
-                    }
-                },
-                .up, .down, .page_up, .page_down => {
-                    if (!mods.alt) {
-                        // Move cursor to new line
-                        const new_line = switch (key) {
-                            .up => cursor.line -| move_by,
-                            .down => cursor.line + move_by,
-                            .page_up => cursor.line -| self.lines_per_screen,
-                            .page_down => cursor.line + self.lines_per_screen,
-                            else => unreachable,
-                        };
-                        const target_line = buf.getLine(new_line);
-                        const wanted_pos = cursor.col_wanted orelse cursor.col;
-                        const new_line_pos = u.min(wanted_pos, target_line.len());
-                        cursor.col_wanted = if (new_line_pos < wanted_pos) wanted_pos else null; // reset or remember wanted position
-                        cursor.pos = target_line.start + new_line_pos;
-                    } else if (u.modsOnlyAlt(mods)) {
-                        const new_line = switch (key) {
-                            .up => cursor.line -| 5,
-                            .down => cursor.line + 5,
-                            .page_up => cursor.line -| self.lines_per_screen,
-                            .page_down => cursor.line + self.lines_per_screen,
-                            else => unreachable,
-                        };
-                        // Move viewport
-                        if (new_line < cursor.line) {
-                            self.scroll.line -|= (cursor.line - new_line);
-                        } else {
-                            self.scroll.line += (new_line - cursor.line);
-                        }
-                    }
-                },
-                .home => {
-                    if (cursor.pos != line.text_start) {
-                        cursor.pos = line.text_start;
-                    } else {
-                        cursor.pos = line.start;
-                    }
-                },
-                .end => {
-                    cursor.pos = line.end;
-                },
-                .escape => {
-                    // Remove selection
-                    cursor.selection_start = null;
-                },
-                else => {},
-            }
-
-            // Start new selection or remove selection
-            if (old_cursor.pos != cursor.pos) {
+                    // Horizontal
+                    .left => |move_by| cursor.pos -|= move_by,
+                    .right => |move_by| cursor.pos += move_by,
+                    .home => {
+                        const line = buf.getLine(cursor.line);
+                        cursor.pos = if (cursor.pos != line.text_start) line.text_start else line.start;
+                    },
+                    .end => {
+                        const line = buf.getLine(cursor.line);
+                        cursor.pos = line.end;
+                    },
+                }
+                // Start or remove selection
                 if (mods.shift) {
                     if (!cursor.hasSelection()) cursor.selection_start = old_cursor.pos; // new selection
                 } else {
                     cursor.selection_start = null;
                 }
+                // Clear highlights so they can be updated if necessary
                 self.highlights.clearRetainingCapacity();
-            }
+            },
+            .move_viewport => |move| switch (move) {
+                .up => self.scroll.line -|= 5,
+                .down => self.scroll.line += 5,
+                .page_up => self.scroll.line -|= self.lines_per_screen,
+                .page_down => self.scroll.line += self.lines_per_screen,
+            },
+            else => {},
         }
 
         // Insertions/deletions of sorts
