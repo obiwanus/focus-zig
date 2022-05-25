@@ -561,7 +561,12 @@ pub const Editor = struct {
             page_up,
             page_down,
         },
-
+        delete_range: Buffer.Range,
+        delete,
+        backspace,
+        insert_tab,
+        indent_lines: Buffer.Range,
+        unindent_lines: Buffer.Range,
     };
 
     fn init(buffer: usize, allocator: Allocator) Editor {
@@ -584,7 +589,8 @@ pub const Editor = struct {
         self.highlights.deinit();
     }
 
-    fn getAction(key: glfw.Key, mods: glfw.Mods) Action {
+    /// Actions that do not depend on cursor
+    fn getGeneralAction(key: glfw.Key, mods: glfw.Mods) Action {
         switch (key) {
             .escape => return .escape,
             .z => {
@@ -594,6 +600,13 @@ pub const Editor = struct {
             .s => {
                 if (u.modsOnlyCmd(mods)) return .save;
             },
+            else => {},
+        }
+        return .none;
+    }
+
+    fn getCursorAction(key: glfw.Key, mods: glfw.Mods, cursor: *const Cursor) Action {
+        switch (key) {
             .up => {
                 if (u.modsOnlyAlt(mods)) {
                     return .{ .move_viewport = .up };
@@ -614,6 +627,17 @@ pub const Editor = struct {
             .right => return .{ .move_cursor = .{ .right = if (u.modsCmd(mods)) 5 else 1 } },
             .home => return .{ .move_cursor = .home },
             .end => return .{ .move_cursor = .end },
+            .delete, .backspace => {
+                if (cursor.getSelectionRange()) |range| return .{ .delete_range = range };
+                if (key == .delete) return .delete else return .backspace;
+            },
+            .tab => {
+                if (cursor.getSelectionRange()) |range| {
+                    if (mods.shift) return .{ .unindent_lines = range } else return .{ .indent_lines = range };
+                } else {
+                    if (mods.shift) return .{ .unindent_lines = cursor.range() } else return .insert_tab;
+                }
+            },
             else => {},
         }
         return .none;
@@ -1128,7 +1152,7 @@ pub const Editor = struct {
             handled_keypress = true;
         }
 
-        const action = getAction(key, mods);
+        const action = getGeneralAction(key, mods);
 
         // Process general actions
         switch (action) {
@@ -1161,7 +1185,7 @@ pub const Editor = struct {
                     cursor.adjust(adjust, buf);
                     buf_len = new_len;
                 }
-                self.handleActionForCursor(action, cursor, buf, tmp_allocator, key, mods);
+                self.handleKeypressForCursor(cursor, key, mods, buf, tmp_allocator);
             }
         }
 
@@ -1218,10 +1242,12 @@ pub const Editor = struct {
         }
     }
 
-    fn handleActionForCursor(self: *Editor, action: Action, cursor: *Cursor, buf: *Buffer, tmp_allocator: Allocator, key: glfw.Key, mods: glfw.Mods) void {
+    fn handleKeypressForCursor(self: *Editor, cursor: *Cursor, key: glfw.Key, mods: glfw.Mods, buf: *Buffer, tmp_allocator: Allocator) void {
         const TAB_SIZE = 4;
         const old_cursor = cursor.state();
         const single_cursor = self.cursors.items.len == 1; // some actions are only for single cursor
+
+        const action = getCursorAction(key, mods, cursor);
 
         switch (action) {
             .move_cursor => |move| {
@@ -1259,23 +1285,12 @@ pub const Editor = struct {
                 .page_up => self.scroll.line -|= self.lines_per_screen,
                 .page_down => self.scroll.line += self.lines_per_screen,
             },
-            else => {},
-        }
-
-        // Insertions/deletions of sorts
-        if (key == .delete) {
-            if (cursor.getSelectionRange()) |selection| {
-                cursor.pos = selection.start;
-                buf.deleteRange(selection.start, selection.end);
-            } else {
-                buf.deleteRange(cursor.pos, cursor.pos + 1);
-            }
-        }
-        if (key == .backspace) {
-            if (cursor.getSelectionRange()) |selection| {
-                cursor.pos = selection.start;
-                buf.deleteRange(selection.start, selection.end);
-            } else {
+            .delete_range => |range| {
+                cursor.pos = range.start;
+                buf.deleteRange(range.start, range.end);
+            },
+            .delete => buf.deleteRange(cursor.pos, cursor.pos + 1),
+            .backspace => {
                 // Check if we can delete spaces to the previous tabstop
                 var to_prev_tabstop = cursor.col % TAB_SIZE;
                 if (to_prev_tabstop == 0 and cursor.col > 0) to_prev_tabstop = TAB_SIZE;
@@ -1290,79 +1305,80 @@ pub const Editor = struct {
                 const spaces_to_remove = if (all_spaces) to_prev_tabstop else 1;
                 cursor.pos -|= spaces_to_remove;
                 buf.deleteRange(cursor.pos, old_cursor.pos);
-            }
-        }
-        if (key == .tab) {
-            const SPACES = [1]Char{' '} ** TAB_SIZE;
-
-            if (cursor.getSelectionRange()) |selection| {
-                const range = buf.expandRangeToWholeLines(selection.start, selection.end, false);
-                const lines = buf.lines.items[buf.getLineColFromPos(selection.start).line .. buf.getLineColFromPos(selection.end).line + 1];
+            },
+            .indent_lines => |s| {
+                const SPACES = [1]Char{' '} ** TAB_SIZE;
+                const range = buf.expandRangeToWholeLines(s.start, s.end, false);
+                const lines = buf.lines.items[buf.getLineColFromPos(s.start).line .. buf.getLineColFromPos(s.end).line + 1];
 
                 var new_chars = ArrayList(Char).init(tmp_allocator);
                 new_chars.ensureTotalCapacity(range.len() + lines.len * TAB_SIZE) catch u.oom();
 
                 self.keep_selection = true;
 
-                if (!mods.shift) {
-                    // Indent selected lines
-                    for (lines) |line| {
-                        new_chars.appendSliceAssumeCapacity(&SPACES);
-                        new_chars.appendSliceAssumeCapacity(buf.chars.items[line.start..line.end]);
-                        if (line.end != range.end) new_chars.appendAssumeCapacity('\n');
-                    }
+                for (lines) |line| {
+                    new_chars.appendSliceAssumeCapacity(&SPACES);
+                    new_chars.appendSliceAssumeCapacity(buf.chars.items[line.start..line.end]);
+                    if (line.end != range.end) new_chars.appendAssumeCapacity('\n');
+                }
 
-                    // Adjust selection
-                    const spaces_inserted = lines.len * TAB_SIZE;
-                    if (cursor.pos == selection.start) {
-                        cursor.pos += TAB_SIZE;
-                        cursor.selection_start.? += spaces_inserted;
-                    } else {
-                        cursor.selection_start.? += TAB_SIZE;
-                        cursor.pos += spaces_inserted;
-                    }
-
-                    buf.replaceRange(range.start, range.end, new_chars.items);
+                // Adjust selection
+                const spaces_inserted = lines.len * TAB_SIZE;
+                if (cursor.pos == s.start) {
+                    cursor.pos += TAB_SIZE;
+                    cursor.selection_start.? += spaces_inserted;
                 } else {
-                    // Un-indent selected lines
-                    var spaces_removed: usize = 0;
-                    for (lines) |line| {
-                        const spaces_to_remove = u.min(TAB_SIZE, line.lenWhitespace());
-                        spaces_removed += spaces_to_remove;
-                        new_chars.appendSliceAssumeCapacity(buf.chars.items[line.start + spaces_to_remove .. line.end]);
-                        if (line.end != range.end) new_chars.appendAssumeCapacity('\n');
-                    }
+                    cursor.selection_start.? += TAB_SIZE;
+                    cursor.pos += spaces_inserted;
+                }
 
-                    // Adjust selection
-                    const first_line = lines[0];
-                    const last_line = lines[lines.len - 1];
-                    const sel_start_adjust = u.min3(TAB_SIZE, first_line.lenWhitespace(), selection.start - first_line.start);
-                    const sel_end_adjust = spaces_removed -| u.min(last_line.text_start -| selection.end, TAB_SIZE);
-                    if (cursor.pos == selection.start) {
+                buf.replaceRange(range.start, range.end, new_chars.items);
+            },
+            .insert_tab => {
+                const SPACES = [1]Char{' '} ** TAB_SIZE;
+                const to_next_tabstop = TAB_SIZE - cursor.col % TAB_SIZE;
+                cursor.pos += to_next_tabstop;
+                buf.insertSlice(old_cursor.pos, SPACES[0..to_next_tabstop]);
+            },
+            .unindent_lines => |s| {
+                const range = buf.expandRangeToWholeLines(s.start, s.end, false);
+                const lines = buf.lines.items[buf.getLineColFromPos(s.start).line .. buf.getLineColFromPos(s.end).line + 1];
+
+                var new_chars = ArrayList(Char).init(tmp_allocator);
+                new_chars.ensureTotalCapacity(range.len() + lines.len * TAB_SIZE) catch u.oom();
+
+                self.keep_selection = true;
+
+                var spaces_removed: usize = 0;
+                for (lines) |line| {
+                    const spaces_to_remove = u.min(TAB_SIZE, line.lenWhitespace());
+                    spaces_removed += spaces_to_remove;
+                    new_chars.appendSliceAssumeCapacity(buf.chars.items[line.start + spaces_to_remove .. line.end]);
+                    if (line.end != range.end) new_chars.appendAssumeCapacity('\n');
+                }
+
+                // Adjust selection
+                const first_line = lines[0];
+                const last_line = lines[lines.len - 1];
+                const sel_start_adjust = u.min3(TAB_SIZE, first_line.lenWhitespace(), s.start - first_line.start);
+                if (cursor.hasSelection()) {
+                    const sel_end_adjust = spaces_removed -| u.min(last_line.text_start -| s.end, TAB_SIZE);
+                    if (cursor.pos == s.start) {
                         cursor.pos -= sel_start_adjust;
                         cursor.selection_start.? -|= sel_end_adjust;
                     } else {
                         cursor.selection_start.? -|= sel_start_adjust;
                         cursor.pos -|= sel_end_adjust;
                     }
-
-                    buf.replaceRange(range.start, range.end, new_chars.items);
-                }
-            } else {
-                if (!mods.shift) {
-                    // Insert spaces
-                    const to_next_tabstop = TAB_SIZE - cursor.col % TAB_SIZE;
-                    cursor.pos += to_next_tabstop;
-                    buf.insertSlice(old_cursor.pos, SPACES[0..to_next_tabstop]);
                 } else {
-                    // Un-indent current line
-                    const line = buf.getLine(cursor.line);
-                    const spaces_to_remove = u.min(TAB_SIZE, line.lenWhitespace());
-                    cursor.pos -|= u.min(cursor.pos - line.start, spaces_to_remove);
-                    buf.deleteRange(line.start, line.start + spaces_to_remove);
+                    cursor.pos -|= sel_start_adjust;
                 }
-            }
+
+                buf.replaceRange(range.start, range.end, new_chars.items);
+            },
+            else => {},
         }
+
         if (key == .enter) {
             const line = buf.getLine(cursor.line);
             var indent = line.lenWhitespace();
