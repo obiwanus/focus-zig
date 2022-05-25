@@ -375,6 +375,30 @@ pub const Cursor = struct {
         return true;
     }
 
+    fn maybeSelectWord(self: *Cursor, buf: *const Buffer) void {
+        // Search within the line boundaries
+        const line = buf.getLine(buf.getLineColFromPos(self.pos).line);
+        const chars = buf.chars.items;
+        const pos = if (self.pos < line.end and u.isWordChar(chars[self.pos]))
+            self.pos
+        else if (self.pos -| 1 >= line.start and self.pos -| 1 < line.end and u.isWordChar(chars[self.pos -| 1]))
+            self.pos -| 1
+        else
+            return;
+        var word_start = pos;
+        word_start = while (word_start >= line.start) : (word_start -= 1) {
+            const is_part_of_word = u.isWordChar(chars[word_start]);
+            if (!is_part_of_word) break word_start + 1;
+            if (word_start == 0 and is_part_of_word) break word_start;
+        } else word_start + 1;
+
+        var word_end = pos + 1;
+        while (word_end < line.end and u.isWordChar(chars[word_end])) : (word_end += 1) {}
+
+        self.selection_start = word_start;
+        self.pos = word_end;
+    }
+
     pub fn state(self: Cursor) Buffer.CursorState {
         // Used to save in undos/redos
         return .{ .pos = self.pos, .selection_start = self.selection_start };
@@ -574,6 +598,17 @@ pub const Editor = struct {
         insert_line_below,
         break_line,
         replace_range_with_newline: Buffer.Range,
+        move_lines_up: Buffer.Range,
+        move_lines_down: Buffer.Range,
+
+        duplicate_lines: Buffer.Range,
+        select_all,
+        select_word,
+        select_lines: Buffer.Range,
+        copy: Buffer.Range,
+        cut: Buffer.Range,
+        paste: Buffer.Range,
+
     };
 
     fn init(buffer: usize, allocator: Allocator) Editor {
@@ -617,6 +652,8 @@ pub const Editor = struct {
             .up => {
                 if (u.modsOnlyAlt(mods)) {
                     return .{ .move_viewport = .up };
+                } else if (u.modsOnlyAltShift(mods)) {
+                    return .{ .move_lines_up = cursor.range() };
                 } else {
                     return .{ .move_cursor = .{ .up = if (u.modsCmd(mods)) 5 else 1 } };
                 }
@@ -624,6 +661,8 @@ pub const Editor = struct {
             .down => {
                 if (u.modsOnlyAlt(mods)) {
                     return .{ .move_viewport = .down };
+                } else if (u.modsOnlyAltShift(mods)) {
+                    return .{ .move_lines_down = cursor.range() };
                 } else {
                     return .{ .move_cursor = .{ .down = if (u.modsCmd(mods)) 5 else 1 } };
                 }
@@ -651,6 +690,15 @@ pub const Editor = struct {
                 if (cursor.getSelectionRange()) |range| return .{ .replace_range_with_newline = range };
                 return .break_line;
             },
+            .d => {
+                if (u.modsOnlyCmd(mods)) if (!cursor.hasSelection()) return .select_word;
+                if (u.modsOnlyCmdShift(mods)) return .{ .duplicate_lines = cursor.range() };
+            },
+            .a => if (u.modsOnlyCmd(mods)) return .select_all,
+            .c => if (u.modsOnlyCmd(mods)) if (cursor.getSelectionRange()) |range| return .{ .copy = range },
+            .x => if (u.modsOnlyCmd(mods)) if (cursor.getSelectionRange()) |range| return .{ .cut = range },
+            .v => if (u.modsOnlyCmd(mods)) return .{ .paste = cursor.range() },
+            .l => if (u.modsOnlyCmd(mods)) return .{ .select_lines = cursor.range() },
             else => {},
         }
         return .none;
@@ -1429,128 +1477,89 @@ pub const Editor = struct {
                 buf.replaceRange(range.start, range.end, &[_]Char{'\n'});
                 cursor.pos = range.start + 1;
             },
+            .duplicate_lines => |s| {
+                const range = buf.expandRangeToWholeLines(s.start, s.end, false);
+
+                // Move selection forward
+                cursor.pos += range.len() + 1;
+                if (cursor.hasSelection()) cursor.selection_start.? += range.len() + 1;
+                self.keep_selection = true;
+
+                // Make sure we won't reallocate when copying
+                buf.chars.ensureTotalCapacity(buf.numChars() + range.len()) catch u.oom();
+                buf.insertSlice(range.start, buf.chars.items[range.start..range.end]);
+                buf.insertChar(range.end, '\n');
+            },
+            .move_lines_up, .move_lines_down => |s| if (single_cursor) {
+                const range = buf.expandRangeToWholeLines(s.start, s.end, false);
+                const line_first = buf.getLineColFromPos(range.start).line;
+                const line_last = buf.getLineColFromPos(range.end).line;
+
+                if (action == .move_lines_up and line_first > 0) {
+                    const target = buf.getLine(line_first - 1).start;
+                    cursor.pos = target + (cursor.pos - range.start);
+                    if (cursor.selection_start) |sel_start| {
+                        cursor.selection_start = target + (sel_start - range.start);
+                        self.keep_selection = true;
+                    }
+                    // TODO: should we have it here? buf.newEditGroup();
+                    buf.moveRange(range, target);
+                    buf.insertChar(target + range.len(), '\n');
+                    buf.deleteChar(range.end);
+                }
+
+                if (action == .move_lines_down and line_last < buf.numLines() -| 1) {
+                    const target_line = buf.getLine(line_last + 1);
+                    cursor.pos += target_line.len() + 1;
+                    if (cursor.selection_start) |sel_start| {
+                        cursor.selection_start = sel_start + target_line.len() + 1;
+                        self.keep_selection = true;
+                    }
+                    // TODO: should we have it here? buf.newEditGroup();
+                    buf.insertChar(target_line.end, '\n');
+                    buf.moveRange(range, target_line.end + 1);
+                    buf.deleteChar(range.start);
+                }
+            },
+            .select_all => {
+                cursor.selection_start = 0;
+                cursor.pos = buf.numChars();
+            },
+            .select_lines => |s| {
+                const range = buf.expandRangeToWholeLines(s.start, s.end, true);
+                cursor.selection_start = range.start;
+                cursor.pos = range.end;
+            },
+            .select_word => cursor.maybeSelectWord(buf),
+            .copy, .cut => |s| {
+                if (single_cursor) {
+                    // Copy to global clipboard
+                    copyToClipboard(buf.chars.items[s.start..s.end], tmp_allocator);
+                } else {
+                    // Copy to individual clipboard
+                    cursor.copyToClipboard(buf.chars.items[s.start..s.end]);
+                }
+                if (action == .cut) {
+                    cursor.pos = s.start;
+                    buf.deleteRange(s.start, s.end);
+                }
+            },
+            .paste => |s| {
+                var paste_data: []const Char = undefined;
+                if (single_cursor) {
+                    paste_data = getClipboardString(tmp_allocator);
+                } else {
+                    const has_individual_data = for (self.cursors.items) |c| {
+                        if (c.clipboard.items.len > 0) break true;
+                    } else false;
+                    paste_data = if (has_individual_data) cursor.clipboard.items else getClipboardString(tmp_allocator);
+                }
+                if (paste_data.len > 0) {
+                    buf.replaceRange(s.start, s.end, paste_data);
+                    cursor.pos = s.start + paste_data.len;
+                }
+            },
             else => {},
-        }
-
-        // Duplicate lines
-        if (u.modsCmd(mods) and mods.shift and key == .d) {
-            const range = if (cursor.getSelectionRange()) |selection|
-                buf.expandRangeToWholeLines(selection.start, selection.end, false)
-            else
-                buf.expandRangeToWholeLines(cursor.pos, cursor.pos, false);
-
-            // Move selection forward
-            cursor.pos += range.len() + 1;
-            if (cursor.selection_start != null) cursor.selection_start.? += range.len() + 1;
-            self.keep_selection = true;
-
-            // Make sure we won't reallocate when copying
-            buf.chars.ensureTotalCapacity(buf.numChars() + range.len()) catch u.oom();
-            buf.insertSlice(range.start, buf.chars.items[range.start..range.end]);
-            buf.insertChar(range.end, '\n');
-        }
-
-        // Swap line or selection
-        if (single_cursor and u.modsOnlyAltShift(mods) and (key == .up or key == .down)) {
-            var range = if (cursor.getSelectionRange()) |selection|
-                buf.expandRangeToWholeLines(selection.start, selection.end, false)
-            else
-                buf.expandRangeToWholeLines(cursor.pos, cursor.pos, false);
-
-            const line_first = buf.getLineColFromPos(range.start).line;
-            const line_last = buf.getLineColFromPos(range.end).line;
-
-            if (key == .up and line_first > 0) {
-                // Move line(s) up
-                const target = buf.getLine(line_first - 1).start;
-                cursor.pos = target + (cursor.pos - range.start);
-                if (cursor.selection_start) |sel_start| {
-                    cursor.selection_start = target + (sel_start - range.start);
-                    self.keep_selection = true;
-                }
-                // TODO: should we have it here? buf.newEditGroup();
-                buf.moveRange(range, target);
-                buf.insertChar(target + range.len(), '\n');
-                buf.deleteChar(range.end);
-            } else if (key == .down and line_last < buf.numLines() -| 1) {
-                // Move line(s) down
-                const target_line = buf.getLine(line_last + 1);
-                cursor.pos += target_line.len() + 1;
-                if (cursor.selection_start) |sel_start| {
-                    cursor.selection_start = sel_start + target_line.len() + 1;
-                    self.keep_selection = true;
-                }
-                // TODO: should we have it here? buf.newEditGroup();
-                buf.insertChar(target_line.end, '\n');
-                buf.moveRange(range, target_line.end + 1);
-                buf.deleteChar(range.start);
-            }
-        }
-
-        // Cmd + key
-        if (u.modsOnlyCmd(mods)) {
-            switch (key) {
-                .a => {
-                    // Select all
-                    cursor.selection_start = 0;
-                    cursor.pos = buf.numChars();
-                },
-                .c, .x => {
-                    // Copy / cut
-                    if (cursor.getSelectionRange()) |s| {
-                        if (single_cursor) {
-                            // Copy to global clipboard
-                            copyToClipboard(buf.chars.items[s.start..s.end], tmp_allocator);
-                        } else {
-                            // Copy to individual clipboard
-                            cursor.copyToClipboard(buf.chars.items[s.start..s.end]);
-                        }
-                        if (key == .x) {
-                            cursor.pos = s.start;
-                            buf.deleteRange(s.start, s.end);
-                        }
-                    }
-                },
-                .v => {
-                    // Paste
-                    var paste_data: []const Char = undefined;
-                    if (single_cursor) {
-                        paste_data = getClipboardString(tmp_allocator);
-                    } else {
-                        const has_individual_data = for (self.cursors.items) |c| {
-                            if (c.clipboard.items.len > 0) break true;
-                        } else false;
-                        paste_data = if (has_individual_data) cursor.clipboard.items else getClipboardString(tmp_allocator);
-                    }
-                    if (paste_data.len > 0) {
-                        if (cursor.getSelectionRange()) |s| {
-                            cursor.pos = s.start + paste_data.len;
-                            buf.replaceRange(s.start, s.end, paste_data);
-                        } else {
-                            cursor.pos += paste_data.len;
-                            buf.insertSlice(old_cursor.pos, paste_data);
-                        }
-                    }
-                },
-                .l => {
-                    // Select line
-                    const range = if (cursor.getSelectionRange()) |selection|
-                        buf.expandRangeToWholeLines(selection.start, selection.end, true)
-                    else
-                        buf.expandRangeToWholeLines(cursor.pos, cursor.pos, true);
-                    cursor.selection_start = range.start;
-                    cursor.pos = range.end;
-                },
-                .d => {
-                    if (!cursor.hasSelection()) {
-                        if (buf.selectWord(cursor.pos)) |range| {
-                            cursor.selection_start = range.start;
-                            cursor.pos = range.end;
-                        }
-                    }
-                },
-                else => {},
-            }
         }
 
         // Keep or reset col_wanted

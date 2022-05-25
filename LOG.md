@@ -1,7 +1,4 @@
 # TODO
-- Refactor action system:
-    - Assign key combinations to actions
-    - Handle actions in a switch, even if it means repeating some code
 - On some actions, create new edit groups:
     - Any replacements with a selection (we want to have the selection back on undo)
     - Moving lines up/down
@@ -24,6 +21,7 @@
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
++ Refactor the action system
 + Hide scrollbar after scrolling
 + Draw cursor position(s) and selections
 + Draw highlight rects
