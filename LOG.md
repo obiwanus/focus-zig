@@ -1,7 +1,5 @@
 # TODO
-- On some actions, create new edit groups:
-    - Any replacements with a selection (we want to have the selection back on undo)
-    - Moving lines up/down
+- Audit the undo system and fix any weird behaviour
 - Search box: show the number of results / current result
 - Jump to line on ctrl+G
 - Save current session (per working directory)
@@ -21,6 +19,7 @@
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
++ On some actions, create new edit groups
 + Refactor the action system
 + Hide scrollbar after scrolling
 + Draw cursor position(s) and selections

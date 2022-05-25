@@ -1090,6 +1090,12 @@ pub const Editor = struct {
             return;
         }
 
+        if (!buf.new_edit_group_required) {
+            // We always want to remember cursor state when a selection is replaced with anything
+            for (self.cursors.items) |cursor| {
+                if (cursor.hasSelection()) buf.new_edit_group_required = true;
+            }
+        }
         if (buf.new_edit_group_required) buf.newEditGroup(self.cursors.items);
 
         // Or type into the editor
@@ -1213,10 +1219,8 @@ pub const Editor = struct {
             handled_keypress = true;
         }
 
-        const action = getGeneralAction(key, mods);
-
-        // Process general actions
-        switch (action) {
+        const general_action = getGeneralAction(key, mods);
+        switch (general_action) {
             .escape => {
                 self.removeExtraCursors();
                 handled_keypress = true;
@@ -1235,6 +1239,16 @@ pub const Editor = struct {
 
         // Process individual cursors
         if (!handled_keypress) {
+            // Check if we want to extract a new edit group
+            const new_group = for (self.cursors.items) |*cursor| {
+                switch (getCursorAction(key, mods, cursor)) {
+                    .delete_range, .indent_lines, .unindent_lines, .replace_range_with_newline,
+                    .break_line, .duplicate_lines, .paste, .move_lines_up, .move_lines_down, .cut => break true,
+                    else => {},
+                }
+            } else false;
+            if (new_group) buf.newEditGroup(self.cursors.items); // do it before action
+
             var adjust: isize = 0;
             var buf_len = @intCast(isize, buf.numChars());
             for (self.cursors.items) |*cursor| {
@@ -1246,8 +1260,11 @@ pub const Editor = struct {
                     cursor.adjust(adjust, buf);
                     buf_len = new_len;
                 }
-                self.handleKeypressForCursor(cursor, key, mods, buf, tmp_allocator);
+                const action = getCursorAction(key, mods, cursor);
+                self.handleActionForCursor(cursor, action, mods, buf, tmp_allocator);
             }
+
+            if (new_group) buf.newEditGroup(self.cursors.items); // do it after action
         }
 
         // Organise cursors
@@ -1292,7 +1309,7 @@ pub const Editor = struct {
         }
 
         // Handle save last so that the buffer is not marked as modified
-        if (action == .save and buf.file != null) {
+        if (general_action == .save and buf.file != null) {
             buf.stripTrailingSpaces();
 
             // Adjust cursors in case they were on the trimmed whitespace
@@ -1303,12 +1320,10 @@ pub const Editor = struct {
         }
     }
 
-    fn handleKeypressForCursor(self: *Editor, cursor: *Cursor, key: glfw.Key, mods: glfw.Mods, buf: *Buffer, tmp_allocator: Allocator) void {
+    fn handleActionForCursor(self: *Editor, cursor: *Cursor, action: Action, mods: glfw.Mods, buf: *Buffer, tmp_allocator: Allocator) void {
         const TAB_SIZE = 4;
         const old_cursor = cursor.state();
         const single_cursor = self.cursors.items.len == 1; // some actions are only for single cursor
-
-        const action = getCursorAction(key, mods, cursor);
 
         switch (action) {
             .move_cursor => |move| {
@@ -1465,7 +1480,6 @@ pub const Editor = struct {
                     indent = cursor.col;
                     spaces[indent] = '\n';
                     buf.insertSlice(line.start, spaces[0 .. indent + 1]);
-                    cursor.pos += 1 + indent;
                 } else {
                     // Break the line normally
                     spaces[0] = '\n';
@@ -1502,7 +1516,6 @@ pub const Editor = struct {
                         cursor.selection_start = target + (sel_start - range.start);
                         self.keep_selection = true;
                     }
-                    // TODO: should we have it here? buf.newEditGroup();
                     buf.moveRange(range, target);
                     buf.insertChar(target + range.len(), '\n');
                     buf.deleteChar(range.end);
@@ -1515,7 +1528,6 @@ pub const Editor = struct {
                         cursor.selection_start = sel_start + target_line.len() + 1;
                         self.keep_selection = true;
                     }
-                    // TODO: should we have it here? buf.newEditGroup();
                     buf.insertChar(target_line.end, '\n');
                     buf.moveRange(range, target_line.end + 1);
                     buf.deleteChar(range.start);
@@ -1563,12 +1575,15 @@ pub const Editor = struct {
         }
 
         // Keep or reset col_wanted
-        switch (key) {
-            .up, .down, .page_up, .page_down => {}, // keep on vertical movements
-            else => if (cursor.pos != old_cursor.pos) {
-                cursor.col_wanted = null;
+        var reset_col_wanted = true;
+        switch (action) {
+            .move_cursor => |move| switch (move) {
+                .up, .down, .page_up, .page_down => reset_col_wanted = false, // keep on vertical movements
+                else => {},
             },
+            else => {},
         }
+        if (reset_col_wanted and cursor.pos != old_cursor.pos) cursor.col_wanted = null;
     }
 
     fn replaceCursors(self: *Editor, cursors: []const Buffer.CursorState, buf: *const Buffer) void {
