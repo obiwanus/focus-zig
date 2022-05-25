@@ -561,12 +561,19 @@ pub const Editor = struct {
             page_up,
             page_down,
         },
+
         delete_range: Buffer.Range,
         delete,
         backspace,
+
         insert_tab,
         indent_lines: Buffer.Range,
         unindent_lines: Buffer.Range,
+
+        insert_line_above,
+        insert_line_below,
+        break_line,
+        replace_range_with_newline: Buffer.Range,
     };
 
     fn init(buffer: usize, allocator: Allocator) Editor {
@@ -637,6 +644,12 @@ pub const Editor = struct {
                 } else {
                     if (mods.shift) return .{ .unindent_lines = cursor.range() } else return .insert_tab;
                 }
+            },
+            .enter => {
+                if (u.modsOnlyCmdShift(mods)) return .insert_line_above;
+                if (u.modsOnlyCmd(mods)) return .insert_line_below;
+                if (cursor.getSelectionRange()) |range| return .{ .replace_range_with_newline = range };
+                return .break_line;
             },
             else => {},
         }
@@ -1376,43 +1389,47 @@ pub const Editor = struct {
 
                 buf.replaceRange(range.start, range.end, new_chars.items);
             },
-            else => {},
-        }
+            .insert_line_above, .insert_line_below => {
+                const line = buf.getLine(cursor.line);
+                var indent = line.lenWhitespace();
+                var spaces = tmp_allocator.alloc(Char, indent + 1) catch u.oom();
+                std.mem.set(Char, spaces[0..indent], ' ');
+                spaces[indent] = '\n';
 
-        if (key == .enter) {
-            const line = buf.getLine(cursor.line);
-            var indent = line.lenWhitespace();
-            var char_buf: [1024]Char = undefined;
-            std.mem.set(Char, char_buf[0 .. indent + 1], ' '); // if buffer is too small, we safely crash here
-
-            if (u.modsCmd(mods) and mods.shift) {
-                // Insert line above
-                char_buf[indent] = '\n';
-                cursor.pos = line.start + indent;
-                buf.insertSlice(line.start, char_buf[0 .. indent + 1]);
-            } else if (u.modsCmd(mods)) {
-                // Insert line below
-                if (buf.getLineOrNull(cursor.line + 1)) |next_line| {
-                    char_buf[indent] = '\n';
-                    cursor.pos = next_line.start + indent;
-                    buf.insertSlice(next_line.start, char_buf[0 .. indent + 1]);
+                if (action == .insert_line_above) {
+                    cursor.pos = line.start + indent;
+                    buf.insertSlice(line.start, spaces);
+                } else if (action == .insert_line_below) {
+                    if (buf.getLineOrNull(cursor.line + 1)) |next_line| {
+                        cursor.pos = next_line.start + indent;
+                        buf.insertSlice(next_line.start, spaces);
+                    }
                 }
-            } else if (cursor.getSelectionRange()) |selection| {
-                // Replace selection with a newline
-                cursor.pos = selection.start + 1;
-                buf.replaceRange(selection.start, selection.end, &[_]Char{'\n'});
-            } else if (cursor.col <= indent) {
-                // Don't add too much indentation
-                indent = cursor.col;
-                char_buf[indent] = '\n';
+            },
+            .break_line => {
+                const line = buf.getLine(cursor.line);
+                var indent = line.lenWhitespace();
+                var spaces = tmp_allocator.alloc(Char, indent + 1) catch u.oom();
+                std.mem.set(Char, spaces[0 .. indent + 1], ' ');
+
+                if (cursor.col <= indent) {
+                    // Don't add too much indentation
+                    indent = cursor.col;
+                    spaces[indent] = '\n';
+                    buf.insertSlice(line.start, spaces[0 .. indent + 1]);
+                    cursor.pos += 1 + indent;
+                } else {
+                    // Break the line normally
+                    spaces[0] = '\n';
+                    buf.insertSlice(old_cursor.pos, spaces);
+                }
                 cursor.pos += 1 + indent;
-                buf.insertSlice(line.start, char_buf[0 .. indent + 1]);
-            } else {
-                // Break the line normally
-                char_buf[0] = '\n';
-                cursor.pos += 1 + indent;
-                buf.insertSlice(old_cursor.pos, char_buf[0 .. indent + 1]);
-            }
+            },
+            .replace_range_with_newline => |range| {
+                buf.replaceRange(range.start, range.end, &[_]Char{'\n'});
+                cursor.pos = range.start + 1;
+            },
+            else => {},
         }
 
         // Duplicate lines
