@@ -295,7 +295,7 @@ fn findOpenBuffer(self: Editors, path: []const u8) ?usize {
 
 fn openNewBuffer(self: *Editors, path: []const u8) usize {
     var buffer = Buffer.init(self.allocator);
-    buffer.loadFile(self.allocator.dupe(u8, path) catch u.oom(), self.allocator);
+    buffer.loadFile(self.allocator.dupe(u8, path) catch u.oom(), false, self.allocator);
 
     self.open_buffers.append(buffer) catch u.oom();
     return self.open_buffers.items.len - 1;
@@ -1324,7 +1324,8 @@ pub const Editor = struct {
 
         // Handle save last so that the buffer is not marked as modified
         if (general_action == .save and buf.file != null) {
-            buf.stripTrailingSpaces();
+            buf.newEditGroup(self.cursors.items);
+            if (!buf.maybeFormat(tmp_allocator)) buf.stripTrailingSpaces();
 
             // Adjust cursors in case they were on the trimmed whitespace
             buf.recalculateLines();

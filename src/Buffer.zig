@@ -13,6 +13,7 @@ const LineCol = u.LineCol;
 const Buffer = @This();
 
 file: ?File, // buffer may be tied to a file or may be just freestanding
+language: Language = .unknown,
 
 bytes: ArrayList(u8),
 chars: ArrayList(Char),
@@ -33,6 +34,12 @@ deleted: bool = false, // was deleted from disk by someone else
 
 last_edit_ms: f64 = 0,
 last_undo_len: usize = 0,
+
+pub const Language = enum {
+    zig,
+    markdown,
+    unknown,
+};
 
 const File = struct {
     path: []const u8,
@@ -172,7 +179,7 @@ pub fn saveToDisk(self: *Buffer) !void {
     self.deleted = false;
 }
 
-pub fn refreshFromDisk(self: *Buffer, allocator: Allocator) void {
+pub fn refreshFromDisk(self: *Buffer, tmp_allocator: Allocator) void {
     if (self.file == null) return;
 
     const file_path = self.file.?.path;
@@ -199,11 +206,11 @@ pub fn refreshFromDisk(self: *Buffer, allocator: Allocator) void {
             return;
         }
         // Reload buffer if not modified
-        self.loadFile(self.file.?.path, allocator);
+        self.loadFile(self.file.?.path, true, tmp_allocator);
     }
 }
 
-pub fn loadFile(self: *Buffer, path: []const u8, allocator: Allocator) void {
+pub fn loadFile(self: *Buffer, path: []const u8, support_undo: bool, tmp_allocator: Allocator) void {
     // NOTE: taking ownership of the passed path
     self.file = .{ .path = path };
     const file = std.fs.cwd().openFile(path, .{ .read = true }) catch u.panic("Can't open '{s}'", .{path});
@@ -213,41 +220,74 @@ pub fn loadFile(self: *Buffer, path: []const u8, allocator: Allocator) void {
     self.file.?.mtime = stat.mtime;
 
     const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 Mb
-    const file_contents = file.reader().readAllAlloc(allocator, MAX_FILE_SIZE) catch |e| switch (e) {
+    const file_contents = file.reader().readAllAlloc(tmp_allocator, MAX_FILE_SIZE) catch |e| switch (e) {
         error.StreamTooLong => u.panic("File '{s}' is more than 10 Mb in size", .{path}),
         else => u.oom(),
     };
-    defer allocator.free(file_contents);
 
-    self.bytes.clearRetainingCapacity();
-    self.bytes.appendSlice(file_contents) catch u.oom();
-
-    // For simplicity we assume that a codepoint equals a character (though it's not true).
-    // If we ever encounter multi-codepoint characters, we can revisit this
-    self.chars.clearRetainingCapacity();
-    self.chars.ensureTotalCapacity(self.bytes.items.len) catch u.oom();
-    const utf8_view = std.unicode.Utf8View.init(self.bytes.items) catch @panic("invalid utf-8");
-    var iterator = utf8_view.iterator();
-    while (iterator.nextCodepoint()) |char| {
-        self.chars.append(char) catch u.oom();
+    const chars = u.bytesToChars(file_contents, tmp_allocator) catch @panic("Invalid UTF-8");
+    if (support_undo) {
+        self.replaceRange(0, self.chars.items.len, chars);
+    } else {
+        self.replaceRaw(0, self.chars.items.len, chars);
     }
 
     self.modified = false;
     self.modified_on_disk = false;
     self.dirty = true;
+
+    // Determine language from extension
+    self.language = if (std.mem.endsWith(u8, path, ".zig"))
+        Language.zig
+    else if (std.mem.endsWith(u8, path, ".md"))
+        Language.markdown
+    else
+        Language.unknown;
+}
+
+pub fn maybeFormat(self: *Buffer, tmp_allocator: Allocator) bool {
+    switch (self.language) {
+        .zig => self.formatZig(tmp_allocator),
+        else => return false,
+    }
+    return true;
+}
+
+fn formatZig(self: *Buffer, tmp_allocator: Allocator) void {
+    var process = std.ChildProcess.init(
+        &[_][]const u8{ "zig", "fmt", "--stdin" },
+        tmp_allocator,
+    ) catch |err| u.panic("Error initialising zig fmt: {}", .{err});
+    process.stdin_behavior = .Pipe;
+    process.stdout_behavior = .Pipe;
+    process.stderr_behavior = .Pipe;
+    process.spawn() catch |err| u.panic("Error spawning zig fmt: {}", .{err});
+    process.stdin.?.writer().writeAll(self.bytes.items) catch |err| u.panic("Error writing to zig fmt: {}", .{err});
+    process.stdin.?.close();
+    process.stdin = null;
+    // NOTE this is fragile - currently zig fmt closes stdout before stderr so this works but reading the other way round will sometimes block
+    const stdout = process.stdout.?.reader().readAllAlloc(tmp_allocator, 10 * 1024 * 1024 * 1024) catch |err| u.panic("Error reading zig fmt stdout: {}", .{err});
+    const stderr = process.stderr.?.reader().readAllAlloc(tmp_allocator, 10 * 1024 * 1024) catch |err| u.panic("Error reading zig fmt stderr: {}", .{err});
+    const result = process.wait() catch |err| u.panic("Error waiting for zig fmt: {}", .{err});
+    u.assert(result == .Exited);
+    if (result.Exited != 0) {
+        u.println("Error formatting zig buffer: \n{s}", .{stderr});
+    } else {
+        const chars = u.bytesToChars(stdout, tmp_allocator) catch u.panic("Invalid UTF-8", .{});
+        self.replaceRange(0, self.chars.items.len, chars);
+    }
 }
 
 pub fn syncInternalData(self: *Buffer) void {
     self.recalculateLines();
 
     // Highlight code
-    {
-        // Have the color array ready
-        self.colors.ensureTotalCapacity(self.chars.items.len) catch u.oom();
-        self.colors.expandToCapacity();
-        var colors = self.colors.items;
-        std.mem.set(TextColor, colors, .comment);
+    self.colors.ensureTotalCapacity(self.chars.items.len) catch u.oom();
+    self.colors.expandToCapacity();
+    var colors = self.colors.items;
 
+    if (self.language == .zig) {
+        std.mem.set(TextColor, colors, .comment);
         self.updateBytesFromChars();
         self.bytes.append(0) catch u.oom(); // null-terminate
 
@@ -273,6 +313,8 @@ pub fn syncInternalData(self: *Buffer) void {
         }
 
         _ = self.bytes.pop(); // un-null-terminate
+    } else {
+        std.mem.set(TextColor, colors, .default);
     }
 }
 

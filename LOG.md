@@ -1,9 +1,10 @@
 # TODO
+- Implement a limited LSP functionality
+- Fix: if a file is reloaded from disk, undo would produce garbage
 - Search box: show the number of results / current result
 - Jump to line on ctrl+G
 - Save current session (per working directory)
 - Create new files
-- Format on save
 - Enlarge the current editor on shift+ctrl+L
 - [bug] Colors are off when non-ascii bytes are present (tokenizer doesn't support utf-8)
 - [asus] Crash when resizing
@@ -11,13 +12,14 @@
     - Only jump to cursor on cursor movement or editing
     - Try scrolling smoothly
 - Highlight: implement a few languages, not just Zig
-- When scanning the root folder, ignore the ignored folders right away (modify dir walker)
-- When building a directory tree, see if we can use a memory arena
+- [tech-debt] When scanning the root folder, ignore the ignored folders right away (modify dir walker)
+- [tech-debt] When building a directory tree, see if we can use a memory arena
   (maybe don't use array lists and instead just allocate slices of exact size from the arena)
 - Measure how expensive it is to rehighlight everything
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
++ Format zig on save
 + Audit the undo system and fix any weird behaviour
 + On some actions, create new edit groups
 + Refactor the action system

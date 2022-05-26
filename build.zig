@@ -13,9 +13,6 @@ pub fn build(b: *std.build.Builder) void {
     const release = b.option(bool, "release", "Install a release version to C:\\Programs\\focus") orelse false;
 
     if (release) {
-        if (target.getOsTag() == .windows) {
-            exe.subsystem = .Windows;
-        }
         exe.setOutputDir("C:\\\\Programs\\focus");
         exe.setBuildMode(.ReleaseSafe);
     } else {

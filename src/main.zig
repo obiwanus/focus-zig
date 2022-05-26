@@ -29,7 +29,15 @@ const FONT_SIZE = 18; // for scale = 1.0
 
 var g_events: std.ArrayList(Event) = undefined;
 
+const windows = std.os.windows;
+pub extern "user32" fn GetConsoleWindow() callconv(windows.WINAPI) windows.HWND;
+
 pub fn main() !void {
+    // Hide the console window (we have to run as a console app, at least for now)
+    if (builtin.os.tag == .windows) {
+        _ = windows.user32.showWindow(GetConsoleWindow(), windows.user32.SW_HIDE);
+    }
+
     // Static arena lives until the end of the program
     var static_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer static_arena.deinit();
@@ -445,10 +453,7 @@ fn newKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: glfw.A
 fn isCharEvent(key: glfw.Key, mods: glfw.Mods) bool {
     if (mods.control or mods.super or mods.alt) return false;
     switch (key) {
-        .space, .apostrophe, .comma, .minus, .period, .slash, .zero, .one,
-        .two, .three, .four, .five, .six, .seven, .eight, .nine, .semicolon, .equal,
-        .a, .b, .c, .d, .e, .f, .g, .h, .i, .j, .k, .l, .m, .n, .o, .p, .q, .r, .s, .t, .u, .v, .w, .x, .y, .z,
-        .left_bracket, .backslash, .right_bracket, .grave_accent, .world_1, .world_2 => return true,
+        .space, .apostrophe, .comma, .minus, .period, .slash, .zero, .one, .two, .three, .four, .five, .six, .seven, .eight, .nine, .semicolon, .equal, .a, .b, .c, .d, .e, .f, .g, .h, .i, .j, .k, .l, .m, .n, .o, .p, .q, .r, .s, .t, .u, .v, .w, .x, .y, .z, .left_bracket, .backslash, .right_bracket, .grave_accent, .world_1, .world_2 => return true,
         else => return false,
     }
 }
