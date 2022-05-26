@@ -1,11 +1,11 @@
 # TODO
 - Implement a limited LSP functionality
-- Fix: if a file is reloaded from disk, undo would produce garbage
 - Search box: show the number of results / current result
 - Jump to line on ctrl+G
 - Save current session (per working directory)
 - Create new files
 - Enlarge the current editor on shift+ctrl+L
+- Highlight changed/deleted/added lines
 - [bug] Colors are off when non-ascii bytes are present (tokenizer doesn't support utf-8)
 - [asus] Crash when resizing
 - Allow to scroll viewport past cursor
@@ -19,6 +19,8 @@
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
++ Do a basic highlighting of LOG.md (it's special)
++ Fix: if a file is reloaded from disk, undo would produce garbage
 + Format zig on save
 + Audit the undo system and fix any weird behaviour
 + On some actions, create new edit groups

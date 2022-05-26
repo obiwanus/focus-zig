@@ -37,6 +37,7 @@ last_undo_len: usize = 0,
 
 pub const Language = enum {
     zig,
+    log,
     markdown,
     unknown,
 };
@@ -236,8 +237,10 @@ pub fn loadFile(self: *Buffer, path: []const u8, support_undo: bool, tmp_allocat
     self.modified_on_disk = false;
     self.dirty = true;
 
-    // Determine language from extension
-    self.language = if (std.mem.endsWith(u8, path, ".zig"))
+    // Determine language from file name
+    self.language = if (std.mem.eql(u8, path, "LOG.md"))
+        Language.log
+    else if (std.mem.endsWith(u8, path, ".zig"))
         Language.zig
     else if (std.mem.endsWith(u8, path, ".md"))
         Language.markdown
@@ -313,6 +316,29 @@ pub fn syncInternalData(self: *Buffer) void {
         }
 
         _ = self.bytes.pop(); // un-null-terminate
+    } else if (self.language == .log) {
+        std.mem.set(TextColor, colors, .default);
+        for (self.lines.items) |line| {
+            const item_to_do = [_]Char{ '-', ' ' };
+            const item_done = [_]Char{ '+', ' ' };
+            const heading = [_]Char{ '#', ' ' };
+            const bug = [_]Char{ '-', ' ', '[', 'b', 'u', 'g', ']' };
+            const tech_debt = [_]Char{ '-', ' ', '[', 't', 'e', 'c', 'h', '-', 'd', 'e', 'b', 't', ']' };
+            const chars = self.chars.items[line.text_start..line.end];
+            if (std.mem.startsWith(Char, chars, &bug)) {
+                std.mem.set(TextColor, colors[line.text_start .. line.text_start + bug.len], .keyword);
+            } else if (std.mem.startsWith(Char, chars, &tech_debt)) {
+                std.mem.set(TextColor, colors[line.text_start .. line.text_start + tech_debt.len], .value);
+            } else if (std.mem.startsWith(Char, chars, &item_to_do)) {
+                var word_end: usize = line.text_start + 2;
+                while (word_end <= line.end and self.chars.items[word_end] != ' ') : (word_end += 1) {}
+                std.mem.set(TextColor, colors[line.text_start..word_end], .@"type");
+            } else if (std.mem.startsWith(Char, chars, &item_done)) {
+                std.mem.set(TextColor, colors[line.text_start..line.end], .function);
+            } else if (std.mem.startsWith(Char, chars, &heading)) {
+                std.mem.set(TextColor, colors[line.text_start..line.end], .string);
+            }
+        }
     } else {
         std.mem.set(TextColor, colors, .default);
     }
@@ -395,7 +421,7 @@ pub fn expandRangeToWholeLines(self: Buffer, start: usize, end: usize, include_e
     var new_end = self.lines.items[last_line].end;
     if (include_end_newline and last_line < self.numLines() - 1) new_end += 1;
 
-    return .{ .start = new_start, .end = new_end};
+    return .{ .start = new_start, .end = new_end };
 }
 
 fn copyChars(self: Buffer, start: usize, end: usize) []Char {
@@ -489,7 +515,7 @@ pub fn undo(self: *Buffer) ?[]const CursorState {
             .Replace => |e| self.replaceRaw(e.range.start, e.new_chars.len, e.old_chars),
         };
         std.mem.reverse(Edit, edit_group.edits);
-        self.redos.append(EditGroup { .edits = edit_group.edits, .cursors = self.cursors.toOwnedSlice() }) catch u.oom();
+        self.redos.append(EditGroup{ .edits = edit_group.edits, .cursors = self.cursors.toOwnedSlice() }) catch u.oom();
         self.cursors.appendSlice(edit_group.cursors) catch u.oom();
         self.edit_alloc.free(edit_group.cursors);
         return self.cursors.items;
@@ -505,7 +531,7 @@ pub fn redo(self: *Buffer) ?[]const CursorState {
             .Replace => |e| self.replaceRaw(e.range.start, e.old_chars.len, e.new_chars),
         };
         std.mem.reverse(Edit, edit_group.edits);
-        self.undos.append(EditGroup { .edits = edit_group.edits, .cursors = self.cursors.toOwnedSlice() }) catch u.oom();
+        self.undos.append(EditGroup{ .edits = edit_group.edits, .cursors = self.cursors.toOwnedSlice() }) catch u.oom();
         self.cursors.appendSlice(edit_group.cursors) catch u.oom();
         self.edit_alloc.free(edit_group.cursors);
         return self.cursors.items;
