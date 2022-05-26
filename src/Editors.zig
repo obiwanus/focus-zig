@@ -35,7 +35,7 @@ focused: bool = true,
 
 const Editors = @This();
 const BUFFER_REFRESH_TIMEOUT_MS = 500;
-const UNDO_GROUP_TIMEOUT_MS = 200;
+const UNDO_GROUP_TIMEOUT_MS = 300;
 
 pub fn init(allocator: Allocator) Editors {
     return .{
@@ -60,7 +60,6 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
 
     // Always try to update all open buffers
     for (self.open_buffers.items) |*buf, buf_id| {
-        if (clock_ms - buf.last_edit_ms >= UNDO_GROUP_TIMEOUT_MS) buf.new_edit_group_required = true;
         if (buf.dirty) {
             buf.syncInternalData();
             buf.dirty = false;
@@ -1090,11 +1089,18 @@ pub const Editor = struct {
             return;
         }
 
-        if (!buf.new_edit_group_required) {
-            // We always want to remember cursor state when a selection is replaced with anything
-            for (self.cursors.items) |cursor| {
-                if (cursor.hasSelection()) buf.new_edit_group_required = true;
-            }
+        // Maybe remember cursor state
+        if (buf.edits.items.len == 0) {
+            buf.cursors.clearRetainingCapacity();
+            buf.cursors.ensureUnusedCapacity(self.cursors.items.len) catch u.oom();
+            for (self.cursors.items) |cursor| buf.cursors.appendAssumeCapacity(cursor.state());
+        }
+
+        if (clock_ms - buf.last_edit_ms >= UNDO_GROUP_TIMEOUT_MS) buf.new_edit_group_required = true;
+
+        // We always want to remember cursor state when a selection is replaced with anything
+        for (self.cursors.items) |cursor| {
+            if (cursor.hasSelection()) buf.new_edit_group_required = true;
         }
         if (buf.new_edit_group_required) buf.newEditGroup(self.cursors.items);
 
@@ -1181,7 +1187,15 @@ pub const Editor = struct {
             }
         }
 
-        if (buf.new_edit_group_required) buf.newEditGroup(self.cursors.items);
+
+        // Maybe remember cursor state
+        if (buf.edits.items.len == 0) {
+            buf.cursors.clearRetainingCapacity();
+            buf.cursors.ensureUnusedCapacity(self.cursors.items.len) catch u.oom();
+            for (self.cursors.items) |cursor| buf.cursors.appendAssumeCapacity(cursor.state());
+        }
+
+        if (clock_ms - buf.last_edit_ms >= UNDO_GROUP_TIMEOUT_MS) buf.newEditGroup(self.cursors.items);
 
         var handled_keypress = false;
 
@@ -1243,7 +1257,7 @@ pub const Editor = struct {
             const new_group = for (self.cursors.items) |*cursor| {
                 switch (getCursorAction(key, mods, cursor)) {
                     .delete_range, .indent_lines, .unindent_lines, .replace_range_with_newline,
-                    .break_line, .duplicate_lines, .paste, .move_lines_up, .move_lines_down, .cut => break true,
+                    .duplicate_lines, .paste, .move_lines_up, .move_lines_down, .cut => break true,
                     else => {},
                 }
             } else false;

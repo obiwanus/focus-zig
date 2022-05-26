@@ -437,8 +437,19 @@ pub const Event = union(enum) {
 fn newKeyEvent(window: glfw.Window, key: glfw.Key, scancode: i32, action: glfw.Action, mods: glfw.Mods) void {
     _ = window;
     _ = scancode;
-    if (action == .press or action == .repeat) {
+    if ((action == .press or action == .repeat) and !isCharEvent(key, mods)) {
         g_events.append(Event{ .key_pressed = .{ .key = key, .mods = mods } }) catch u.oom();
+    }
+}
+
+fn isCharEvent(key: glfw.Key, mods: glfw.Mods) bool {
+    if (mods.control or mods.super or mods.alt) return false;
+    switch (key) {
+        .space, .apostrophe, .comma, .minus, .period, .slash, .zero, .one,
+        .two, .three, .four, .five, .six, .seven, .eight, .nine, .semicolon, .equal,
+        .a, .b, .c, .d, .e, .f, .g, .h, .i, .j, .k, .l, .m, .n, .o, .p, .q, .r, .s, .t, .u, .v, .w, .x, .y, .z,
+        .left_bracket, .backslash, .right_bracket, .grave_accent, .world_1, .world_2 => return true,
+        else => return false,
     }
 }
 

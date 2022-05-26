@@ -1,5 +1,4 @@
 # TODO
-- Audit the undo system and fix any weird behaviour
 - Search box: show the number of results / current result
 - Jump to line on ctrl+G
 - Save current session (per working directory)
@@ -19,6 +18,7 @@
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
++ Audit the undo system and fix any weird behaviour
 + On some actions, create new edit groups
 + Refactor the action system
 + Hide scrollbar after scrolling

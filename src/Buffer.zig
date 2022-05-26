@@ -472,6 +472,8 @@ pub fn redo(self: *Buffer) ?[]const CursorState {
 }
 
 pub fn newEditGroup(self: *Buffer, current_cursors: []const Cursor) void {
+    self.new_edit_group_required = false;
+
     const num_edits = self.edits.items.len;
     if (num_edits == 0) return;
 
@@ -484,8 +486,6 @@ pub fn newEditGroup(self: *Buffer, current_cursors: []const Cursor) void {
     // Remember current cursor state
     self.cursors.ensureUnusedCapacity(current_cursors.len) catch u.oom();
     for (current_cursors) |cursor| self.cursors.appendAssumeCapacity(cursor.state());
-
-    self.new_edit_group_required = false;
 }
 
 pub fn stripTrailingSpaces(self: *Buffer) void {
