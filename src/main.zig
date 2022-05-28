@@ -20,6 +20,10 @@ const Ui = focus.ui.Ui;
 const Screen = focus.ui.Screen;
 const Editors = focus.Editors;
 const OpenFileDialog = focus.dialogs.OpenFile;
+const Zls = focus.Zls;
+
+const windows = std.os.windows;
+pub extern "user32" fn GetConsoleWindow() callconv(windows.WINAPI) windows.HWND;
 
 var GPA = std.heap.GeneralPurposeAllocator(.{ .never_unmap = false }){};
 
@@ -28,9 +32,6 @@ const FONT_NAME = "../fonts/FiraCode-Retina.ttf"; // relative to "src"
 const FONT_SIZE = 18; // for scale = 1.0
 
 var g_events: std.ArrayList(Event) = undefined;
-
-const windows = std.os.windows;
-pub extern "user32" fn GetConsoleWindow() callconv(windows.WINAPI) windows.HWND;
 
 pub fn main() !void {
     // Hide the console window (we have to run as a console app, at least for now)
@@ -160,11 +161,18 @@ pub fn main() !void {
     window.setSizeCallback(newWindowSizeEvent);
     window.setFocusCallback(windowFocusChanged);
 
+    // Init UI
     var ui = try Ui.init(gpa, &vc);
     defer ui.deinit(&vc);
 
+    // Init editor manager
     var editors = Editors.init(gpa);
     defer editors.deinit();
+
+    // Init the zig language server
+    var zls = Zls.init(gpa);
+    zls.start() catch @panic("Couldn't start the Zig language server");
+    defer zls.shutdown();
 
     g_events.append(.redraw_requested) catch u.oom();
 

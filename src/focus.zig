@@ -15,6 +15,7 @@ pub const ui = @import("ui.zig");
 
 pub const Buffer = @import("Buffer.zig");
 pub const Editors = @import("Editors.zig");
+pub const Zls = @import("Zls.zig");
 
 pub const vulkan = struct {
     pub const utils = @import("vulkan/utils.zig");
