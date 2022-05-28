@@ -74,15 +74,6 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
         }
     }
 
-    // Update selected text occurrences
-    for (self.open_editors.items) |*ed| {
-        const buf = self.getBuffer(ed.buffer);
-        const selected_text = ed.selectedText(buf);
-        if (selected_text != null and ed.highlights.items.len == 0) {
-            ed.updateHighlights(buf, selected_text.?);
-        }
-    }
-
     // The editors always take the entire screen area
     var area = ui.screen.getRect();
 
@@ -568,7 +559,7 @@ pub const Editor = struct {
         undo,
         redo,
         save,
-        move_cursor: union (enum) {
+        move_cursor: union(enum) {
             up: usize,
             down: usize,
             left: usize,
@@ -607,7 +598,7 @@ pub const Editor = struct {
         copy: Buffer.Range,
         cut: Buffer.Range,
         paste: Buffer.Range,
-
+        comment_block: Buffer.Range,
     };
 
     fn init(buffer: usize, allocator: Allocator) Editor {
@@ -698,6 +689,7 @@ pub const Editor = struct {
             .x => if (u.modsOnlyCmd(mods)) if (cursor.getSelectionRange()) |range| return .{ .cut = range },
             .v => if (u.modsOnlyCmd(mods)) return .{ .paste = cursor.range() },
             .l => if (u.modsOnlyCmd(mods)) return .{ .select_lines = cursor.range() },
+            .slash => if (u.modsOnlyCmd(mods)) return .{ .comment_block = cursor.range() },
             else => {},
         }
         return .none;
@@ -758,6 +750,14 @@ pub const Editor = struct {
             const line_col = buf.getLineColFromPos(cursor.pos);
             cursor.line = line_col.line;
             cursor.col = line_col.col;
+
+            if (cursor.selection_start != null and cursor.selection_start.? > buf.numChars()) cursor.selection_start = buf.numChars();
+        }
+
+        // Update selected text occurrences
+        const selected_text = self.selectedText(buf);
+        if (selected_text != null and self.highlights.items.len == 0) {
+            self.updateHighlights(buf, selected_text.?);
         }
 
         // Move viewport
@@ -894,7 +894,7 @@ pub const Editor = struct {
                         if (cursor.getSelectionRange()) |s| {
                             const top_line = if (cursor.pos == s.start) cursor.line else buf.getLineColFromPos(s.start).line;
                             const bottom_line = if (cursor.pos == s.end) cursor.line else buf.getLineColFromPos(s.end).line;
-                            const top = scroll_area_rect.h *  @intToFloat(f32, top_line) / scrollable_lines;
+                            const top = scroll_area_rect.h * @intToFloat(f32, top_line) / scrollable_lines;
                             const cursor_rect = Rect{
                                 .x = scroll_area_rect.x,
                                 .y = scroll_area_rect.y + top,
@@ -903,7 +903,7 @@ pub const Editor = struct {
                             };
                             ui.drawSolidRect(cursor_rect, style.colors.CURSOR_ACTIVE);
                         } else {
-                            const top = scroll_area_rect.h *  @intToFloat(f32, cursor.line) / scrollable_lines;
+                            const top = scroll_area_rect.h * @intToFloat(f32, cursor.line) / scrollable_lines;
                             const cursor_rect = Rect{
                                 .x = scroll_area_rect.x,
                                 .y = scroll_area_rect.y + top,
@@ -923,7 +923,7 @@ pub const Editor = struct {
                             const end_pos = start_pos + search_str_len;
                             const top_line = buf.getLineColFromPos(start_pos).line;
                             const bottom_line = buf.getLineColFromPos(end_pos).line;
-                            const top = scroll_area_rect.h *  @intToFloat(f32, top_line) / scrollable_lines;
+                            const top = scroll_area_rect.h * @intToFloat(f32, top_line) / scrollable_lines;
                             const highlight_rect = Rect{
                                 .x = scroll_area_rect.x + width,
                                 .y = scroll_area_rect.y + top,
@@ -939,7 +939,7 @@ pub const Editor = struct {
                             const end_pos = start_pos + s.len();
                             const top_line = buf.getLineColFromPos(start_pos).line;
                             const bottom_line = buf.getLineColFromPos(end_pos).line;
-                            const top = scroll_area_rect.h *  @intToFloat(f32, top_line) / scrollable_lines;
+                            const top = scroll_area_rect.h * @intToFloat(f32, top_line) / scrollable_lines;
                             const highlight_rect = Rect{
                                 .x = scroll_area_rect.x + width,
                                 .y = scroll_area_rect.y + top,
@@ -1187,7 +1187,6 @@ pub const Editor = struct {
             }
         }
 
-
         // Maybe remember cursor state
         if (buf.edits.items.len == 0) {
             buf.cursors.clearRetainingCapacity();
@@ -1256,8 +1255,7 @@ pub const Editor = struct {
             // Check if we want to extract a new edit group
             const new_group = for (self.cursors.items) |*cursor| {
                 switch (getCursorAction(key, mods, cursor)) {
-                    .delete_range, .indent_lines, .unindent_lines, .replace_range_with_newline,
-                    .duplicate_lines, .paste, .move_lines_up, .move_lines_down, .cut => break true,
+                    .delete_range, .indent_lines, .unindent_lines, .replace_range_with_newline, .duplicate_lines, .paste, .move_lines_up, .move_lines_down, .cut => break true,
                     else => {},
                 }
             } else false;
@@ -1290,7 +1288,11 @@ pub const Editor = struct {
                 Cursor,
                 self.cursors.items,
                 {},
-                struct { fn lessThan(_: void, lhs: Cursor, rhs: Cursor) bool { return lhs.start() < rhs.start(); } }.lessThan,
+                struct {
+                    fn lessThan(_: void, lhs: Cursor, rhs: Cursor) bool {
+                        return lhs.start() < rhs.start();
+                    }
+                }.lessThan,
             );
 
             // Reset main cursor index because it could have moved
@@ -1436,7 +1438,7 @@ pub const Editor = struct {
                 const lines = buf.lines.items[buf.getLineColFromPos(s.start).line .. buf.getLineColFromPos(s.end).line + 1];
 
                 var new_chars = ArrayList(Char).init(tmp_allocator);
-                new_chars.ensureTotalCapacity(range.len() + lines.len * TAB_SIZE) catch u.oom();
+                new_chars.ensureTotalCapacity(range.len() + lines.len) catch u.oom();
 
                 self.keep_selection = true;
 
@@ -1586,6 +1588,86 @@ pub const Editor = struct {
                     cursor.pos = s.start + paste_data.len;
                 }
             },
+            .comment_block => |s| {
+                if (buf.language == .zig) {
+                    const range = buf.expandRangeToWholeLines(s.start, s.end, false);
+                    const lines = buf.lines.items[buf.getLineColFromPos(s.start).line .. buf.getLineColFromPos(s.end).line + 1];
+
+                    var min_text_start: ?usize = null;
+                    var comment_out = false;
+                    for (lines) |line| {
+                        if (line.isEmpty()) continue;
+                        if (!std.mem.startsWith(Char, buf.chars.items[line.text_start..], &[_]Char{ '/', '/' })) comment_out = true;
+                        if (min_text_start == null) min_text_start = line.lenWhitespace();
+                        if (line.lenWhitespace() < min_text_start.?) min_text_start = line.lenWhitespace();
+                    }
+
+                    const comment = [_]Char{ '/', '/', ' ' };
+                    var new_chars = ArrayList(Char).init(tmp_allocator);
+                    new_chars.ensureTotalCapacity(range.len() + lines.len * comment.len) catch u.oom();
+
+                    if (comment_out) {
+                        // Add comments to the block
+                        const comment_start = min_text_start orelse 0;
+
+                        var chars_inserted: usize = 0;
+                        for (lines) |line| {
+                            if (!line.isEmpty()) {
+                                new_chars.appendSliceAssumeCapacity(buf.chars.items[line.start .. line.start + comment_start]);
+                                new_chars.appendSliceAssumeCapacity(&comment);
+                                if (line.start + comment_start < line.end) {
+                                    new_chars.appendSliceAssumeCapacity(buf.chars.items[line.start + comment_start .. line.end]);
+                                }
+                                chars_inserted += comment.len;
+                            }
+                            if (line.end != range.end) new_chars.appendAssumeCapacity('\n');
+                        }
+
+                        buf.replaceRange(range.start, range.end, new_chars.items);
+
+                        // Adjust cursor or selection
+                        if (cursor.pos == s.start) {
+                            cursor.pos += comment.len;
+                            if (cursor.selection_start != null) cursor.selection_start.? += chars_inserted;
+                        } else {
+                            cursor.selection_start.? += comment.len;
+                            cursor.pos += chars_inserted;
+                        }
+                    } else {
+                        // Remove comments from the block
+                        var chars_removed: usize = 0;
+                        for (lines) |line| {
+                            if (!line.isEmpty()) {
+                                new_chars.appendSliceAssumeCapacity(buf.chars.items[line.start..line.text_start]);
+                                u.assert(std.mem.eql(Char, buf.chars.items[line.text_start .. line.text_start + 2], &[_]Char{ '/', '/' }));
+                                const chars_to_remove: usize = if (line.text_start < buf.numChars() and buf.chars.items[line.text_start + 2] != ' ') 2 else 3;
+                                if (line.text_start + chars_to_remove < line.end) {
+                                    new_chars.appendSliceAssumeCapacity(buf.chars.items[line.start + chars_to_remove .. line.end]);
+                                }
+                                chars_removed += chars_to_remove;
+                            }
+                            if (line.end != range.end) new_chars.appendAssumeCapacity('\n');
+                        }
+
+                        buf.replaceRange(range.start, range.end, new_chars.items);
+
+                        // Adjust cursor or selection
+                        const first_line = lines[0];
+                        const last_line = lines[lines.len - 1];
+                        const sel_start_adjust = u.min3(comment.len, first_line.len(), s.start - first_line.start);
+                        const sel_end_adjust = chars_removed -| u.min(last_line.text_start -| s.end, comment.len);
+                        if (cursor.pos == s.start) {
+                            cursor.pos -|= sel_start_adjust;
+                            if (cursor.selection_start != null) cursor.selection_start.? -|= sel_end_adjust;
+                        } else {
+                            cursor.selection_start.? -|= sel_start_adjust;
+                            cursor.pos -|= sel_end_adjust;
+                        }
+                    }
+                }
+
+                self.keep_selection = true;
+            },
             else => {},
         }
 
@@ -1631,7 +1713,7 @@ pub const Editor = struct {
         if (centered) {
             // Set the desired scroll coordinates and let the code below adjust it
             top = line -| self.lines_per_screen / 2;
-            left= 0;
+            left = 0;
         }
 
         // Allowed cursor positions within viewport

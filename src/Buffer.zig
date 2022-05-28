@@ -112,6 +112,10 @@ pub const Line = struct {
     pub fn lenWhitespace(self: Line) usize {
         return self.text_start - self.start;
     }
+
+    pub fn isEmpty(self: Line) bool {
+        return self.lenWhitespace() == self.len();
+    }
 };
 
 pub const SearchResultsIter = struct {
