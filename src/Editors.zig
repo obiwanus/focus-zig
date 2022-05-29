@@ -1640,9 +1640,9 @@ pub const Editor = struct {
                             if (!line.isEmpty()) {
                                 new_chars.appendSliceAssumeCapacity(buf.chars.items[line.start..line.text_start]);
                                 u.assert(std.mem.eql(Char, buf.chars.items[line.text_start .. line.text_start + 2], &[_]Char{ '/', '/' }));
-                                const chars_to_remove: usize = if (line.text_start < buf.numChars() and buf.chars.items[line.text_start + 2] != ' ') 2 else 3;
+                                const chars_to_remove: usize = if (line.text_start + 2 < buf.numChars() and buf.chars.items[line.text_start + 2] != ' ') 2 else 3;
                                 if (line.text_start + chars_to_remove < line.end) {
-                                    new_chars.appendSliceAssumeCapacity(buf.chars.items[line.start + chars_to_remove .. line.end]);
+                                    new_chars.appendSliceAssumeCapacity(buf.chars.items[line.text_start + chars_to_remove .. line.end]);
                                 }
                                 chars_removed += chars_to_remove;
                             }

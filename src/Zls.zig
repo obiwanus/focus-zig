@@ -33,8 +33,8 @@ pub fn start(self: *Zls) !void {
 
 pub fn shutdown(self: *Zls) void {
     self.sendShutdownRequest() catch |e| u.println("Error sending shutdown request to zls: {}", .{e});
-    //self.process.stdin.?.close();
-    //self.process.stdout.?.close();
+    // self.process.stdin.?.close();
+    // self.process.stdout.?.close();
     // TODO: wait for the process with a small timeout?
     self.listener.join();
 }

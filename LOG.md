@@ -23,6 +23,7 @@
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
++ [bug] Can't uncomment a block
 + Comment out blocks of zig code
 + Do a basic highlighting of LOG.md (it's special)
 + Fix: if a file is reloaded from disk, undo would produce garbage
