@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const focus = @import("focus.zig");
 const u = focus.utils;
@@ -11,6 +12,8 @@ const Cursor = focus.Editors.Cursor;
 const LineCol = u.LineCol;
 
 const Buffer = @This();
+
+gpa: Allocator,
 
 file: ?File, // buffer may be tied to a file or may be just freestanding
 language: Language = .unknown,
@@ -45,6 +48,7 @@ pub const Language = enum {
 const File = struct {
     path: []const u8,
     mtime: i128 = 0,
+    uri: []const u8, // for the language server
 };
 
 const Edit = union(enum) {
@@ -133,6 +137,8 @@ pub const SearchResultsIter = struct {
 
 pub fn init(allocator: Allocator) Buffer {
     return .{
+        .gpa = allocator,
+
         .file = null,
         .bytes = ArrayList(u8).init(allocator),
         .chars = ArrayList(Char).init(allocator),
@@ -216,8 +222,14 @@ pub fn refreshFromDisk(self: *Buffer, tmp_allocator: Allocator) void {
 }
 
 pub fn loadFile(self: *Buffer, path: []const u8, support_undo: bool, tmp_allocator: Allocator) void {
-    // NOTE: taking ownership of the passed path
-    self.file = .{ .path = path };
+    if (self.file) |file| {
+        self.gpa.free(file.path);
+        self.gpa.free(file.uri);
+    }
+    self.file = .{
+        .path = self.gpa.dupe(u8, path) catch u.oom(),
+        .uri = self.gpa.dupe(u8, getUriFromPath(path, self.gpa)) catch u.oom(),
+    };
     const file = std.fs.cwd().openFile(path, .{ .read = true }) catch u.panic("Can't open '{s}'", .{path});
     defer file.close();
 
@@ -593,4 +605,50 @@ fn updateBytesFromChars(self: *Buffer) void {
         cursor += @intCast(usize, num_bytes);
     }
     self.bytes.shrinkRetainingCapacity(cursor);
+}
+
+const reserved_chars = &[_]u8{
+    '!', '#', '$', '%', '&', '\'',
+    '(', ')', '*', '+', ',', ':',
+    ';', '=', '?', '@', '[', ']',
+};
+
+const reserved_escapes = blk: {
+    var escapes: [reserved_chars.len][3]u8 = [_][3]u8{[_]u8{undefined} ** 3} ** reserved_chars.len;
+
+    for (reserved_chars) |c, i| {
+        escapes[i][0] = '%';
+        _ = std.fmt.bufPrint(escapes[i][1..], "{X}", .{c}) catch unreachable;
+    }
+    break :blk &escapes;
+};
+
+fn getUriFromPath(path: []const u8, allocator: Allocator) []const u8 {
+    if (path.len == 0) return "";
+    const prefix = if (builtin.os.tag == .windows) "file:///" else "file://";
+
+    var buf = std.ArrayList(u8).init(allocator);
+    buf.appendSlice(prefix) catch u.oom();
+
+    for (path) |char| {
+        if (char == std.fs.path.sep) {
+            buf.append('/') catch u.oom();
+        } else if (std.mem.indexOfScalar(u8, reserved_chars, char)) |reserved| {
+            buf.appendSlice(&reserved_escapes[reserved]) catch u.oom();
+        } else {
+            buf.append(char) catch u.oom();
+        }
+    }
+
+    // On windows, we need to lowercase the drive name.
+    if (builtin.os.tag == .windows) {
+        if (buf.items.len > prefix.len + 1 and
+            std.ascii.isAlpha(buf.items[prefix.len]) and
+            std.mem.startsWith(u8, buf.items[prefix.len + 1 ..], "%3A"))
+        {
+            buf.items[prefix.len] = std.ascii.toLower(buf.items[prefix.len]);
+        }
+    }
+
+    return buf.toOwnedSlice();
 }

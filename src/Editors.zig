@@ -15,10 +15,12 @@ const Buffer = focus.Buffer;
 const Font = focus.fonts.Font;
 const TextColor = focus.style.TextColor;
 const Ui = focus.ui.Ui;
+const Zls = focus.Zls;
 
 const SCROLL_PADDING = 4;
 
 allocator: Allocator,
+zls: *Zls,
 open_buffers: ArrayList(Buffer),
 open_editors: ArrayList(Editor),
 layout: union(enum) {
@@ -37,9 +39,10 @@ const Editors = @This();
 const BUFFER_REFRESH_TIMEOUT_MS = 500;
 const UNDO_GROUP_TIMEOUT_MS = 300;
 
-pub fn init(allocator: Allocator) Editors {
+pub fn init(allocator: Allocator, zls: *Zls) Editors {
     return .{
         .allocator = allocator,
+        .zls = zls,
         .open_buffers = ArrayList(Buffer).initCapacity(allocator, 10) catch u.oom(),
         .open_editors = ArrayList(Editor).initCapacity(allocator, 10) catch u.oom(),
         .layout = .none,
@@ -286,10 +289,15 @@ fn findOpenBuffer(self: Editors, path: []const u8) ?usize {
 
 fn openNewBuffer(self: *Editors, path: []const u8) usize {
     var buffer = Buffer.init(self.allocator);
-    buffer.loadFile(self.allocator.dupe(u8, path) catch u.oom(), false, self.allocator);
+    buffer.loadFile(path, false, self.allocator);
 
     self.open_buffers.append(buffer) catch u.oom();
-    return self.open_buffers.items.len - 1;
+    const buffer_id = self.open_buffers.items.len - 1;
+    if (buffer.language == .zig) {
+        self.zls.notifyBufferOpened(buffer_id, buffer.file.?.uri, buffer.chars.items) catch @panic("Couldn't notify zls");
+    }
+
+    return buffer_id;
 }
 
 fn createNewEditor(self: *Editors, buffer: usize) usize {

@@ -1,8 +1,11 @@
 # TODO
 - Implement a limited LSP functionality
     + Start zls on editor startup, kill on shutdown (think about handling restarts later)
-    - Notify zls when a document opens
+    + Notify zls when a document opens
     - On F12 request a jump to definition, print result in console
+        + Store buffer URI when opening buffer
+    - Send code updates on edits
+    - Handle restarts
 - Do not highlight the whole document for Zig and LOG.md
 - Search box: show the number of results / current result
 - Jump to line on ctrl+G

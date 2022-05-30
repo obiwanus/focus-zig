@@ -165,14 +165,14 @@ pub fn main() !void {
     var ui = try Ui.init(gpa, &vc);
     defer ui.deinit(&vc);
 
-    // Init editor manager
-    var editors = Editors.init(gpa);
-    defer editors.deinit();
-
     // Init the zig language server
     var zls = Zls.init(gpa);
     zls.start() catch @panic("Couldn't start the Zig language server");
     defer zls.shutdown();
+
+    // Init editor manager
+    var editors = Editors.init(gpa, &zls);
+    defer editors.deinit();
 
     g_events.append(.redraw_requested) catch u.oom();
 
