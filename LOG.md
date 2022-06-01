@@ -1,10 +1,9 @@
 # TODO
 - Implement a limited LSP functionality
-    + Start zls on editor startup, kill on shutdown (think about handling restarts later)
-    + Notify zls when a document opens
-    - On F12 request a jump to definition, print result in console
-        + Store buffer URI when opening buffer
+    - Jump to definition when ZLS says so
+        - Create a thread safe action queue
     - Send code updates on edits
+    - Don't crash if no zls is found
     - Handle restarts
 - Do not highlight the whole document for Zig and LOG.md
 - Search box: show the number of results / current result
@@ -26,6 +25,10 @@
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
++ Start zls on editor startup, kill on shutdown (think about handling restarts later)
++ Notify zls when a document opens
++ On F12 request a jump to definition, print result in console
++ Store buffer URI when opening buffer
 + [bug] Can't uncomment a block
 + Comment out blocks of zig code
 + Do a basic highlighting of LOG.md (it's special)

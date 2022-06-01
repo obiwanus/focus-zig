@@ -132,7 +132,7 @@ pub fn keyPress(self: *Editors, key: glfw.Key, mods: glfw.Mods, tmp_allocator: A
             self.closeActivePane();
         }
     } else if (self.activeEditor()) |editor| {
-        editor.keyPress(self.getBuffer(editor.buffer), key, mods, tmp_allocator, clock_ms);
+        editor.keyPress(self.getBuffer(editor.buffer), key, mods, tmp_allocator, clock_ms, self.zls);
     }
 }
 
@@ -607,6 +607,7 @@ pub const Editor = struct {
         cut: Buffer.Range,
         paste: Buffer.Range,
         comment_block: Buffer.Range,
+        go_to_definition: usize,
     };
 
     fn init(buffer: usize, allocator: Allocator) Editor {
@@ -698,6 +699,7 @@ pub const Editor = struct {
             .v => if (u.modsOnlyCmd(mods)) return .{ .paste = cursor.range() },
             .l => if (u.modsOnlyCmd(mods)) return .{ .select_lines = cursor.range() },
             .slash => if (u.modsOnlyCmd(mods)) return .{ .comment_block = cursor.range() },
+            .F12 => return .{ .go_to_definition = cursor.pos },
             else => {},
         }
         return .none;
@@ -1142,7 +1144,7 @@ pub const Editor = struct {
         buf.last_edit_ms = clock_ms;
     }
 
-    fn keyPress(self: *Editor, buf: *Buffer, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allocator, clock_ms: f64) void {
+    fn keyPress(self: *Editor, buf: *Buffer, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allocator, clock_ms: f64, zls: *Zls) void {
         // Process search box
         {
             var search_box = &self.search_box;
@@ -1281,7 +1283,7 @@ pub const Editor = struct {
                     buf_len = new_len;
                 }
                 const action = getCursorAction(key, mods, cursor);
-                self.handleActionForCursor(cursor, action, mods, buf, tmp_allocator);
+                self.handleActionForCursor(cursor, action, mods, buf, tmp_allocator, zls);
             }
 
             if (new_group) buf.newEditGroup(self.cursors.items); // do it after action
@@ -1345,7 +1347,7 @@ pub const Editor = struct {
         }
     }
 
-    fn handleActionForCursor(self: *Editor, cursor: *Cursor, action: Action, mods: glfw.Mods, buf: *Buffer, tmp_allocator: Allocator) void {
+    fn handleActionForCursor(self: *Editor, cursor: *Cursor, action: Action, mods: glfw.Mods, buf: *Buffer, tmp_allocator: Allocator, zls: *Zls) void {
         const TAB_SIZE = 4;
         const old_cursor = cursor.state();
         const single_cursor = self.cursors.items.len == 1; // some actions are only for single cursor
@@ -1675,6 +1677,14 @@ pub const Editor = struct {
                 }
 
                 self.keep_selection = true;
+            },
+            .go_to_definition => |pos| {
+                if (buf.file) |file| {
+                    const line_col = buf.getLineColFromPos(pos);
+                    const other = u.modsOnlyCmd(mods);
+                    // TODO: support freestanding buffers too
+                    zls.goToDefinition(file.uri, line_col, other) catch unreachable;
+                }
             },
             else => {},
         }
