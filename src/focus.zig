@@ -27,3 +27,9 @@ pub const vulkan = struct {
 pub const dialogs = struct {
     pub const OpenFile = @import("dialogs/OpenFile.zig");
 };
+
+pub const Globals = struct {
+    alloc: std.mem.Allocator,
+    frame_alloc: std.mem.Allocator,
+    zls: *Zls,
+};

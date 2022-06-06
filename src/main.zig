@@ -21,6 +21,7 @@ const Screen = focus.ui.Screen;
 const Editors = focus.Editors;
 const OpenFileDialog = focus.dialogs.OpenFile;
 const Zls = focus.Zls;
+const Globals = focus.Globals;
 
 const windows = std.os.windows;
 pub extern "user32" fn GetConsoleWindow() callconv(windows.WINAPI) windows.HWND;
@@ -47,6 +48,11 @@ pub fn main() !void {
     // General-purpose allocator for things that live for more than 1 frame
     // but need to be freed before the end of the program
     const gpa = if (focus.DEBUG_MODE) GPA.allocator() else std.heap.c_allocator;
+
+    // Frame arena gets reset every frame
+    var frame_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer frame_arena.deinit();
+    var frame_allocator = frame_arena.allocator();
 
     try glfw.init(.{});
     defer glfw.terminate();
@@ -170,8 +176,14 @@ pub fn main() !void {
     zls.start() catch @panic("Couldn't start the Zig language server");
     defer zls.shutdown();
 
+    var globals = Globals{
+        .alloc = gpa,
+        .frame_alloc = frame_allocator,
+        .zls = &zls,
+    };
+
     // Init editor manager
-    var editors = Editors.init(gpa, &zls);
+    var editors = Editors.init(globals);
     defer editors.deinit();
 
     g_events.append(.redraw_requested) catch u.oom();
@@ -184,10 +196,6 @@ pub fn main() !void {
     var open_file_dialog: ?OpenFileDialog = null;
 
     while (!window.shouldClose()) {
-        var frame_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-        defer frame_arena.deinit();
-        var frame_allocator = frame_arena.allocator();
-
         frame_number += 1;
 
         // Ask the swapchain for the next image
@@ -291,7 +299,7 @@ pub fn main() !void {
                             }
                             continue;
                         }
-                        editors.keyPress(kp.key, kp.mods, frame_allocator, clock_ms);
+                        editors.keyPress(kp.key, kp.mods, clock_ms);
                     },
                     else => {},
                 }
@@ -312,7 +320,7 @@ pub fn main() !void {
         {
             ui.startFrame(screen);
 
-            const need_redraw = editors.updateAndDrawAll(&ui, clock_ms, frame_allocator);
+            const need_redraw = editors.updateAndDrawAll(&ui, clock_ms);
             if (need_redraw) g_events.append(.redraw_requested) catch u.oom();
 
             if (open_file_dialog) |*dialog| {
@@ -427,6 +435,10 @@ pub fn main() !void {
 
         // Make sure the rendering is finished
         try swapchain.waitUntilLastFrameIsRendered();
+
+        // Reset frame arena
+        frame_arena.deinit();
+        frame_arena.state = .{};
     }
 
     // Wait for GPU to finish all work before cleaning up

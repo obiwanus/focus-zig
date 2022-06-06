@@ -10,10 +10,11 @@ const TextColor = focus.style.TextColor;
 const Char = u.Char;
 const Cursor = focus.Editors.Cursor;
 const LineCol = u.LineCol;
+const Globals = focus.Globals;
 
 const Buffer = @This();
 
-gpa: Allocator,
+g: Globals,
 
 file: ?File, // buffer may be tied to a file or may be just freestanding
 language: Language = .unknown,
@@ -23,7 +24,6 @@ chars: ArrayList(Char),
 colors: ArrayList(TextColor),
 lines: ArrayList(Line),
 
-edit_alloc: Allocator,
 undos: ArrayList(EditGroup),
 redos: ArrayList(EditGroup),
 edits: ArrayList(Edit), // most recent edits, which will be put into an undo group soon
@@ -135,38 +135,37 @@ pub const SearchResultsIter = struct {
     }
 };
 
-pub fn init(allocator: Allocator) Buffer {
+pub fn init(g: Globals) Buffer {
     return .{
-        .gpa = allocator,
+        .g = g,
 
         .file = null,
-        .bytes = ArrayList(u8).init(allocator),
-        .chars = ArrayList(Char).init(allocator),
-        .colors = ArrayList(TextColor).init(allocator),
-        .lines = ArrayList(Line).init(allocator),
+        .bytes = ArrayList(u8).init(g.alloc),
+        .chars = ArrayList(Char).init(g.alloc),
+        .colors = ArrayList(TextColor).init(g.alloc),
+        .lines = ArrayList(Line).init(g.alloc),
 
-        .edit_alloc = allocator,
-        .undos = ArrayList(EditGroup).init(allocator),
-        .redos = ArrayList(EditGroup).init(allocator),
-        .edits = ArrayList(Edit).init(allocator),
-        .cursors = ArrayList(CursorState).init(allocator),
+        .undos = ArrayList(EditGroup).init(g.alloc),
+        .redos = ArrayList(EditGroup).init(g.alloc),
+        .edits = ArrayList(Edit).init(g.alloc),
+        .cursors = ArrayList(CursorState).init(g.alloc),
     };
 }
 
-pub fn deinit(self: Buffer, allocator: Allocator) void {
+pub fn deinit(self: Buffer) void {
     self.bytes.deinit();
     self.chars.deinit();
     self.colors.deinit();
     self.lines.deinit();
-    if (self.file) |file| allocator.free(file.path);
+    if (self.file) |file| self.g.alloc.free(file.path);
 
-    for (self.undos.items) |edit_group| edit_group.deinit(self.edit_alloc);
+    for (self.undos.items) |edit_group| edit_group.deinit(self.g.alloc);
     self.undos.deinit();
 
-    for (self.redos.items) |edit_group| edit_group.deinit(self.edit_alloc);
+    for (self.redos.items) |edit_group| edit_group.deinit(self.g.alloc);
     self.redos.deinit();
 
-    for (self.edits.items) |e| e.deinit(self.edit_alloc);
+    for (self.edits.items) |e| e.deinit(self.g.alloc);
     self.edits.deinit();
 
     self.cursors.deinit();
@@ -190,7 +189,7 @@ pub fn saveToDisk(self: *Buffer) !void {
     self.deleted = false;
 }
 
-pub fn refreshFromDisk(self: *Buffer, tmp_allocator: Allocator) void {
+pub fn refreshFromDisk(self: *Buffer) void {
     if (self.file == null) return;
 
     const file_path = self.file.?.path;
@@ -217,18 +216,18 @@ pub fn refreshFromDisk(self: *Buffer, tmp_allocator: Allocator) void {
             return;
         }
         // Reload buffer if not modified
-        self.loadFile(self.file.?.path, true, tmp_allocator);
+        self.loadFile(self.file.?.path, true);
     }
 }
 
-pub fn loadFile(self: *Buffer, path: []const u8, support_undo: bool, tmp_allocator: Allocator) void {
+pub fn loadFile(self: *Buffer, path: []const u8, support_undo: bool) void {
     if (self.file) |file| {
-        self.gpa.free(file.path);
-        self.gpa.free(file.uri);
+        self.g.alloc.free(file.path);
+        self.g.alloc.free(file.uri);
     }
     self.file = .{
-        .path = self.gpa.dupe(u8, path) catch u.oom(),
-        .uri = self.gpa.dupe(u8, u.getUriFromPath(path, tmp_allocator)) catch u.oom(),
+        .path = self.g.alloc.dupe(u8, path) catch u.oom(),
+        .uri = self.g.alloc.dupe(u8, u.getUriFromPath(path, self.g.frame_alloc)) catch u.oom(),
     };
     const file = std.fs.cwd().openFile(path, .{ .read = true }) catch u.panic("Can't open '{s}'", .{path});
     defer file.close();
@@ -237,12 +236,12 @@ pub fn loadFile(self: *Buffer, path: []const u8, support_undo: bool, tmp_allocat
     self.file.?.mtime = stat.mtime;
 
     const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 Mb
-    const file_contents = file.reader().readAllAlloc(tmp_allocator, MAX_FILE_SIZE) catch |e| switch (e) {
+    const file_contents = file.reader().readAllAlloc(self.g.frame_alloc, MAX_FILE_SIZE) catch |e| switch (e) {
         error.StreamTooLong => u.panic("File '{s}' is more than 10 Mb in size", .{path}),
         else => u.oom(),
     };
 
-    const chars = u.bytesToChars(file_contents, tmp_allocator) catch @panic("Invalid UTF-8");
+    const chars = u.bytesToChars(file_contents, self.g.frame_alloc) catch @panic("Invalid UTF-8");
     if (support_undo) {
         self.replaceRange(0, self.chars.items.len, chars);
     } else {
@@ -264,18 +263,18 @@ pub fn loadFile(self: *Buffer, path: []const u8, support_undo: bool, tmp_allocat
         Language.unknown;
 }
 
-pub fn maybeFormat(self: *Buffer, tmp_allocator: Allocator) bool {
+pub fn maybeFormat(self: *Buffer) bool {
     switch (self.language) {
-        .zig => self.formatZig(tmp_allocator),
+        .zig => self.formatZig(),
         else => return false,
     }
     return true;
 }
 
-fn formatZig(self: *Buffer, tmp_allocator: Allocator) void {
+fn formatZig(self: *Buffer) void {
     var process = std.ChildProcess.init(
         &[_][]const u8{ "zig", "fmt", "--stdin" },
-        tmp_allocator,
+        self.g.frame_alloc,
     ) catch |err| u.panic("Error initialising zig fmt: {}", .{err});
     process.stdin_behavior = .Pipe;
     process.stdout_behavior = .Pipe;
@@ -285,14 +284,14 @@ fn formatZig(self: *Buffer, tmp_allocator: Allocator) void {
     process.stdin.?.close();
     process.stdin = null;
     // NOTE this is fragile - currently zig fmt closes stdout before stderr so this works but reading the other way round will sometimes block
-    const stdout = process.stdout.?.reader().readAllAlloc(tmp_allocator, 10 * 1024 * 1024 * 1024) catch |err| u.panic("Error reading zig fmt stdout: {}", .{err});
-    const stderr = process.stderr.?.reader().readAllAlloc(tmp_allocator, 10 * 1024 * 1024) catch |err| u.panic("Error reading zig fmt stderr: {}", .{err});
+    const stdout = process.stdout.?.reader().readAllAlloc(self.g.frame_alloc, 10 * 1024 * 1024 * 1024) catch |err| u.panic("Error reading zig fmt stdout: {}", .{err});
+    const stderr = process.stderr.?.reader().readAllAlloc(self.g.frame_alloc, 10 * 1024 * 1024) catch |err| u.panic("Error reading zig fmt stderr: {}", .{err});
     const result = process.wait() catch |err| u.panic("Error waiting for zig fmt: {}", .{err});
     u.assert(result == .Exited);
     if (result.Exited != 0) {
         u.println("Error formatting zig buffer: \n{s}", .{stderr});
     } else {
-        const chars = u.bytesToChars(stdout, tmp_allocator) catch u.panic("Invalid UTF-8", .{});
+        const chars = u.bytesToChars(stdout, self.g.frame_alloc) catch u.panic("Invalid UTF-8", .{});
         self.replaceRange(0, self.chars.items.len, chars);
     }
 }
@@ -441,11 +440,11 @@ pub fn expandRangeToWholeLines(self: Buffer, start: usize, end: usize, include_e
 }
 
 fn copyChars(self: Buffer, start: usize, end: usize) []Char {
-    return self.edit_alloc.dupe(Char, self.chars.items[start..end]) catch u.oom();
+    return self.g.alloc.dupe(Char, self.chars.items[start..end]) catch u.oom();
 }
 
 fn clearRedos(self: *Buffer) void {
-    for (self.redos.items) |edit_group| edit_group.deinit(self.edit_alloc);
+    for (self.redos.items) |edit_group| edit_group.deinit(self.g.alloc);
     self.redos.clearRetainingCapacity();
 }
 
@@ -491,7 +490,7 @@ pub fn replaceRange(self: *Buffer, start: usize, end: usize, new_chars: []const 
     if (std.mem.eql(Char, new_chars, self.chars.items[start..end])) return;
     self.edits.append(.{ .Replace = .{
         .range = range,
-        .new_chars = self.edit_alloc.dupe(Char, new_chars) catch u.oom(),
+        .new_chars = self.g.alloc.dupe(Char, new_chars) catch u.oom(),
         .old_chars = self.copyChars(range.start, range.end),
     } }) catch u.oom();
     self.clearRedos();
@@ -501,7 +500,7 @@ pub fn replaceRange(self: *Buffer, start: usize, end: usize, new_chars: []const 
 pub fn insertSlice(self: *Buffer, pos: usize, chars: []const Char) void {
     self.edits.append(.{ .Insert = .{
         .pos = pos,
-        .new_chars = self.edit_alloc.dupe(Char, chars) catch u.oom(),
+        .new_chars = self.g.alloc.dupe(Char, chars) catch u.oom(),
     } }) catch u.oom();
     self.clearRedos();
     self.insertRaw(pos, chars);
@@ -520,7 +519,7 @@ pub fn moveRange(self: *Buffer, range: Range, target_pos: usize) void {
     } else {
         self.insertSlice(target_pos - range.len(), chars);
     }
-    self.edit_alloc.free(chars);
+    self.g.alloc.free(chars);
 }
 
 pub fn undo(self: *Buffer) ?[]const CursorState {
@@ -533,7 +532,7 @@ pub fn undo(self: *Buffer) ?[]const CursorState {
         std.mem.reverse(Edit, edit_group.edits);
         self.redos.append(EditGroup{ .edits = edit_group.edits, .cursors = self.cursors.toOwnedSlice() }) catch u.oom();
         self.cursors.appendSlice(edit_group.cursors) catch u.oom();
-        self.edit_alloc.free(edit_group.cursors);
+        self.g.alloc.free(edit_group.cursors);
         return self.cursors.items;
     }
     return null;
@@ -549,7 +548,7 @@ pub fn redo(self: *Buffer) ?[]const CursorState {
         std.mem.reverse(Edit, edit_group.edits);
         self.undos.append(EditGroup{ .edits = edit_group.edits, .cursors = self.cursors.toOwnedSlice() }) catch u.oom();
         self.cursors.appendSlice(edit_group.cursors) catch u.oom();
-        self.edit_alloc.free(edit_group.cursors);
+        self.g.alloc.free(edit_group.cursors);
         return self.cursors.items;
     }
     return null;

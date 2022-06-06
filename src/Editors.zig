@@ -16,11 +16,11 @@ const Font = focus.fonts.Font;
 const TextColor = focus.style.TextColor;
 const Ui = focus.ui.Ui;
 const Zls = focus.Zls;
+const Globals = focus.Globals;
 
 const SCROLL_PADDING = 4;
 
-allocator: Allocator,
-zls: *Zls,
+g: Globals,
 open_buffers: ArrayList(Buffer),
 open_editors: ArrayList(Editor),
 layout: union(enum) {
@@ -39,25 +39,24 @@ const Editors = @This();
 const BUFFER_REFRESH_TIMEOUT_MS = 500;
 const UNDO_GROUP_TIMEOUT_MS = 300;
 
-pub fn init(allocator: Allocator, zls: *Zls) Editors {
+pub fn init(g: Globals) Editors {
     return .{
-        .allocator = allocator,
-        .zls = zls,
-        .open_buffers = ArrayList(Buffer).initCapacity(allocator, 10) catch u.oom(),
-        .open_editors = ArrayList(Editor).initCapacity(allocator, 10) catch u.oom(),
+        .g = g,
+        .open_buffers = ArrayList(Buffer).initCapacity(g.alloc, 10) catch u.oom(),
+        .open_editors = ArrayList(Editor).initCapacity(g.alloc, 10) catch u.oom(),
         .layout = .none,
     };
 }
 
 pub fn deinit(self: Editors) void {
-    for (self.open_buffers.items) |buf| buf.deinit(self.allocator);
+    for (self.open_buffers.items) |buf| buf.deinit();
     for (self.open_editors.items) |ed| ed.deinit();
 }
 
-pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: Allocator) bool {
+pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64) bool {
     // Reload buffers from disk and check for conflicts
     if (clock_ms - self.last_update_from_disk_ms > BUFFER_REFRESH_TIMEOUT_MS) {
-        for (self.open_buffers.items) |*buf| buf.refreshFromDisk(self.allocator);
+        for (self.open_buffers.items) |*buf| buf.refreshFromDisk();
         self.last_update_from_disk_ms = clock_ms;
     }
 
@@ -78,10 +77,10 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
     }
 
     // Check any external actions from zls
-    while (self.zls.action_queue.maybePopFromBack()) |action| {
+    while (self.g.zls.action_queue.maybePopFromBack()) |action| {
         switch (action) {
             .jump_to_file => |file| {
-                const path = u.getPathFromUri(file.uri, tmp_allocator) catch |e| {
+                const path = u.getPathFromUri(file.uri, self.g.frame_alloc) catch |e| {
                     u.println("Couldn't get path from uri '{s}': {}", .{ file.uri, e });
                     continue;
                 };
@@ -106,7 +105,7 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
         .none => {}, // nothing to draw
         .single => |e| {
             var editor = &self.open_editors.items[e];
-            need_redraw = editor.updateAndDraw(self.getBuffer(editor.buffer), ui, area, self.focused, clock_ms, tmp_allocator);
+            need_redraw = editor.updateAndDraw(self.getBuffer(editor.buffer), ui, area, self.focused, clock_ms);
         },
         .side_by_side => |e| {
             const left_rect = area.splitLeft(area.w / 2 - 1, 1);
@@ -114,8 +113,8 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
 
             var e1 = &self.open_editors.items[e.left];
             var e2 = &self.open_editors.items[e.right];
-            var redraw1 = e1.updateAndDraw(self.getBuffer(e1.buffer), ui, left_rect, self.focused and e.active == e.left, clock_ms, tmp_allocator);
-            var redraw2 = e2.updateAndDraw(self.getBuffer(e2.buffer), ui, right_rect, self.focused and e.active == e.right, clock_ms, tmp_allocator);
+            var redraw1 = e1.updateAndDraw(self.getBuffer(e1.buffer), ui, left_rect, self.focused and e.active == e.left, clock_ms);
+            var redraw2 = e2.updateAndDraw(self.getBuffer(e2.buffer), ui, right_rect, self.focused and e.active == e.right, clock_ms);
             need_redraw = redraw1 or redraw2;
 
             const splitter_rect = Rect{ .x = area.x - 2, .y = area.y, .w = 2, .h = area.h };
@@ -130,7 +129,7 @@ pub fn charEntered(self: *Editors, char: Char, clock_ms: f64) void {
     if (self.activeEditor()) |editor| editor.typeChar(char, self.getBuffer(editor.buffer), clock_ms);
 }
 
-pub fn keyPress(self: *Editors, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allocator, clock_ms: f64) void {
+pub fn keyPress(self: *Editors, key: glfw.Key, mods: glfw.Mods, clock_ms: f64) void {
     if (u.modsCmd(mods) and mods.alt) {
         switch (key) {
             .left => {
@@ -152,7 +151,7 @@ pub fn keyPress(self: *Editors, key: glfw.Key, mods: glfw.Mods, tmp_allocator: A
             self.closeActivePane();
         }
     } else if (self.activeEditor()) |editor| {
-        editor.keyPress(self.getBuffer(editor.buffer), key, mods, tmp_allocator, clock_ms, self.zls);
+        editor.keyPress(self.getBuffer(editor.buffer), key, mods, clock_ms);
     }
 }
 
@@ -308,20 +307,20 @@ fn findOpenBuffer(self: Editors, path: []const u8) ?usize {
 }
 
 fn openNewBuffer(self: *Editors, path: []const u8) usize {
-    var buffer = Buffer.init(self.allocator);
-    buffer.loadFile(path, false, self.allocator);
+    var buffer = Buffer.init(self.g);
+    buffer.loadFile(path, false);
 
     self.open_buffers.append(buffer) catch u.oom();
     const buffer_id = self.open_buffers.items.len - 1;
     if (buffer.language == .zig) {
-        g_zls.notifyBufferOpened(buffer_id, buffer.file.?.uri, buffer.chars.items) catch @panic("Couldn't notify zls");
+        self.g.zls.notifyBufferOpened(buffer_id, buffer.file.?.uri, buffer.chars.items) catch @panic("Couldn't notify zls");
     }
 
     return buffer_id;
 }
 
 fn createNewEditor(self: *Editors, buffer: usize) usize {
-    const new_editor = Editor.init(buffer, self.allocator);
+    const new_editor = Editor.init(buffer, self.g);
     self.open_editors.append(new_editor) catch u.oom();
     return self.open_editors.items.len - 1;
 }
@@ -561,7 +560,8 @@ const SearchBox = struct {
 };
 
 pub const Editor = struct {
-    allocator: Allocator,
+    g: Globals,
+
     buffer: usize,
 
     // Updated every time we draw UI (because that's when we know the layout and therefore size)
@@ -634,15 +634,15 @@ pub const Editor = struct {
         go_to_definition: usize,
     };
 
-    fn init(buffer: usize, allocator: Allocator) Editor {
-        var cursors = ArrayList(Cursor).init(allocator);
-        cursors.append(Cursor.init(allocator)) catch u.oom();
+    fn init(buffer: usize, g: Globals) Editor {
+        var cursors = ArrayList(Cursor).init(g.alloc);
+        cursors.append(Cursor.init(g.alloc)) catch u.oom();
         return .{
-            .allocator = allocator,
+            .g = g,
             .buffer = buffer,
             .cursors = cursors,
-            .search_box = SearchBox.init(allocator),
-            .highlights = ArrayList(usize).init(allocator),
+            .search_box = SearchBox.init(g.alloc),
+            .highlights = ArrayList(usize).init(g.alloc),
             .scrollbar = .{},
         };
     }
@@ -762,7 +762,7 @@ pub const Editor = struct {
         return true;
     }
 
-    fn updateAndDraw(self: *Editor, buf: *Buffer, ui: *Ui, rect: Rect, is_active: bool, clock_ms: f64, tmp_allocator: Allocator) bool {
+    fn updateAndDraw(self: *Editor, buf: *Buffer, ui: *Ui, rect: Rect, is_active: bool, clock_ms: f64) bool {
         const scale = ui.screen.scale;
         const char_size = ui.screen.font.charSize();
         const margin = Vec2{ .x = 30 * scale, .y = 15 * scale };
@@ -1001,10 +1001,10 @@ pub const Editor = struct {
                 var path_chunks_iter = u.pathChunksIterator(file.path);
                 while (path_chunks_iter.next()) |chunk| name = chunk;
 
-                const path_chars = u.bytesToChars(file.path[0 .. file.path.len - name.len], tmp_allocator) catch unreachable;
+                const path_chars = u.bytesToChars(file.path[0 .. file.path.len - name.len], self.g.frame_alloc) catch unreachable;
                 ui.drawLabel(path_chars, .{ .x = r.x, .y = text_y }, style.colors.COMMENT);
 
-                const name_chars = u.bytesToChars(name, tmp_allocator) catch unreachable;
+                const name_chars = u.bytesToChars(name, self.g.frame_alloc) catch unreachable;
                 const name_color = if (buf.deleted or buf.modified_on_disk)
                     style.colors.ERROR
                 else if (buf.modified)
@@ -1028,8 +1028,8 @@ pub const Editor = struct {
 
             // Line:col
             const main_cursor = self.mainCursor();
-            const line_col = std.fmt.allocPrint(tmp_allocator, "{}:{}", .{ main_cursor.line + 1, main_cursor.col + 1 }) catch u.oom();
-            const line_col_chars = u.bytesToChars(line_col, tmp_allocator) catch unreachable;
+            const line_col = std.fmt.allocPrint(self.g.frame_alloc, "{}:{}", .{ main_cursor.line + 1, main_cursor.col + 1 }) catch u.oom();
+            const line_col_chars = u.bytesToChars(line_col, self.g.frame_alloc) catch unreachable;
             const line_col_width = margin.x + @intToFloat(f32, line_col_chars.len) * char_size.x;
             if (r.w > line_col_width) {
                 // Draw only if enough space
@@ -1168,7 +1168,7 @@ pub const Editor = struct {
         buf.last_edit_ms = clock_ms;
     }
 
-    fn keyPress(self: *Editor, buf: *Buffer, key: glfw.Key, mods: glfw.Mods, tmp_allocator: Allocator, clock_ms: f64, zls: *Zls) void {
+    fn keyPress(self: *Editor, buf: *Buffer, key: glfw.Key, mods: glfw.Mods, clock_ms: f64) void {
         // Process search box
         {
             var search_box = &self.search_box;
@@ -1259,7 +1259,7 @@ pub const Editor = struct {
                 .pos = new_cursor_pos + selected_text.len,
                 .line = line_col.line,
                 .col = line_col.col,
-                .clipboard = ArrayList(Char).init(self.allocator),
+                .clipboard = ArrayList(Char).init(self.g.alloc),
             }) catch u.oom();
             self.main_cursor_index = self.cursors.items.len - 1;
 
@@ -1307,7 +1307,7 @@ pub const Editor = struct {
                     buf_len = new_len;
                 }
                 const action = getCursorAction(key, mods, cursor);
-                self.handleActionForCursor(cursor, action, mods, buf, tmp_allocator, zls);
+                self.handleActionForCursor(cursor, action, mods, buf);
             }
 
             if (new_group) buf.newEditGroup(self.cursors.items); // do it after action
@@ -1361,7 +1361,7 @@ pub const Editor = struct {
         // Handle save last so that the buffer is not marked as modified
         if (general_action == .save and buf.file != null) {
             buf.newEditGroup(self.cursors.items);
-            if (!buf.maybeFormat(tmp_allocator)) buf.stripTrailingSpaces();
+            if (!buf.maybeFormat()) buf.stripTrailingSpaces();
 
             // Adjust cursors in case they were on the trimmed whitespace
             buf.recalculateLines();
@@ -1371,7 +1371,7 @@ pub const Editor = struct {
         }
     }
 
-    fn handleActionForCursor(self: *Editor, cursor: *Cursor, action: Action, mods: glfw.Mods, buf: *Buffer, tmp_allocator: Allocator, zls: *Zls) void {
+    fn handleActionForCursor(self: *Editor, cursor: *Cursor, action: Action, mods: glfw.Mods, buf: *Buffer) void {
         const TAB_SIZE = 4;
         const old_cursor = cursor.state();
         const single_cursor = self.cursors.items.len == 1; // some actions are only for single cursor
@@ -1438,7 +1438,7 @@ pub const Editor = struct {
                 const range = buf.expandRangeToWholeLines(s.start, s.end, false);
                 const lines = buf.lines.items[buf.getLineColFromPos(s.start).line .. buf.getLineColFromPos(s.end).line + 1];
 
-                var new_chars = ArrayList(Char).init(tmp_allocator);
+                var new_chars = ArrayList(Char).init(self.g.frame_alloc);
                 new_chars.ensureTotalCapacity(range.len() + lines.len * TAB_SIZE) catch u.oom();
 
                 self.keep_selection = true;
@@ -1471,7 +1471,7 @@ pub const Editor = struct {
                 const range = buf.expandRangeToWholeLines(s.start, s.end, false);
                 const lines = buf.lines.items[buf.getLineColFromPos(s.start).line .. buf.getLineColFromPos(s.end).line + 1];
 
-                var new_chars = ArrayList(Char).init(tmp_allocator);
+                var new_chars = ArrayList(Char).init(self.g.frame_alloc);
                 new_chars.ensureTotalCapacity(range.len() + lines.len) catch u.oom();
 
                 self.keep_selection = true;
@@ -1506,7 +1506,7 @@ pub const Editor = struct {
             .insert_line_above, .insert_line_below => {
                 const line = buf.getLine(cursor.line);
                 var indent = line.lenWhitespace();
-                var spaces = tmp_allocator.alloc(Char, indent + 1) catch u.oom();
+                var spaces = self.g.frame_alloc.alloc(Char, indent + 1) catch u.oom();
                 std.mem.set(Char, spaces[0..indent], ' ');
                 spaces[indent] = '\n';
 
@@ -1523,7 +1523,7 @@ pub const Editor = struct {
             .break_line => {
                 const line = buf.getLine(cursor.line);
                 var indent = line.lenWhitespace();
-                var spaces = tmp_allocator.alloc(Char, indent + 1) catch u.oom();
+                var spaces = self.g.frame_alloc.alloc(Char, indent + 1) catch u.oom();
                 std.mem.set(Char, spaces[0 .. indent + 1], ' ');
 
                 if (cursor.col <= indent) {
@@ -1597,7 +1597,7 @@ pub const Editor = struct {
             .copy, .cut => |s| {
                 if (single_cursor) {
                     // Copy to global clipboard
-                    copyToClipboard(buf.chars.items[s.start..s.end], tmp_allocator);
+                    copyToClipboard(buf.chars.items[s.start..s.end], self.g.frame_alloc);
                 } else {
                     // Copy to individual clipboard
                     cursor.copyToClipboard(buf.chars.items[s.start..s.end]);
@@ -1610,12 +1610,12 @@ pub const Editor = struct {
             .paste => |s| {
                 var paste_data: []const Char = undefined;
                 if (single_cursor) {
-                    paste_data = getClipboardString(tmp_allocator);
+                    paste_data = getClipboardString(self.g.frame_alloc);
                 } else {
                     const has_individual_data = for (self.cursors.items) |c| {
                         if (c.clipboard.items.len > 0) break true;
                     } else false;
-                    paste_data = if (has_individual_data) cursor.clipboard.items else getClipboardString(tmp_allocator);
+                    paste_data = if (has_individual_data) cursor.clipboard.items else getClipboardString(self.g.frame_alloc);
                 }
                 if (paste_data.len > 0) {
                     buf.replaceRange(s.start, s.end, paste_data);
@@ -1637,7 +1637,7 @@ pub const Editor = struct {
                     }
 
                     const comment = [_]Char{ '/', '/', ' ' };
-                    var new_chars = ArrayList(Char).init(tmp_allocator);
+                    var new_chars = ArrayList(Char).init(self.g.frame_alloc);
                     new_chars.ensureTotalCapacity(range.len() + lines.len * comment.len) catch u.oom();
 
                     if (comment_out) {
@@ -1707,7 +1707,7 @@ pub const Editor = struct {
                     const line_col = buf.getLineColFromPos(pos);
                     const other = u.modsOnlyCmd(mods);
                     // TODO: support freestanding buffers too
-                    zls.goToDefinition(file.uri, line_col, other) catch unreachable;
+                    self.g.zls.goToDefinition(file.uri, line_col, other) catch unreachable;
                 }
             },
             else => {},
@@ -1738,7 +1738,7 @@ pub const Editor = struct {
                 .selection_start = cursor.selection_start,
                 .line = line_col.line,
                 .col = line_col.col,
-                .clipboard = ArrayList(Char).init(self.allocator),
+                .clipboard = ArrayList(Char).init(self.g.alloc),
             });
         }
         if (self.main_cursor_index >= self.cursors.items.len) self.main_cursor_index = self.cursors.items.len - 1;
