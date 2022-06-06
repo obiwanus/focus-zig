@@ -401,17 +401,17 @@ pub fn getLineColFromPos(self: Buffer, pos: usize) LineCol {
     return .{ .line = line, .col = col };
 }
 
-pub fn getPosFromLineCol(self: Buffer, line: usize, col: usize) usize {
-    const new_line = self.getLine(line); // may be different if outside of range
-    if (col >= new_line.len()) {
+pub fn getPosFromLineCol(self: Buffer, line_col: LineCol) usize {
+    const new_line = self.getLine(line_col.line); // may be different if outside of range
+    if (line_col.col >= new_line.len()) {
         return new_line.end;
     } else {
-        return new_line.start + col;
+        return new_line.start + line_col.col;
     }
 }
 
 pub fn getLine(self: Buffer, line_num: usize) Line {
-    const line = u.min(line_num, self.numLines() - 1);
+    const line = u.min(line_num, self.numLines() -| 1);
     return self.lines.items[line];
 }
 

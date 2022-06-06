@@ -77,6 +77,23 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
         }
     }
 
+    // Check any external actions from zls
+    while (self.zls.action_queue.maybePopFromBack()) |action| {
+        switch (action) {
+            .jump_to_file => |file| {
+                const path = u.getPathFromUri(file.uri);
+                self.openFile(path, false);
+                var buf = self.getBuffer(self.findOpenBuffer(path) orelse unreachable);
+                buf.syncInternalData();
+                const pos = buf.getPosFromLineCol(file.line_col);
+                var editor = self.activeEditor().?;
+                editor.removeExtraCursors();
+                editor.mainCursor().pos = pos;
+                editor.scroll.line = buf.getLineColFromPos(pos).line -| 10; // position cursor at most 10 lines from the top
+            },
+        }
+    }
+
     // The editors always take the entire screen area
     var area = ui.screen.getRect();
 
@@ -345,6 +362,10 @@ pub const Cursor = struct {
 
     fn end(self: Cursor) usize {
         return self.range().end;
+    }
+
+    fn lineCol(self: Cursor) LineCol {
+        return .{ .line = self.line, .col = self.col };
     }
 
     fn moveToLine(self: *Cursor, new_line: usize, buf: *const Buffer) void {
@@ -1341,7 +1362,7 @@ pub const Editor = struct {
 
             // Adjust cursors in case they were on the trimmed whitespace
             buf.recalculateLines();
-            for (self.cursors.items) |*cursor| cursor.pos = buf.getPosFromLineCol(cursor.line, cursor.col);
+            for (self.cursors.items) |*cursor| cursor.pos = buf.getPosFromLineCol(cursor.lineCol());
 
             buf.saveToDisk() catch unreachable; // TODO: handle
         }

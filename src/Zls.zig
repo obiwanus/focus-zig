@@ -5,6 +5,7 @@ const u = focus.utils;
 
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
+const ArrayList = std.ArrayList;
 const Char = u.Char;
 const LineCol = u.LineCol;
 
@@ -14,6 +15,7 @@ allocator: Allocator,
 process: *std.ChildProcess = undefined,
 listener: std.Thread = undefined,
 listener_stderr: std.Thread = undefined,
+action_queue: ActionQueue,
 
 const OpenDocument = struct {
     textDocument: struct {
@@ -28,6 +30,10 @@ pub const Position = struct {
 
     fn fromLineCol(line_col: LineCol) Position {
         return .{ .line = @intCast(i64, line_col.line), .character = @intCast(i64, line_col.col) };
+    }
+
+    fn toLineCol(self: Position) LineCol {
+        return .{ .line = @intCast(usize, self.line), .col = @intCast(usize, self.character) };
     }
 };
 
@@ -56,10 +62,10 @@ const ResponseId = union(enum) {
 };
 
 const MessageType = enum {
-    LogMessage,
-    Definition,
-    DefinitionOther,
-    Unknown,
+    log_message,
+    definition,
+    definition_other,
+    unknown,
 };
 
 const DefinitionResponse = struct {
@@ -69,9 +75,49 @@ const DefinitionResponse = struct {
     },
 };
 
+const ActionQueue = struct {
+    queue: ArrayList(Action),
+    mutex: std.Thread.Mutex,
+
+    const Action = union(enum) {
+        jump_to_file: struct {
+            uri: []const u8,
+            line_col: LineCol,
+        },
+    };
+
+    fn init(allocator: Allocator) ActionQueue {
+        return .{
+            .queue = ArrayList(Action).init(allocator),
+            .mutex = std.Thread.Mutex{},
+        };
+    }
+
+    fn deinit(self: ActionQueue) void {
+        // A potential leak which we don't care about because it's at shutdown
+        self.queue.deinit();
+    }
+
+    fn addToFront(self: *ActionQueue, item: Action) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        self.queue.append(item) catch u.oom();
+    }
+
+    pub fn maybePopFromBack(self: *ActionQueue) ?Action {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (self.queue.items.len == 0) return null;
+        return self.queue.orderedRemove(0);
+    }
+};
+
 pub fn init(allocator: Allocator) Zls {
     return Zls{
         .allocator = allocator,
+        .action_queue = ActionQueue.init(allocator),
     };
 }
 
@@ -99,6 +145,8 @@ pub fn shutdown(self: *Zls) void {
     // TODO: wait for the process with a small timeout?
     self.listener.join();
     self.listener_stderr.join();
+
+    self.action_queue.deinit();
 }
 
 fn listen(self: *Zls) void {
@@ -126,20 +174,23 @@ fn listen(self: *Zls) void {
     }
 }
 
-fn processMessage(self: Zls, msg: []const u8, tmp_allocator: Allocator) void {
-    _ = self;
+fn processMessage(self: *Zls, msg: []const u8, tmp_allocator: Allocator) void {
     u.println("==== ZLS message ===========================", .{});
     u.println("{s}\n", .{msg});
 
     const msg_type = getMessageType(msg, tmp_allocator);
     switch (msg_type) {
-        .Definition, .DefinitionOther => {
+        .definition, .definition_other => {
             const response = parseJsonAs(DefinitionResponse, msg, tmp_allocator) catch |e| {
                 u.println("Can't parse message as DefinitionResponse: {}", .{e});
                 return;
             };
-            // !!!!!!!!!!!!!!!!!!!!!!!!!!!
-            u.println("Received definition response: {any}", .{response});
+            self.action_queue.addToFront(.{
+                .jump_to_file = .{
+                    .uri = self.allocator.dupe(u8, response.result.uri) catch u.oom(),
+                    .line_col = response.result.range.start.toLineCol(),
+                },
+            });
         },
         else => {},
     }
@@ -159,19 +210,19 @@ fn parseJsonAs(comptime result_type: type, json: []const u8, allocator: Allocato
 fn getMessageType(msg: []const u8, tmp_allocator: Allocator) MessageType {
     const message = parseJsonAs(struct { id: ?ResponseId = null, method: ?[]const u8 = null }, msg, tmp_allocator) catch |e| {
         u.println("Error parsing message: {}", .{e});
-        return .Unknown;
+        return .unknown;
     };
 
     if (message.id) |id| {
         switch (id) {
             .string => |str| {
-                if (std.mem.eql(u8, str, "definition")) return .Definition;
-                if (std.mem.eql(u8, str, "definition_other")) return .DefinitionOther;
+                if (std.mem.eql(u8, str, "definition")) return .definition;
+                if (std.mem.eql(u8, str, "definition_other")) return .definition_other;
             },
             else => {},
         }
     }
-    return .Unknown;
+    return .unknown;
 }
 
 fn listen_stderr(self: *Zls) void {

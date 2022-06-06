@@ -198,6 +198,12 @@ pub fn pathChunksIterator(path: []const u8) std.mem.SplitIterator(u8) {
     return std.mem.split(u8, path, delimiter);
 }
 
+pub fn getPathFromUri(uri: []const u8) []const u8 {
+    const prefix = if (builtin.os.tag == .windows) "file:///" else "file://";
+    if (!std.mem.startsWith(u8, uri, prefix)) return uri;
+    return uri[prefix.len..];
+}
+
 pub fn isWordChar(char: Char) bool {
     return switch (char) {
         '0'...'9', 'A'...'Z', 'a'...'z', '_' => true,
