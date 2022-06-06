@@ -85,7 +85,7 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
                     u.println("Couldn't get path from uri '{s}': {}", .{ file.uri, e });
                     continue;
                 };
-                self.openFile(path, false);
+                self.openFile(path, file.other);
                 var buf = self.getBuffer(self.findOpenBuffer(path) orelse unreachable);
                 buf.syncInternalData();
                 const pos = buf.getPosFromLineCol(file.line_col);

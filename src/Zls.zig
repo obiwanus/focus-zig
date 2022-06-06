@@ -83,6 +83,7 @@ const ActionQueue = struct {
         jump_to_file: struct {
             uri: []const u8,
             line_col: LineCol,
+            other: bool,
         },
     };
 
@@ -189,6 +190,7 @@ fn processMessage(self: *Zls, msg: []const u8, tmp_allocator: Allocator) void {
                 .jump_to_file = .{
                     .uri = self.allocator.dupe(u8, response.result.uri) catch u.oom(),
                     .line_col = response.result.range.start.toLineCol(),
+                    .other = msg_type == .definition_other,
                 },
             });
         },
