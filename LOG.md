@@ -1,6 +1,6 @@
 # TODO
 - Implement a limited LSP functionality
-    - Jump to absolute paths
+    - Jump to definition in the other pane
     - Send code updates on edits
     - Don't crash if no zls is found
     - Handle restarts
@@ -24,6 +24,7 @@
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
++ Jump to absolute paths
 + Jump to definition when ZLS says so
 + Start zls on editor startup, kill on shutdown (think about handling restarts later)
 + Notify zls when a document opens

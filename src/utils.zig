@@ -198,10 +198,85 @@ pub fn pathChunksIterator(path: []const u8) std.mem.SplitIterator(u8) {
     return std.mem.split(u8, path, delimiter);
 }
 
-pub fn getPathFromUri(uri: []const u8) []const u8 {
+const reserved_chars = &[_]u8{
+    '!', '#', '$', '%', '&', '\'',
+    '(', ')', '*', '+', ',', ':',
+    ';', '=', '?', '@', '[', ']',
+};
+
+const reserved_escapes = blk: {
+    var escapes: [reserved_chars.len][3]u8 = [_][3]u8{[_]u8{undefined} ** 3} ** reserved_chars.len;
+
+    for (reserved_chars) |c, i| {
+        escapes[i][0] = '%';
+        _ = std.fmt.bufPrint(escapes[i][1..], "{X}", .{c}) catch unreachable;
+    }
+    break :blk &escapes;
+};
+
+fn parseHex(c: u8) !u8 {
+    return switch (c) {
+        '0'...'9' => c - '0',
+        'a'...'f' => c - 'a' + 10,
+        'A'...'F' => c - 'A' + 10,
+        else => return error.UriBadHexChar,
+    };
+}
+
+pub fn getUriFromPath(path: []const u8, allocator: Allocator) []const u8 {
+    if (path.len == 0) return "";
     const prefix = if (builtin.os.tag == .windows) "file:///" else "file://";
-    if (!std.mem.startsWith(u8, uri, prefix)) return uri;
-    return uri[prefix.len..];
+
+    var buf = std.ArrayList(u8).init(allocator);
+    buf.appendSlice(prefix) catch oom();
+
+    for (path) |char| {
+        if (char == std.fs.path.sep) {
+            buf.append('/') catch oom();
+        } else if (std.mem.indexOfScalar(u8, reserved_chars, char)) |reserved| {
+            buf.appendSlice(&reserved_escapes[reserved]) catch oom();
+        } else {
+            buf.append(char) catch oom();
+        }
+    }
+
+    // On windows, we need to lowercase the drive name.
+    if (builtin.os.tag == .windows) {
+        if (buf.items.len > prefix.len + 1 and
+            std.ascii.isAlpha(buf.items[prefix.len]) and
+            std.mem.startsWith(u8, buf.items[prefix.len + 1 ..], "%3A"))
+        {
+            buf.items[prefix.len] = std.ascii.toLower(buf.items[prefix.len]);
+        }
+    }
+
+    return buf.toOwnedSlice();
+}
+
+pub fn getPathFromUri(uri: []const u8, allocator: Allocator) ![]const u8 {
+    const prefix = if (builtin.os.tag == .windows) "file:///" else "file://";
+    const path = if (std.mem.startsWith(u8, uri, prefix)) uri[prefix.len..] else return error.UriBadScheme;
+
+    var buf = std.ArrayList(u8).initCapacity(allocator, path.len) catch oom();
+
+    var i: usize = 0;
+    while (i < path.len) {
+        if (path[i] == '%') {
+            if (i + 2 >= path.len) return error.UriBadEscape;
+            const upper = try parseHex(path[i + 1]);
+            const lower = try parseHex(path[i + 2]);
+            buf.appendAssumeCapacity((upper << 4) + lower);
+            i += 3;
+        } else {
+            buf.appendAssumeCapacity(if (path[i] == '/') std.fs.path.sep else path[i]);
+            i += 1;
+        }
+    }
+
+    // Remove trailing path sep
+    if (i > 0 and path[i - 1] == std.fs.path.sep) _ = buf.pop();
+
+    return buf.toOwnedSlice();
 }
 
 pub fn isWordChar(char: Char) bool {

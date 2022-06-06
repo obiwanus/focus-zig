@@ -81,7 +81,10 @@ pub fn updateAndDrawAll(self: *Editors, ui: *Ui, clock_ms: f64, tmp_allocator: A
     while (self.zls.action_queue.maybePopFromBack()) |action| {
         switch (action) {
             .jump_to_file => |file| {
-                const path = u.getPathFromUri(file.uri);
+                const path = u.getPathFromUri(file.uri, tmp_allocator) catch |e| {
+                    u.println("Couldn't get path from uri '{s}': {}", .{ file.uri, e });
+                    continue;
+                };
                 self.openFile(path, false);
                 var buf = self.getBuffer(self.findOpenBuffer(path) orelse unreachable);
                 buf.syncInternalData();
