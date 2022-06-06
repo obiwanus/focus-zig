@@ -232,7 +232,7 @@ pub fn main() !void {
         clock_ms = @intToFloat(f64, std.time.nanoTimestamp() - app_start_ms) / 1_000_000;
 
         // Otherwise sleep until something happens
-        while (g_events.items.len == 0 and !window.shouldClose()) {
+        while (g_events.items.len == 0 and !zls.hasActions() and !window.shouldClose()) {
             try glfw.waitEventsTimeout(0.5);
             clock_ms = @intToFloat(f64, std.time.nanoTimestamp() - app_start_ms) / 1_000_000;
 

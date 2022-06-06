@@ -99,6 +99,10 @@ const ActionQueue = struct {
         self.queue.deinit();
     }
 
+    fn isEmpty(self: ActionQueue) bool {
+        return self.queue.items.len == 0;
+    }
+
     fn addToFront(self: *ActionQueue, item: Action) void {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -148,6 +152,10 @@ pub fn shutdown(self: *Zls) void {
     self.listener_stderr.join();
 
     self.action_queue.deinit();
+}
+
+pub fn hasActions(self: Zls) bool {
+    return !self.action_queue.isEmpty();
 }
 
 fn listen(self: *Zls) void {

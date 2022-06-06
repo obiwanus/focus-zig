@@ -1,9 +1,10 @@
 # TODO
-- Implement a limited LSP functionality
-    - Jump to definition immediately
-    - Send code updates on edits
-    - Don't crash if no zls is found
-    - Handle restarts
+- Zls: Send code updates on edits
+    - On new edit group, send whole contents
+    - On undo/redo, send whole contents
+- Zls: notify the server on save
+- Zls: Don't crash if no zls is found
+- Zls: Handle restarts
 - Do not highlight the whole document for Zig and LOG.md
 - Search box: show the number of results / current result
 - Jump to line on ctrl+G
@@ -24,6 +25,7 @@
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
++ Jump to definition immediately
 + Jump to definition in the other pane
 + Jump to absolute paths
 + Jump to definition when ZLS says so

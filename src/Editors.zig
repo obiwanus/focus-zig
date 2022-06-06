@@ -314,7 +314,7 @@ fn openNewBuffer(self: *Editors, path: []const u8) usize {
     self.open_buffers.append(buffer) catch u.oom();
     const buffer_id = self.open_buffers.items.len - 1;
     if (buffer.language == .zig) {
-        self.zls.notifyBufferOpened(buffer_id, buffer.file.?.uri, buffer.chars.items) catch @panic("Couldn't notify zls");
+        g_zls.notifyBufferOpened(buffer_id, buffer.file.?.uri, buffer.chars.items) catch @panic("Couldn't notify zls");
     }
 
     return buffer_id;
