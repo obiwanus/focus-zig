@@ -533,6 +533,9 @@ pub fn undo(self: *Buffer) ?[]const CursorState {
         self.redos.append(EditGroup{ .edits = edit_group.edits, .cursors = self.cursors.toOwnedSlice() }) catch u.oom();
         self.cursors.appendSlice(edit_group.cursors) catch u.oom();
         self.g.alloc.free(edit_group.cursors);
+
+        self.sendLspChangeNotification();
+
         return self.cursors.items;
     }
     return null;
@@ -549,6 +552,9 @@ pub fn redo(self: *Buffer) ?[]const CursorState {
         self.undos.append(EditGroup{ .edits = edit_group.edits, .cursors = self.cursors.toOwnedSlice() }) catch u.oom();
         self.cursors.appendSlice(edit_group.cursors) catch u.oom();
         self.g.alloc.free(edit_group.cursors);
+
+        self.sendLspChangeNotification();
+
         return self.cursors.items;
     }
     return null;
@@ -569,6 +575,13 @@ pub fn newEditGroup(self: *Buffer, current_cursors: []const Cursor) void {
     // Remember current cursor state
     self.cursors.ensureUnusedCapacity(current_cursors.len) catch u.oom();
     for (current_cursors) |cursor| self.cursors.appendAssumeCapacity(cursor.state());
+
+    self.sendLspChangeNotification();
+}
+
+pub fn sendLspChangeNotification(self: Buffer) void {
+    if (self.language != .zig or self.file == null) return;
+    self.g.zls.notifyBufferChanged(self.file.?.uri, self.chars.items) catch unreachable;
 }
 
 pub fn stripTrailingSpaces(self: *Buffer) void {

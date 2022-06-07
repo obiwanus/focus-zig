@@ -1,16 +1,14 @@
 # TODO
-- Zls: Send code updates on edits
-    - On new edit group, send whole contents
-    - On undo/redo, send whole contents
-- Zls: notify the server on save
-- Zls: Don't crash if no zls is found
-- Zls: Handle restarts
 - Do not highlight the whole document for Zig and LOG.md
 - Search box: show the number of results / current result
 - Jump to line on ctrl+G
 - Save current session (per working directory)
 - Create new files
 - Enlarge the current editor on shift+ctrl+L
+- Zls features:
+    - Display diagnostics
+    - Don't crash if no zls is found
+    - Handle restarts
 - Highlight changed/deleted/added lines
 - [bug] Colors are off when non-ascii bytes are present (tokenizer doesn't support utf-8)
 - [bug] Asus Zenbook: crash when resizing
@@ -25,6 +23,9 @@
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
++ Zls: Send code updates on edits
+    + On new edit group, send whole contents
+    + On undo/redo, send whole contents
 + Jump to definition immediately
 + Jump to definition in the other pane
 + Jump to absolute paths

@@ -24,6 +24,17 @@ const OpenDocument = struct {
     },
 };
 
+const DidChangeDocument = struct {
+    textDocument: struct {
+        uri: []const u8,
+    },
+    contentChanges: []ContentChange,
+};
+
+const ContentChange = struct {
+    text: []const u8,
+};
+
 pub const Position = struct {
     line: i64,
     character: i64,
@@ -184,8 +195,8 @@ fn listen(self: *Zls) void {
 }
 
 fn processMessage(self: *Zls, msg: []const u8, tmp_allocator: Allocator) void {
-    u.println("==== ZLS message ===========================", .{});
-    u.println("{s}\n", .{msg});
+    //u.println("==== ZLS message ===========================", .{});
+    //u.println("{s}\n", .{msg});
 
     const msg_type = getMessageType(msg, tmp_allocator);
     switch (msg_type) {
@@ -271,7 +282,36 @@ pub fn notifyBufferOpened(self: Zls, buffer_id: usize, uri: []const u8, chars: [
     try std.json.stringify(open_document, .{}, params.writer());
 
     const content = std.fmt.allocPrint(allocator, content_template, .{ buffer_id, params.items }) catch u.oom();
-    u.println("OpenDocumentRequest: ===============\n{s}\n", .{content});
+    const request = std.fmt.allocPrint(allocator, "Content-Length: {}\r\n\r\n{s}", .{ content.len, content }) catch u.oom();
+    try self.process.stdin.?.writer().writeAll(request);
+}
+
+pub fn notifyBufferChanged(self: Zls, uri: []const u8, chars: []const Char) !void {
+    var arena = ArenaAllocator.init(self.allocator);
+    defer arena.deinit();
+    var allocator = arena.allocator();
+
+    const did_change_document = DidChangeDocument{
+        .textDocument = .{
+            .uri = uri,
+        },
+        .contentChanges = &[_]ContentChange{.{
+            .text = u.charsToBytes(chars, allocator) catch unreachable,
+        }},
+    };
+
+    const content_template =
+        \\{{
+        \\  "jsonrpc": "2.0",
+        \\  "method": "textDocument/didChange",
+        \\  "params": {s}
+        \\}}
+    ;
+
+    var params = std.ArrayList(u8).init(allocator);
+    try std.json.stringify(did_change_document, .{}, params.writer());
+
+    const content = std.fmt.allocPrint(allocator, content_template, .{params.items}) catch u.oom();
     const request = std.fmt.allocPrint(allocator, "Content-Length: {}\r\n\r\n{s}", .{ content.len, content }) catch u.oom();
     try self.process.stdin.?.writer().writeAll(request);
 }
@@ -300,7 +340,6 @@ pub fn goToDefinition(self: Zls, uri: []const u8, line_col: LineCol, other: bool
     try std.json.stringify(request_params, .{}, params.writer());
 
     const content = std.fmt.allocPrint(allocator, content_template, .{ request_id, params.items }) catch u.oom();
-    u.println("GoToDefinitionRequest: ===============\n{s}\n", .{content});
     const request = std.fmt.allocPrint(allocator, "Content-Length: {}\r\n\r\n{s}", .{ content.len, content }) catch u.oom();
     try self.process.stdin.?.writer().writeAll(request);
 }
