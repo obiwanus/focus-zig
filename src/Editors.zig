@@ -1386,8 +1386,20 @@ pub const Editor = struct {
                     .page_down => cursor.moveToLine(cursor.line + self.lines_per_screen, buf),
 
                     // Horizontal
-                    .left => |move_by| cursor.pos -|= move_by,
-                    .right => |move_by| cursor.pos += move_by,
+                    .left => |move_by| {
+                        if (cursor.getSelectionRange()) |s| {
+                            cursor.pos = s.start;
+                        } else {
+                            cursor.pos -|= move_by;
+                        }
+                    },
+                    .right => |move_by| {
+                        if (cursor.getSelectionRange()) |s| {
+                            cursor.pos = s.end;
+                        } else {
+                            cursor.pos += move_by;
+                        }
+                    },
                     .home => {
                         const line = buf.getLine(cursor.line);
                         cursor.pos = if (cursor.pos != line.text_start) line.text_start else line.start;

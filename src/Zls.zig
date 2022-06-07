@@ -138,7 +138,8 @@ pub fn init(allocator: Allocator) Zls {
 }
 
 pub fn start(self: *Zls) !void {
-    var process = try std.ChildProcess.init(&[_][]const u8{"C:\\Users\\ivan\\Projects\\zls\\zig-out\\bin\\zls.exe"}, self.allocator);
+    // var process = try std.ChildProcess.init(&[_][]const u8{"C:\\Users\\ivan\\Projects\\zls\\zig-out\\bin\\zls.exe"}, self.allocator);
+    var process = try std.ChildProcess.init(&[_][]const u8{"zls"}, self.allocator);
     process.stdin_behavior = .Pipe;
     process.stdout_behavior = .Pipe;
     process.stderr_behavior = .Pipe;

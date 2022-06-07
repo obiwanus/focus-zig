@@ -23,6 +23,7 @@
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
++ Jump to start and end of selection
 + Zls: Send code updates on edits
     + On new edit group, send whole contents
     + On undo/redo, send whole contents
