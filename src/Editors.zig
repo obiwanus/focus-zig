@@ -1387,15 +1387,15 @@ pub const Editor = struct {
 
                     // Horizontal
                     .left => |move_by| {
-                        if (cursor.getSelectionRange()) |s| {
-                            cursor.pos = s.start;
+                        if (cursor.hasSelection() and !mods.shift) {
+                            cursor.pos = cursor.range().start;
                         } else {
                             cursor.pos -|= move_by;
                         }
                     },
                     .right => |move_by| {
-                        if (cursor.getSelectionRange()) |s| {
-                            cursor.pos = s.end;
+                        if (cursor.hasSelection() and !mods.shift) {
+                            cursor.pos = cursor.range().end;
                         } else {
                             cursor.pos += move_by;
                         }
