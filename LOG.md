@@ -1,5 +1,6 @@
 # TODO
 - Do not highlight the whole document for Zig and LOG.md
+- Search box: insert text from clipboard
 - Search box: show the number of results / current result
 - Jump to line on ctrl+G
 - Save current session (per working directory)
