@@ -1,17 +1,19 @@
 # TODO
 - Do not highlight the whole document for Zig and LOG.md
+- Use the first cursor as the main cursor
+    - Remember the cursor you started with
 - Search box: insert text from clipboard
 - Search box: show the number of results / current result
 - Jump to line on ctrl+G
 - Save current session (per working directory)
-- Create new files
 - Enlarge the current editor on shift+ctrl+L
 - Zls features:
     - Display diagnostics
     - Don't crash if no zls is found
     - Handle restarts
 - Highlight changed/deleted/added lines
-- [bug] Colors are off when non-ascii bytes are present (tokenizer doesn't support utf-8)
+- Create new files
+- [bug] When commenting out blocks, sometimes selection adjustment is wrong
 - [bug] Asus Zenbook: crash when resizing
 - Allow to scroll viewport past cursor
     - Only jump to cursor on cursor movement or editing
@@ -24,6 +26,7 @@
 - When drawing a buffer with a conflict we need to ask what to do
 
 # DONE
++ [bug] Colors are off when non-ascii bytes are present (tokenizer doesn't support utf-8)
 + Jump to start and end of selection
 + Zls: Send code updates on edits
     + On new edit group, send whole contents

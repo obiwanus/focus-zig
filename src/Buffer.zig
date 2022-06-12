@@ -272,6 +272,8 @@ pub fn maybeFormat(self: *Buffer) bool {
 }
 
 fn formatZig(self: *Buffer) void {
+    self.updateBytesFromChars();
+
     var process = std.ChildProcess.init(
         &[_][]const u8{ "zig", "fmt", "--stdin" },
         self.g.frame_alloc,
@@ -306,13 +308,10 @@ pub fn syncInternalData(self: *Buffer) void {
 
     if (self.language == .zig) {
         std.mem.set(TextColor, colors, .comment);
-        self.updateBytesFromChars();
-        self.bytes.append(0) catch u.oom(); // null-terminate
 
         // NOTE: we're tokenizing the whole source file. At least for zig this can be optimised,
         // but we're not doing it just yet
-        const source_bytes = self.bytes.items[0..self.bytes.items.len -| 1 :0];
-        var tokenizer = std.zig.Tokenizer.init(source_bytes);
+        var tokenizer = focus.zig_tokenizer.Tokenizer.init(self.chars.items);
         while (true) {
             var token = tokenizer.next();
             const token_color: TextColor = switch (token.tag) {
@@ -329,8 +328,6 @@ pub fn syncInternalData(self: *Buffer) void {
             };
             std.mem.set(TextColor, colors[token.loc.start..token.loc.end], token_color);
         }
-
-        _ = self.bytes.pop(); // un-null-terminate
     } else if (self.language == .log) {
         std.mem.set(TextColor, colors, .default);
         for (self.lines.items) |line| {
