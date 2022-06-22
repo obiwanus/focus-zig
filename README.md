@@ -2,6 +2,8 @@
 
 A simple text editor (work in progress)
 
+![Screenshot](https://i.postimg.cc/bJcsH7tH/focus.png)
+
 ## How to build and run on Windows
 
 - Update your graphics driver
