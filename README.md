@@ -1,6 +1,6 @@
 # Focus
 
-A simple text editor (work in progress)
+A simple text editor - Zig version (work stopped, rewriting in Jai)
 
 ![Screenshot](https://i.postimg.cc/bJcsH7tH/focus.png)
 
